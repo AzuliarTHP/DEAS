@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.33 BETA
+
+- **Linux video preview no longer crashes the window when moved too early.** Moving or resizing a native video preview before its surface existed panicked the UI thread; it now reports "Native video surface is unavailable" like starting a preview does.
+- **No more debug lines in the console when browsing download providers.** Three leftover `DBG` logs in the Downloads plugin panel are gone.
+- **Project lock errors name the cause.** "Project already has a writer or cannot be locked" now carries the operating-system reason.
+- Developer: Vitest also runs `src/**/*.test.ts` (two library suites never ran before; both pass), an H3 transition with `prompt: null` is treated as no prompt, and the LLM parallel-scan timing test allows 1 s of scheduler slack.
+
 ## 0.2.32 BETA
 
 - **H3 Continuity capture works together with Seamless loop.** With New segment only, the node pack rejected the job before sampling because the checkpoint export took the loop's retimed audio instead of the Segment Decode's; with the full timeline the looped, shorter ending did not match the saved latent. The checkpoint now saves the Original (unlooped decode with its own audio), and the looped Processed video is still produced. Captures without a loop keep publishing the Processed video as before.

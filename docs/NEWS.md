@@ -1,5 +1,10 @@
 # News
 
+## 0.2.33 BETA
+
+- Fixed: moving a Linux video preview before it was ready could crash the window.
+- Removed leftover debug logging from the Downloads plugin panel.
+
 ## 0.2.32 BETA
 
 - H3 Continuity capture and Seamless loop can now be used together: the checkpoint keeps the unlooped Original, the looped video is still saved.

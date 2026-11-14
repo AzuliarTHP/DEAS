@@ -267,6 +267,8 @@ struct Job {
     submitting: bool,
     polling: bool,
     metadata: Option<Value>,
+    // H3 transition bridge (`h3_transitions/<name>.mp4` in input), only for DaSiWaH3TransitionRender jobs.
+    transition: Option<String>,
     live: Arc<Mutex<Live>>,
 }
 
@@ -312,6 +314,9 @@ impl Job {
             .and_then(|root| root.current_path())
         {
             value["outputRoot"] = json!(root);
+        }
+        if let Some(bridge) = &self.transition {
+            value["transition"] = json!(bridge);
         }
         if matches!(self.state, "queued" | "running") {
             if let Ok(live) = self.live.lock() {
@@ -2066,6 +2071,7 @@ impl Jobs {
                 state: "unknown",
                 outputs: vec![],
                 history_outputs: vec![],
+                transition: None,
                 error: Some("Submission in progress; do not retry".into()),
                 submitting: true,
                 polling: false,
@@ -2338,6 +2344,23 @@ fn outputs(entry: &Value) -> Result<Vec<Value>, String> {
         .collect()
 }
 
+/// Bridge written by DaSiWaH3TransitionRender (`TR`): `h3_transitions/<name>.mp4`, relative to the input root.
+pub(crate) fn transition_output(entry: &Value) -> Result<String, String> {
+    entry["outputs"]["TR"]["h3_transition"]
+        .get(0)
+        .and_then(|t| t["filename"].as_str())
+        .filter(|f| {
+            f.strip_prefix("h3_transitions/").is_some_and(|name| {
+                name.len() <= 255
+                    && !name.contains('/')
+                    && name.ends_with(".mp4")
+                    && safe_path(name, false)
+            })
+        })
+        .map(str::to_string)
+        .ok_or_else(|| "Completed transition history has no bridge file".to_string())
+}
+
 // Roles come only from the held compiler graph, never filenames or backend-supplied labels.
 pub(crate) fn job_outputs(entry: &Value, graph: &Value) -> Result<Vec<Value>, String> {
     let mut final_outputs = outputs(entry)?;
@@ -2384,6 +2407,26 @@ pub(crate) fn job_outputs(entry: &Value, graph: &Value) -> Result<Vec<Value>, St
     }
     final_outputs.extend(originals);
     Ok(final_outputs)
+}
+
+#[cfg(test)]
+#[test]
+fn transition_bridge_is_read_only_from_the_render_node_inside_h3_transitions() {
+    let entry = |name: &str| json!({"outputs":{"TR":{"h3_transition":[{"filename":name,"frames":29,"seconds":1.2}]}}});
+    assert_eq!(
+        transition_output(&entry("h3_transitions/H3_Transition_ab.mp4")).unwrap(),
+        "h3_transitions/H3_Transition_ab.mp4"
+    );
+    for bad in [
+        "H3_Transition_ab.mp4",
+        "h3_transitions/../x.mp4",
+        "h3_transitions/a/b.mp4",
+        "h3_transitions/a.mkv",
+        "other/a.mp4",
+    ] {
+        assert!(transition_output(&entry(bad)).is_err(), "{bad}");
+    }
+    assert!(transition_output(&json!({"outputs":{"7":{}}})).is_err());
 }
 
 #[cfg(test)]
@@ -2535,6 +2578,12 @@ async fn poll_present(job: &mut Job) -> Result<bool, String> {
                 return Ok(true);
             }
             Some("success") if completed => {
+                if job.plan.graph.get("TR").is_some() {
+                    job.transition = Some(transition_output(entry)?);
+                    job.state = "succeeded";
+                    job.error = None;
+                    return Ok(true);
+                }
                 let images = job_outputs(entry, &job.plan.graph)?;
                 if images.is_empty() {
                     return Err("Completed history has no diagnostic image output".into());

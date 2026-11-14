@@ -1,5 +1,11 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## H3 transitions, slice T1: native transition job (working tree, after 0.2.32; no UI yet)
+
+- Contract source: pack 0.5.52 `nodes/h3_continuity/transition.py` (`transition_spec`, `DaSiWaH3TransitionGuide`/`Render` inputs pinned in `h3_join_contract_pins_pack_nodes_and_json_schema`). The emitted `transition_data` rows pass the pack's own `assembly._request`; grid rules (context 17k+5 ≥ 5, bridge ≥ 12, window 17k+5) mirrored and tested.
+- Regressions: `h3_transition_swaps_the_guide_and_renders_only_the_bridge` (exact wire JSON, Guide inputs, `TR` render, Director duration 73/24, model/sampler nodes identical to the plain generation, no SP/SD/7/B7/P), `h3_transition_rejects_off_grid_extra_clips_unsafe_files_and_post_stages` (grid, clip count, path escape, empty trim, prompt length, prefix, unknown field; capture/latent upscale/videoPost refused by the transition rule), `transition_bridge_is_read_only_from_the_render_node_inside_h3_transitions`. Offline `tools/validate_video_graphs.py` on the dumped graph (`dump_h3_transition_graph`): **valid, outputs `TR`**.
+- Not reachable from the UI yet (slice T2), so no version bump or CHANGELOG entry; no real render (slice T3).
+
 ## H3 Continuity capture with Seamless loop — 0.2.32 (unreleased working tree)
 
 - Reproduction against the installed pack (`h3_continuity/validation.py::validate_capture_graph`, node pack 0.5.52) on graphs from the DEAS compiler (REF2VA continuation, `videoPost.loop` RIFE beat-aware): New segment only, with and without latent upscale, was **rejected before inference** ("Export images derived from, and audio directly from, the same Segment Decode") because Publish read exporter `7`, whose audio is `PG[1]` ← `LP[1]` (loop-remapped). The full-timeline graph passed graph validation, but `DaSiWa_SeamlessLoop` trims up to 10 % per end and overlaps the seam, so the export is shorter than the saved timeline and the Publish duration check (`nodes.py`, tolerance max(0.125 s, 2 frames)) rejects it after inference unless the trim happens to stay within tolerance (inferred from source, not executed); the pack also forbids the analogous ending changes (`pingpong`, `crop_to_audio`).

@@ -114,6 +114,7 @@ fn completed(base: &str) -> Jobs {
         state: "succeeded",
         outputs: vec![json!({"filename":"image.png","subfolder":"DEAS/run-1","type":"output"})],
         history_outputs: vec![],
+        transition: None,
         error: None,
         submitting: false,
         polling: false,

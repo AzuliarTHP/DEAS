@@ -110,6 +110,7 @@ async fn held_fixture_with(
         state: "queued",
         outputs: vec![],
         history_outputs: vec![],
+        transition: None,
         error: None,
         submitting: false,
         polling: false,

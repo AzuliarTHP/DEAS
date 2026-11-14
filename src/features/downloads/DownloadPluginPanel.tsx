@@ -191,10 +191,10 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
   timer=setTimeout(()=>void poll(),1000);
   return()=>{alive=false;clearTimeout(timer);};
  },[io.native,io.request,running,publishStatus]);
- const browse=(request:{providerId:string;scope:DownloadScope;locator:string},cursor?:string)=>{edit();console.log('DBG browse',request);void io.request(async()=>{console.log('DBG factory');
+ const browse=(request:{providerId:string;scope:DownloadScope;locator:string},cursor?:string)=>{edit();void io.request(async()=>{
   const authenticated=authChoices.current.get(request.providerId)??(await readAuthStatus()).some(p=>p.providerId===request.providerId&&p.configured);
   return {authenticated,listing:await browseDownloads({...request,authenticated,nsfw:true,...(cursor?{cursor}:{})})};
- },value=>{console.log('DBG browse-ok');setAuthenticated(value.authenticated);setListing(previous=>({...value.listing,resources:cursor?[...new Map([...(previous?.resources??[]),...value.listing.resources].map(r=>[key(r),r])).values()]:value.listing.resources}));});};
+ },value=>{setAuthenticated(value.authenticated);setListing(previous=>({...value.listing,resources:cursor?[...new Map([...(previous?.resources??[]),...value.listing.resources].map(r=>[key(r),r])).values()]:value.listing.resources}));});};
  const current={providerId,scope,locator};
  const openEntry=(entry:CatalogEntry)=>{sourceEdit();setProviderId(entry.providerId);setScope(entry.scope);setLocator(entry.locator);setEntryId(entry.id);setFolder(entry.target);browse({providerId:entry.providerId,scope:entry.scope,locator:entry.locator});};
  const initialOpened=useRef(false);

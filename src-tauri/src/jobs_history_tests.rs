@@ -19,6 +19,7 @@ fn job(intent: Value) -> Job {
         state: "unknown",
         outputs: vec![],
         history_outputs: vec![],
+        transition: None,
         error: Some("secret HTTP body token=private".into()),
         submitting: true,
         polling: false,

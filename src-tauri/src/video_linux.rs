@@ -366,7 +366,11 @@ pub fn update(id: &str, action: Action) -> Result<Value, String> {
                     p.command(&["set", "vid", if audio_only { "no" } else { "auto" }])?;
                 }
                 if visible && !audio_only && width > 0 && height > 0 {
-                    state.fixed.as_ref().unwrap().move_(&surface.area, x, y);
+                    state
+                        .fixed
+                        .as_ref()
+                        .ok_or("Native video surface is unavailable")?
+                        .move_(&surface.area, x, y);
                     surface.area.set_size_request(width, height);
                     surface.area.show();
                 } else {

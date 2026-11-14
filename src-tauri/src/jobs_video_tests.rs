@@ -3077,3 +3077,98 @@ fn h3_capture_with_seamless_loop_publishes_the_original() {
         }
     }
 }
+
+fn h3_transition_intent() -> Value {
+    let mut i = h3();
+    i["h3"]["transition"] = json!({"files":[{"filename":"a.mp4","trimEnd":4.5},{"filename":"sub/b.mp4","trimStart":0.5}],"contextFrames":22,"transitionFrames":29,"prompt":"she walks on"});
+    i
+}
+
+#[test]
+fn h3_transition_swaps_the_guide_and_renders_only_the_bridge() {
+    let plain = compile(&h3()).unwrap();
+    let g = compile(&h3_transition_intent()).unwrap();
+    let data: Value =
+        serde_json::from_str(g["G"]["inputs"]["transition_data"].as_str().unwrap()).unwrap();
+    // Wire shape of pack transition.py::transition_spec (pinned in h3_join_contract_pins_pack_nodes_and_json_schema).
+    assert_eq!(
+        data,
+        json!({"version":1,"rows":[{"kind":"media","filename":"a.mp4","trim_start":0.0,"trim_end":4.5},{"kind":"media","filename":"sub/b.mp4","trim_start":0.5,"trim_end":null}],
+            "context_frames":22,"transition_frames":29,"prompt":"she walks on","filename_prefix":"H3_Transition"})
+    );
+    assert_eq!(g["G"]["class_type"], "DaSiWaH3TransitionGuide");
+    for (k, v) in [
+        ("clip", json!(["C", 0])),
+        ("vae", json!(["V", 0])),
+        ("guide", json!(["D", 0])),
+        ("audio_vae", json!(["AV", 0])),
+    ] {
+        assert_eq!(g["G"]["inputs"][k], v);
+    }
+    assert_eq!(
+        g["TR"],
+        json!({"class_type":"DaSiWaH3TransitionRender","inputs":{"latent":["5",0],"vae":["V",0],"audio_vae":["AV",0],"transition":["G",2]}})
+    );
+    // The window is 2 x 22 + 29 = 73 frames; the Director's own model/sampler chain is reused unchanged.
+    assert_eq!(g["D"]["inputs"]["duration"], json!(73.0 / 24.0));
+    for id in ["1", "C", "V", "AV", "N", "Q", "B", "5", "Z"] {
+        assert_eq!(g[id], plain[id], "{id}");
+    }
+    for id in ["SP", "SD", "7", "B7", "P"] {
+        assert!(
+            g.get(id).is_none(),
+            "{id} must not run in a transition window"
+        );
+    }
+    assert!(compile(&h3()).unwrap().get("TR").is_none());
+}
+
+#[test]
+fn h3_transition_rejects_off_grid_extra_clips_unsafe_files_and_post_stages() {
+    let bad = |edit: &dyn Fn(&mut Value)| {
+        let mut i = h3_transition_intent();
+        edit(&mut i);
+        compile(&i).unwrap_err()
+    };
+    bad(&|i| i["h3"]["transition"]["contextFrames"] = json!(20));
+    bad(&|i| i["h3"]["transition"]["transitionFrames"] = json!(30));
+    bad(&|i| i["h3"]["transition"]["files"] = json!([{"filename":"a.mp4"}]));
+    bad(&|i| i["h3"]["transition"]["files"][1]["filename"] = json!("../x.mp4"));
+    bad(&|i| i["h3"]["transition"]["files"][0]["trimEnd"] = json!(0.0));
+    bad(&|i| i["h3"]["transition"]["prompt"] = json!("x".repeat(4001)));
+    bad(&|i| i["h3"]["transition"]["filenamePrefix"] = json!("a/b"));
+    bad(&|i| i["h3"]["transition"]["extra"] = json!(1));
+    // These three are refused by the transition rule itself, not by an unrelated field check.
+    let post: [&dyn Fn(&mut Value); 3] = [
+        &|i| i["videoPost"] = json!({"rtx":{"denoise":"High"}}),
+        &|i| i["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2}),
+        &|i| i["h3"]["continuity"] = json!({"session":"deas-ab12cd34","sourceId":"","capture":true,"action":"","outputMode":"full"}),
+    ];
+    for edit in post {
+        assert!(bad(edit).contains("h3.transition runs on"));
+    }
+    // A null prompt is the same as no prompt.
+    let mut i = h3_transition_intent();
+    i["h3"]["transition"]["prompt"] = Value::Null;
+    let g = compile(&i).unwrap();
+    assert!(g["G"]["inputs"]["transition_data"]
+        .as_str()
+        .unwrap()
+        .contains(r#""prompt":"""#));
+    // 5 / 12 and 39 / 12 stay on the grid.
+    for (context, gap) in [(5, 12), (39, 12), (22, 46)] {
+        let mut i = h3_transition_intent();
+        i["h3"]["transition"]["contextFrames"] = json!(context);
+        i["h3"]["transition"]["transitionFrames"] = json!(gap);
+        assert!(compile(&i).is_ok(), "{context}/{gap}");
+    }
+}
+
+#[test]
+#[ignore]
+fn dump_h3_transition_graph() {
+    println!(
+        "{}",
+        json!({"h3-transition": compile(&h3_transition_intent()).unwrap()})
+    );
+}
