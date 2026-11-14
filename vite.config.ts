@@ -9,7 +9,7 @@ export default defineConfig({
   clearScreen: false,
   test: {
     environment: "jsdom",
-    include: ["src/**/*.test.tsx"],
+    include: ["src/**/*.test.{ts,tsx}"],
     restoreMocks: true,
   },
 });

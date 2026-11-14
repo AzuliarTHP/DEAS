@@ -405,7 +405,7 @@ fn validate_input_bytes(input: &ProjectInput, bytes: &[u8]) -> Result<(), String
 fn acquire(root: &Root) -> Result<File, String> {
     let lock = root.file(LOCK, true)?;
     lock.try_lock()
-        .map_err(|_| "Project already has a writer or cannot be locked")?;
+        .map_err(|e| format!("Project already has a writer or cannot be locked: {e}"))?;
     Ok(lock)
 }
 fn report<T>(operation: &str, id: Option<&str>, result: Result<T, String>) -> Result<T, String> {

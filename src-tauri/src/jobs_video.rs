@@ -659,6 +659,7 @@ fn validate_h3(h: &Value) -> Result<(), String> {
             "media",
             "inputScaling",
             "refmods",
+            "transition",
         ],
     ) && h["audioVae"].as_str().is_some_and(comfy_model_name)
         && (h.get("inputScaling").is_none() || pick(h, "inputScaling", &H3_INPUT_SCALING))
@@ -854,53 +855,13 @@ fn join(i: &Value) -> Result<Value, String> {
             .ok_or("h3.join.files needs 1..=100 entries")?;
         files
             .iter()
-            .map(|f| -> Result<Value, String> {
-                let name = f["filename"]
-                    .as_str()
-                    .filter(|s| {
-                        !s.is_empty()
-                            && s.len() <= 1024
-                            && !s.contains("..")
-                            && !s.contains('\0')
-                            && !s.contains(':')
-                            && !s.starts_with('/')
-                    })
-                    .ok_or("Invalid h3.join.files.filename")?;
-                let seconds = |k: &str| -> Result<Option<f64>, String> {
-                    match f.get(k) {
-                        None | Some(Value::Null) => Ok(None),
-                        Some(v) => v
-                            .as_f64()
-                            .filter(|n| (0.0..=3600.0).contains(n))
-                            .map(Some)
-                            .ok_or(format!("Invalid h3.join.files.{k}")),
-                    }
-                };
-                let start = seconds("trimStart")?.unwrap_or_default();
-                let end = seconds("trimEnd")?;
-                if end.is_some_and(|e| e <= start) {
-                    return Err("h3.join.files trim must end after its start".into());
-                }
-                Ok(json!({"kind": "media", "filename": name, "trim_start": start, "trim_end": end}))
-            })
+            .map(|f| media_row(f, "h3.join.files"))
             .collect::<Result<_, _>>()?
     };
     if j.get("copyVideo").is_some_and(|b| !b.is_boolean()) {
         return Err("h3.join.copyVideo must be boolean".into());
     }
-    let prefix = match j.get("filenamePrefix") {
-        None | Some(Value::Null) => "H3_Joined".to_string(),
-        Some(v) => v
-            .as_str()
-            .filter(|s| {
-                !s.is_empty()
-                    && s.len() <= 80
-                    && s.bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-            })
-            .map(str::to_string)
-            .ok_or("Invalid h3.join.filenamePrefix")?,
-    };
+    let prefix = filename_prefix(j, "H3_Joined", "h3.join")?;
     let data = json!({
         "version": 1,
         "rows": rows,
@@ -918,6 +879,133 @@ fn join(i: &Value) -> Result<Value, String> {
             "filename_prefix": prefix,
         }}}),
     )
+}
+
+/// One pack media row (assembly.py::_request): input-relative file, optional trims in seconds.
+fn media_row(f: &Value, field: &str) -> Result<Value, String> {
+    let name = f["filename"]
+        .as_str()
+        .filter(|s| {
+            !s.is_empty()
+                && s.len() <= 1024
+                && !s.contains("..")
+                && !s.contains('\0')
+                && !s.contains(':')
+                && !s.starts_with('/')
+        })
+        .ok_or(format!("Invalid {field}.filename"))?;
+    let seconds = |k: &str| -> Result<Option<f64>, String> {
+        match f.get(k) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => v
+                .as_f64()
+                .filter(|n| (0.0..=3600.0).contains(n))
+                .map(Some)
+                .ok_or(format!("Invalid {field}.{k}")),
+        }
+    };
+    let start = seconds("trimStart")?.unwrap_or_default();
+    let end = seconds("trimEnd")?;
+    if end.is_some_and(|e| e <= start) {
+        return Err(format!("{field} trim must end after its start"));
+    }
+    Ok(json!({"kind": "media", "filename": name, "trim_start": start, "trim_end": end}))
+}
+
+/// Pack filename prefix: 1-80 letters, digits, `_` or `-`.
+fn filename_prefix(block: &Value, default: &str, field: &str) -> Result<String, String> {
+    match block.get("filenamePrefix") {
+        None | Some(Value::Null) => Ok(default.to_string()),
+        Some(v) => v
+            .as_str()
+            .filter(|s| {
+                !s.is_empty()
+                    && s.len() <= 80
+                    && s.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+            })
+            .map(str::to_string)
+            .ok_or(format!("Invalid {field}.filenamePrefix")),
+    }
+}
+
+/// `transition_data` for DaSiWaH3TransitionGuide (pack transition.py::transition_spec): two media rows,
+/// context 17k+5 >= 5 per side, bridge >= 12 keeping the 2*context+bridge window on 17k+5.
+pub(crate) fn transition_data(i: &Value) -> Result<Option<Value>, String> {
+    let Some(t) = i["h3"].get("transition") else {
+        return Ok(None);
+    };
+    if !keys_in(
+        t,
+        &[
+            "files",
+            "contextFrames",
+            "transitionFrames",
+            "prompt",
+            "filenamePrefix",
+        ],
+    ) {
+        return Err("Unknown h3.transition fields".into());
+    }
+    let rows = t["files"]
+        .as_array()
+        .filter(|a| a.len() == 2)
+        .ok_or("h3.transition.files needs exactly two clips")?
+        .iter()
+        .map(|f| media_row(f, "h3.transition.files"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let context = t["contextFrames"]
+        .as_u64()
+        .filter(|c| *c >= 5 && c % 17 == 5)
+        .ok_or("h3.transition.contextFrames must be 5, 22, 39 … (17k + 5)")?;
+    let gap = t["transitionFrames"]
+        .as_u64()
+        .filter(|g| *g >= 12 && (2 * context + g) % 17 == 5 && 2 * context + g <= 3600)
+        .ok_or("h3.transition.transitionFrames must keep the window on 17k + 5 (12, 29, 46 … with context 22)")?;
+    let prompt = match t.get("prompt") {
+        None | Some(Value::Null) => "",
+        Some(p) => p
+            .as_str()
+            .filter(|p| p.chars().count() <= 4000 && !p.contains('\0'))
+            .ok_or("h3.transition.prompt must be text of at most 4000 characters")?,
+    };
+    let prefix = filename_prefix(t, "H3_Transition", "h3.transition")?;
+    Ok(Some(
+        json!({"version":1,"rows":rows,"context_frames":context,"transition_frames":gap,"prompt":prompt,"filename_prefix":prefix}),
+    ))
+}
+
+/// Turns a plain H3 generation into one transition window: the Director's model/sampler graph with the
+/// Guide swapped for DaSiWaH3TransitionGuide, and only TransitionRender (`TR`) after the sampler.
+/// The bridge lands in input/h3_transitions/ (job status `transition`), not as a job output.
+fn transition_graph(g: &mut Value, data: &Value) {
+    let window =
+        data["context_frames"].as_u64().unwrap() * 2 + data["transition_frames"].as_u64().unwrap();
+    g["D"]["inputs"]["duration"] = json!(window as f64 / 24.0);
+    g["G"] = json!({"class_type":"DaSiWaH3TransitionGuide","inputs":{"clip":["C",0],"vae":["V",0],"guide":["D",0],"transition_data":data.to_string(),"audio_vae":["AV",0]}});
+    g["TR"] = json!({"class_type":"DaSiWaH3TransitionRender","inputs":{"latent":["5",0],"vae":["V",0],"audio_vae":["AV",0],"transition":["G",2]}});
+    // Keep only what the render needs; decode/export/continuity nodes of the plain generation go.
+    let mut keep = std::collections::HashSet::new();
+    let mut stack = vec!["TR".to_string()];
+    while let Some(id) = stack.pop() {
+        if !keep.insert(id.clone()) {
+            continue;
+        }
+        for v in g[&id]["inputs"]
+            .as_object()
+            .into_iter()
+            .flat_map(|o| o.values())
+        {
+            if let Some(src) = v
+                .get(0)
+                .and_then(Value::as_str)
+                .filter(|_| v.as_array().is_some_and(|a| a.len() == 2))
+            {
+                stack.push(src.to_string());
+            }
+        }
+    }
+    g.as_object_mut().unwrap().retain(|id, _| keep.contains(id));
 }
 
 pub(crate) fn validate(i: &Value) -> Result<&str, String> {
@@ -1045,6 +1133,18 @@ pub(crate) fn validate(i: &Value) -> Result<&str, String> {
             return Err("faceRefine runs on MiniMax H3".into());
         }
         crate::jobs_face_refine::validate(f)?;
+    }
+    if i["h3"].get("transition").is_some() {
+        transition_data(i)?;
+        // The window is a plain bridge render: no capture, no post stages (Render saves it directly).
+        if !is_h3(family)
+            || ["latentUpscale", "videoPost", "faceRefine"]
+                .iter()
+                .any(|k| i.get(*k).is_some())
+            || i["h3"]["continuity"]["capture"] == true
+        {
+            return Err("h3.transition runs on MiniMax H3 without Continuity capture, latent upscale or post-processing".into());
+        }
     }
     if i.get("loras").is_some_and(|l| {
         !l.as_array().is_some_and(|a| {
@@ -1191,6 +1291,9 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         "wan" => wan(i)?,
         _ => h3(i),
     };
+    if let Some(data) = transition_data(i)? {
+        transition_graph(&mut graph, &data);
+    }
     if let Some(preview) = i.get("enhancedPreview") {
         // Patch each final sampling model, including Director output, split Wan and H3 upscale.
         let targets: Vec<(String, Value)> = graph

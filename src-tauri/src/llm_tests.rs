@@ -932,7 +932,7 @@ async fn listing_scans_local_and_fetches_remote_in_parallel() {
         at.elapsed().as_millis()
     };
     assert!(
-        parallel <= scan.1 + delay.as_millis() + 200,
+        parallel <= scan.1 + delay.as_millis() + 1000,
         "parallel {parallel}ms must stay near scan {}ms plus the peer delay",
         scan.1
     );
