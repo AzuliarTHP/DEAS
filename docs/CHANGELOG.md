@@ -9,20 +9,20 @@
 - **Weekly Forge data update works again.** `tools/update-forge-data.py` still expected four data files, while the bundle has carried `character_series.json` and `analysis-describe.md` since 0.2.22, so every check rejected the bundled data. Both files are now part of the upstream source list and are refreshed and verified like the others.
 - Developer: the Workbench suite is split into eight files that share `Workbench.testHarness.tsx` (same 536 tests; the 15 H3 continuity variants are spread over three files). Vitest runs them in parallel: about 34 s for these files instead of 158 s in one. The Python tool tests (`tools/tests`) pass again, with explicit UTF-8 on every script read/write, and CI now runs them.
 
-## 0.2.32 BETA
+## 0.2.32 BETA (untagged; shipped in 0.2.33)
 
 - **H3 Continuity capture works together with Seamless loop.** With New segment only, the node pack rejected the job before sampling because the checkpoint export took the loop's retimed audio instead of the Segment Decode's; with the full timeline the looped, shorter ending did not match the saved latent. The checkpoint now saves the Original (unlooped decode with its own audio), and the looped Processed video is still produced. Captures without a loop keep publishing the Processed video as before.
 
-## 0.2.31 BETA
+## 0.2.31 BETA (untagged; shipped in 0.2.33)
 
 - **Wildcard pictures show the prompt that actually ran.** The Media metadata pane now lists the evaluated positive/negative prompt at the top, and Media Analysis **Made with** shows it whole instead of a jumble of the base text, style and selection rules. Both read it from the A1111 `parameters` text the DaSiWa saver already writes; the embedded ComfyUI graph still keeps the base text and wildcard rules, so a rerun reproduces the same pick. Pictures without that text still show the graph pieces marked as partial, nothing is guessed.
 
-## 0.2.30 BETA
+## 0.2.30 BETA (untagged; shipped in 0.2.33)
 
 - **H3 regenerate without upscale.** Target resolution gains **Regenerate only, keep input resolution** (`Original`): the generated draft is refined at its exact current latent canvas, with no learned-upscaler requirement or resizing. The converted refiner LoRA and pinned three-step CFG-1 recipe remain required. Upscaler selection is hidden in this mode but its saved choice is retained; Run Plan and history preserve the mode and canvas. Native readiness probes the backend target choices and requires node pack 0.5.52 for Original; existing 1080P/2K/4K targets keep their model checks and behavior.
 - **Post-Processing overlay: no unnecessary horizontal scrollbar.** Long selected model names and missing-model warnings no longer force the settings grid wider than its card. Controls and text stay within the panel at desktop and narrow widths; viewport-limited vertical scrolling and keyboard/wheel access are retained.
 
-## 0.2.29 BETA
+## 0.2.29 BETA (untagged; shipped in 0.2.33)
 
 - **H3 Hi-Res Regenerate internal phases.** With DaSiWa node pack 0.5.51, Logs now identify LoRA preparation, each latent-upscale resolution pass/window (4K via 2K) and each refinement window, with dimensions, three-step CFG-1 settings and elapsed wall time. Directed events are scoped to the owning prompt and known regenerate node, validated and bounded/deduplicated; internal telemetry never changes lifecycle authority or claims a whole node completed. Older node packs keep graph-level logging.
 

@@ -4,19 +4,24 @@
 
 - Fixed: moving a Linux video preview before it was ready could crash the window.
 - Removed leftover debug logging from the Downloads plugin panel.
+- The weekly Prompt Forge data update works again.
 
-## 0.2.32 BETA
+## 0.2.32 BETA (untagged; shipped in 0.2.33)
 
 - H3 Continuity capture and Seamless loop can now be used together: the checkpoint keeps the unlooped Original, the looped video is still saved.
 
-## 0.2.31 BETA
+## 0.2.31 BETA (untagged; shipped in 0.2.33)
 
 - Pictures made with wildcards now show the prompt that was actually used, both in the Media metadata pane and in Media Analysis **Made with**.
 
-## 0.2.30 BETA
+## 0.2.30 BETA (untagged; shipped in 0.2.33)
 
 - **H3 Hi-Res Regenerate → Target resolution → Regenerate only, keep input resolution** refines the generated draft without enlarging it or requiring an upscaler model. Needs node pack 0.5.52; the Regenerate LoRA is still required. The source picture’s resolution is not used to resize the generated draft.
 - The Post-Processing overlay no longer grows a horizontal scrollbar for long model names or warnings; scrolling on short windows still keeps every control reachable.
+
+## 0.2.29 BETA (untagged; shipped in 0.2.33)
+
+- Logs now name the internal phases of H3 Hi-Res Regenerate (LoRA preparation, each upscale and refinement window) and the model setup steps, so slow or failing steps are easier to find.
 
 ## 0.2.28 BETA
 
