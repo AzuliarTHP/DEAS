@@ -93,7 +93,7 @@ window.__TAURI_INTERNALS__.invoke=async(c,a)=>{
         forbidden = page.evaluate("__collection.calls.filter(c=>/(_start|_stop|_write|_send|_generate|_run|_submit|_cancel)$/.test(c.command))")
         assert not forbidden, forbidden
         result = {'status': 'PASS', 'kind': 'Chromium with strict simulated IPC and actual starter manifest', 'checks': ['starter pack applies and navigation is retained', 'built-ins remain available without pack duplication', 'unique starter pack reload', 'prompt retention', 'runtime refresh after palette edit', 'no remote requests, writes or generation'], 'screenshots': str(shots)}
-        (shots/'result.json').write_text(json.dumps(result, indent=2)+'\n')
+        (shots/'result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result, indent=2), flush=True)
     finally:
         context.close()

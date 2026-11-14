@@ -268,7 +268,7 @@ def verify(browser, url, screenshots):
         result = {'status': 'PASS', 'checksPassed': len(checks), 'checks': checks,
                   'kind': 'Chromium DOM and strict simulated native chooser/draft/preparation/jobs; not native Rust, filesystem, encoder or GPU acceptance',
                   'screenshots': str(screenshots)}
-        (screenshots/'video-source-result.json').write_text(json.dumps(result, indent=2)+'\n')
+        (screenshots/'video-source-result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result, indent=2), flush=True)
     finally:
         context.close()

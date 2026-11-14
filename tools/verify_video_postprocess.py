@@ -220,7 +220,7 @@ args.scratch.mkdir(parents=True, exist_ok=True)
 results = []
 if args.graphs:
     validation = load('_deas_capture_validation', args.node_pack / 'nodes/h3_continuity/validation.py')
-    for name, g in json.loads(args.graphs.read_text()).items():
+    for name, g in json.loads(args.graphs.read_text(encoding='utf-8')).items():
         if name.startswith('h3'):
             validation.validate_capture_graph(g, 'G', 'segment' if 'segment' in name else 'full')
             results.append(f'{name}: real pack capture validation passed')

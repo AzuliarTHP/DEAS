@@ -6,6 +6,8 @@
 - **No more debug lines in the console when browsing download providers.** Three leftover `DBG` logs in the Downloads plugin panel are gone.
 - **Project lock errors name the cause.** "Project already has a writer or cannot be locked" now carries the operating-system reason.
 - Developer: Vitest also runs `src/**/*.test.ts` (two library suites never ran before; both pass), an H3 transition with `prompt: null` is treated as no prompt, and the LLM parallel-scan timing test allows 1 s of scheduler slack.
+- **Weekly Forge data update works again.** `tools/update-forge-data.py` still expected four data files, while the bundle has carried `character_series.json` and `analysis-describe.md` since 0.2.22, so every check rejected the bundled data. Both files are now part of the upstream source list and are refreshed and verified like the others.
+- Developer: the Workbench suite is split into eight files that share `Workbench.testHarness.tsx` (same 536 tests; the 15 H3 continuity variants are spread over three files). Vitest runs them in parallel: about 34 s for these files instead of 158 s in one. The Python tool tests (`tools/tests`) pass again, with explicit UTF-8 on every script read/write, and CI now runs them.
 
 ## 0.2.32 BETA
 

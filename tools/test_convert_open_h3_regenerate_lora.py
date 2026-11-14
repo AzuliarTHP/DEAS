@@ -192,7 +192,7 @@ class ConvertTest(unittest.TestCase):
                 r = t.shape[0]  # 3 or 4: refiner 1 / turbo 1 / sharp rest
                 ranks[k.removeprefix("transformer.").rsplit(".lora_", 1)[0]] = {
                     "rank": r, "parts": {"refiner": 1, "turbo": 1, "sharp": r - 2}}
-        (self.dir / "module_ranks.json").write_text(json.dumps(ranks))
+        (self.dir / "module_ranks.json").write_text(json.dumps(ranks), encoding="utf-8")
         buf = io.StringIO()
         with redirect_stdout(buf):
             conv.main([str(self.dir / "lora.safetensors"), str(self.dir / "o.safetensors"), "--drop", "turbo"])
