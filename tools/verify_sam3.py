@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 URL = (sys.argv[1] if len(sys.argv) > 1 else 'http://127.0.0.1:1421').rstrip('/')
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.home()/'.hermes/cache/scratch/deas-sam-browser'
 OUT.mkdir(parents=True, exist_ok=True)
-module = ast.parse((ROOT/'tools/verify_inpaint.py').read_text())
+module = ast.parse((ROOT/'tools/verify_inpaint.py').read_text(encoding='utf-8'))
 INIT = next(ast.literal_eval(node.value) for node in module.body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'INIT' for t in node.targets))
 SAM = r"""
 window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};

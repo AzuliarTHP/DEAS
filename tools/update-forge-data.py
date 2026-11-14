@@ -21,6 +21,8 @@ SOURCES = {
     "randomizer.json": "config/randomizer.json",
     "tags.sqlite": "data/seed/tags.sqlite",
     "character_traits.sqlite": "data/seed/character_traits.sqlite",
+    "character_series.json": "data/seed/character_series.json",
+    "analysis-describe.md": "prompts/analysis/describe.md",
 }
 FILES = ("forge-pack.json", *SOURCES)
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -74,7 +76,7 @@ def validate_data(directory):
     if manifest.get("repository") != UPSTREAM or not SHA.fullmatch(str(manifest.get("commit", ""))):
         raise ValueError("Invalid source repository or full commit SHA")
     if set(manifest.get("files", {})) != set(FILES):
-        raise ValueError("Manifest must contain exactly the four Forge data files")
+        raise ValueError("Manifest must contain exactly the bundled Forge data files")
     if "sourceLicenseSha256" in manifest and manifest["sourceLicenseSha256"] != sha256((ROOT / "LICENSE").read_bytes()):
         raise ValueError("Source license changed: manual review required")
     payload = {}

@@ -119,7 +119,7 @@ def verify(browser, url, shots):
         calls = page.evaluate('__collection.calls')
         assert not [c for c in calls if c['command'] in ('native_download_start','native_backend_start','native_audio_enhance_install','native_job_submit')]
         result={'status':'PASS','checks':checks,'submissions':page.evaluate('__collection.aceSubmissions'),'screenshots':str(shots),'kind':'Chromium; strict simulated IPC, no actual model generation'}
-        (shots/'ace-music-result.json').write_text(json.dumps(result,indent=2)+'\n')
+        (shots/'ace-music-result.json').write_text(json.dumps(result,indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result,indent=2))
     except Exception:
         page.screenshot(path=str(shots/'failure.png'))

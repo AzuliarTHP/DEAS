@@ -328,7 +328,7 @@ def main():
         for width in (1440, 390):
             results.extend(run_case(browser, width))
         browser.close()
-    (OUT/'results.json').write_text(json.dumps({'cases': results, 'editorPreserved': True, 'geometryPreserved': True, 'viewerPathUpdated': True, 'unstarPreservesNamedRawPath': True, 'multiOutputIdentityPreserved': True, 'fixtureOnly': True}, indent=2)+'\n')
+    (OUT/'results.json').write_text(json.dumps({'cases': results, 'editorPreserved': True, 'geometryPreserved': True, 'viewerPathUpdated': True, 'unstarPreservesNamedRawPath': True, 'multiOutputIdentityPreserved': True, 'fixtureOnly': True}, indent=2)+'\n', encoding='utf-8')
     print(f'PASS: {len(results)} rendered-bound states at 1440/390 px; bottom controls, German wrapping, keyboard focus, image/video eligibility, multi-output Star provenance and retained editor geometry; no generation/upload (simulated IPC).')
 
 

@@ -30,7 +30,8 @@ class ScriptPathTests(unittest.TestCase):
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ('read_text', 'write_text'):
                     with self.subTest(script=path.name, line=node.lineno):
                         encodings = [ast.literal_eval(k.value) for k in node.keywords if k.arg == 'encoding']
-                        self.assertEqual(encodings, ['utf-8'])
+                        # utf-8-sig is explicit too: user-edited theme packs may carry a BOM.
+                        self.assertIn(encodings, (['utf-8'], ['utf-8-sig']))
 
     def test_linux_probes_reject_windows_before_optional_imports_or_writes(self):
         for name in LINUX_PROBES:

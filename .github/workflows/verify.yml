@@ -20,6 +20,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - run: python3 -m unittest discover -s tools/tests
       - run: npm run build
       - uses: astral-sh/setup-uv@v6
       - name: Install browser for viewport regression tests

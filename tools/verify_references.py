@@ -167,5 +167,5 @@ with sync_playwright() as p:
             reports.append({'locale': locale, 'width': width, 'modal': True, 'nestedModal': True, 'focusTrap': True, 'editorSurvivesLaneChange': True, 'overviewPlayers': 0, 'videoCrop': [1, 3], 'audioCrop': [2, 4]})
             context.close()
     browser.close()
-    (OUT / 'results.json').write_text(json.dumps(reports, indent=2))
+    (OUT / 'results.json').write_text(json.dumps(reports, indent=2), encoding='utf-8')
     print(f'PASS {len(reports)} locale/width cases; real MP4/WAV crop playback, mocked backend IPC, no inference')

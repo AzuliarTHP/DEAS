@@ -233,7 +233,7 @@ def main():
         for width in (1440, 390):
             results.extend(run_case(browser, width))
         browser.close()
-    (OUT / 'results.json').write_text(json.dumps({'cases': results, 'fixtureOnly': True, 'noGenerationOrUpload': True, 'simulatedCompletionsPerViewport': 4}, indent=2) + '\n')
+    (OUT / 'results.json').write_text(json.dumps({'cases': results, 'fixtureOnly': True, 'noGenerationOrUpload': True, 'simulatedCompletionsPerViewport': 4}, indent=2) + '\n', encoding='utf-8')
     print(f'PASS: {len(results)} U-01 states at 1440/390 px; preset/Custom, MOSS identity and normalized resize/undo, stale aspect/context replies, consumed exact Send and N/A prompt-only preservation (simulated IPC).')
 
 

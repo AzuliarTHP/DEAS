@@ -174,7 +174,7 @@ def verify(browser, url, screenshots):
                 loaded(page)
                 check_geometry(page, width, locale)
                 labels = page.locator('[data-output-role]').all_text_contents()
-                translations = json.loads((Path(__file__).resolve().parents[1]/'src/features/studio/locales'/f'{locale}.json').read_text())
+                translations = json.loads((Path(__file__).resolve().parents[1]/'src/features/studio/locales'/f'{locale}.json').read_text(encoding='utf-8'))
                 assert labels == [translations['studio.jobs.role.processed'], translations['studio.jobs.role.original']], (locale, labels)
                 occluded = page.locator('[data-output-role]').evaluate_all("""buttons=>buttons.filter(button=>{
                     const r=button.getBoundingClientRect();const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
@@ -191,7 +191,7 @@ def verify(browser, url, screenshots):
         forbidden = page.evaluate("__collection.calls.filter(c=>/run|stop|submit|prepare|interrupt|cancel/.test(c.command))")
         assert not forbidden, forbidden
         result = {'status': 'FAIL' if FINDINGS else 'PASS', 'functional_checks_passed': len(passed), 'checks': passed, 'product_findings': FINDINGS, 'kind': 'actual Chromium; synthetic media; strict simulated Tauri IPC; export is simulated, not filesystem acceptance', 'screenshots': str(screenshots)}
-        (screenshots/'result.json').write_text(json.dumps(result, indent=2)+'\n')
+        (screenshots/'result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result, indent=2), flush=True)
     finally:
         context.close()

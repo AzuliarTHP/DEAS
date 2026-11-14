@@ -137,7 +137,7 @@ script = r'''
  })();
 })();
 '''.replace('FIXTURE_URL', json.dumps(url)).replace('EXTRA_SOURCE', json.dumps(str(source.with_name('c.mp4')))).replace('AUDIO_NAME', json.dumps(audio_name))
-(output / 'probe.js').write_text(script)
+(output / 'probe.js').write_text(script, encoding='utf-8')
 env = dict(os.environ, DEAS_VIDEO_TEST_SCRIPT=str(output / 'probe.js'), DEAS_VIDEO_PROBE='1', XDG_CONFIG_HOME=str(output / 'config'), XDG_DATA_HOME=str(output / 'data'), XDG_CACHE_HOME=str(output / 'cache'))
 with (output / 'native.log').open('w') as log:
     process = subprocess.Popen([str(Path(binary).resolve())], env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -152,11 +152,11 @@ with (output / 'native.log').open('w') as log:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
 
-text = (output / 'native.log').read_text()
+text = (output / 'native.log').read_text(encoding='utf-8')
 reports = [json.loads(line.split('DEAS_VIDEO_PROBE ', 1)[1]) for line in text.splitlines() if 'DEAS_VIDEO_PROBE ' in line]
 frames = re.findall(r'DEAS_VIDEO_FRAME id=([^ ]+) hash=(\d+) range=(\d+) gl_error=(\d+) position=([^\n]+)', text)
 assert returncode == 0 and any(r.get('phase') == 'passed' for r in reports), text[-8000:]
 if not audio_files:
     assert len({f[1] for f in frames}) >= 2 and all(f[3] == '0' for f in frames), frames
-(output / 'results.json').write_text(json.dumps({'reports': reports, 'framebuffer_samples': frames}, indent=2))
+(output / 'results.json').write_text(json.dumps({'reports': reports, 'framebuffer_samples': frames}, indent=2), encoding='utf-8')
 print(json.dumps({'passed': True, 'nativeReferencesModal': True, 'framebuffer_samples': len(frames), 'output': str(output)}))

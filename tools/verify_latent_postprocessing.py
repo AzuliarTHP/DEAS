@@ -8,7 +8,7 @@ Requires installed node_modules/Vite, Python Playwright and its Chromium binary.
 Owns only its standalone loopback Vite child unless --url is supplied. All artifacts
 are under ~/.hermes/cache/scratch. No model/backend/download service is contacted.
 Schema snapshots: lib/models.ts (LocalModel), lib/execution.ts (RecipeAllowlist),
-lib/recipePrerequisites.ts, lib/downloads.ts; values mirror Workbench.test.tsx.
+lib/recipePrerequisites.ts, lib/downloads.ts; values mirror the Workbench.*.test.tsx suite.
 The browser-only fixture-module patch exposes Workbench's existing planVisible prop;
 no application component, DownloadPanel, or file on disk is replaced.
 """
@@ -257,7 +257,7 @@ def verify_case(browser, url, artifacts, family, installed):
             for locale in LOCALES:
                 page.get_by_role('combobox', name='Fixture language').select_option(locale)
                 page.locator('[data-dock-tab="post"]').click()
-                translations = json.loads((ROOT/'src/features/studio/locales'/f'{locale}.json').read_text())
+                translations = json.loads((ROOT/'src/features/studio/locales'/f'{locale}.json').read_text(encoding='utf-8'))
                 expect(toggle.locator('..')).to_contain_text(translations['studio.run.latent.enabled'])
                 expect(page.locator('[data-latent-upscale-model]').locator('..')).to_contain_text(translations['studio.run.latent.model'])
                 expect(page.locator('[data-latent-upscale-offer]')).to_have_text(translations['studio.run.latent.download'])
@@ -306,7 +306,7 @@ def verify_case(browser, url, artifacts, family, installed):
             checks.append('turning opt-in off removes submitted postprocessing intent')
         return {'family': family, 'installed': installed, 'checks': checks}
     finally:
-        (artifacts/f'{family}-{installed}-ipc.json').write_text(json.dumps(page.evaluate('window.__latent'), indent=2)+'\n')
+        (artifacts/f'{family}-{installed}-ipc.json').write_text(json.dumps(page.evaluate('window.__latent'), indent=2)+'\n', encoding='utf-8')
         context.close()
 
 
@@ -339,7 +339,7 @@ def main():
         result['error'] = str(error)
         raise
     finally:
-        (artifacts/'result.json').write_text(json.dumps(result, indent=2)+'\n')
+        (artifacts/'result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result, indent=2), flush=True)
 
 

@@ -113,7 +113,7 @@ def verify(browser, url, shots):
         assert not [c for c in calls if c['command'] in forbidden]
         collection.assert_clean(page, errors)
         result = {'checks': checks, 'writes': writes, 'errors': errors, 'evidence': 'Chromium UI with simulated native IPC; Rust filesystem tests verify actual sidecar preservation separately'}
-        (shots/'result.json').write_text(json.dumps(result, indent=2))
+        (shots/'result.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         print(json.dumps(result, indent=2), flush=True)
     finally:
         context.close()

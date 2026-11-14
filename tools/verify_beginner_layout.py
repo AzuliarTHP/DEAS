@@ -299,7 +299,7 @@ localStorage.setItem('deas.pref.interface.experience', JSON.stringify('advanced'
               'parityFindings': findings, 'checks': checks,
               'kind': 'actual Chromium; strict simulated IPC only; no native/backend/GPU execution',
               'screenshots': str(shots)}
-    (shots/'beginner-layout-result.json').write_text(json.dumps(result, indent=2)+'\n')
+    (shots/'beginner-layout-result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
     print(json.dumps(result, indent=2))
     assert not findings, f'{len(findings)} parity findings; see {shots}/beginner-layout-result.json'
 

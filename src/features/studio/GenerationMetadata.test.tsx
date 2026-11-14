@@ -81,7 +81,7 @@ test('the metadata restore button hands back the exact immutable job; file rows 
  vi.mocked(readImageMetadata).mockResolvedValueOnce([['parameters','cat\nSteps: 4, Sampler: Euler a, CFG scale: 2, Seed: 9, Size: 64x64, Model: m']]);
  const {rerender}=render(<I18nProvider><GenerationMetadata job={null} media={media('a.png')} onRestore={onRestore}/></I18nProvider>);
  expect(await screen.findByText('cat Steps: 4, Sampler: Euler a, CFG scale: 2, Seed: 9, Size: 64x64, Model: m')).toBeTruthy();
- // The dock no longer carries the file's apply button — the preview's More menu owns that action (see Workbench.test).
+ // The dock no longer carries the file's apply button — the preview's More menu owns that action (see the Workbench.*.test suite).
  expect(screen.queryByRole('button',{name:'Use these settings'})).toBeNull();
  expect(generationSettings([['parameters','cat\nSteps: 4, Sampler: Euler a, CFG scale: 2, Seed: 9, Size: 64x64, Model: m']])).toMatchObject({positive:'cat',checkpoint:'m',seed:9,steps:4,cfg:2,sampler:'euler_ancestral',width:64,height:64});
  // Videos carry only the ComfyUI prompt/workflow container tags.

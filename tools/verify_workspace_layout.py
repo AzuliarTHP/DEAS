@@ -151,7 +151,7 @@ def verify(browser, url, shots):
         forbidden=page.evaluate("__collection.calls.filter(c=>/(_start|_stop|_write|_send|_generate|_run|_submit|_cancel)$/.test(c.command))")
         assert not forbidden, forbidden
         result={'status':'PASS','checksPassed':len(checks),'tabCount':len(tabs),'checks':checks,'kind':'Chromium geometry; strict simulated IPC; no native services','screenshots':str(shots)}
-        (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n')
+        (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result,indent=2))
     finally:
         context.close()

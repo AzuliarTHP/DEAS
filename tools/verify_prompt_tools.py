@@ -89,7 +89,7 @@ def verify(browser, url, shots):
         collection.assert_clean(page, errors)
         assert not page.evaluate('__collection.calls.some(c=>/(_run|_submit|_start|_stop|_write|_generate)$/.test(c.command))')
         result = {'status': 'PASS', 'checks': checks, 'kind': 'Chromium, simulated local tag IPC; no native spell rendering', 'screenshots': str(shots)}
-        (shots/'result.json').write_text(json.dumps(result, indent=2)+'\n')
+        (shots/'result.json').write_text(json.dumps(result, indent=2)+'\n', encoding='utf-8')
         print(json.dumps(result, indent=2))
     finally:
         context.close()

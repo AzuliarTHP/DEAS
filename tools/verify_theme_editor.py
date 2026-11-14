@@ -179,7 +179,7 @@ def embedded(browser,root,manifest,checks,errors):
 
 def verify(browser,url,shots):
  root=Path(__file__).resolve().parents[1]
- manifest=(root/'theme-packs/new-theme/theme.json').read_text()
+ manifest=(root/'theme-packs/new-theme/theme.json').read_text(encoding='utf-8')
  checks=[];errors=[]
  canonical=(root/'theme-packs/EDIT-THEMES.html').read_bytes()
  copies=list((root/'theme-packs').glob('*/themes/*/EDIT-THEME.html'))
@@ -241,7 +241,7 @@ def verify(browser,url,shots):
   expect(page.locator('#status')).to_contain_text('Preview mode')
   page.locator('#name').fill('Downloaded theme')
   with page.expect_download() as download:page.get_by_role('button',name='Save changes',exact=True).click()
-  assert json.loads(Path(download.value.path()).read_text())['name']=='Downloaded theme'
+  assert json.loads(Path(download.value.path()).read_text(encoding='utf-8'))['name']=='Downloaded theme'
   expect(page.locator('[data-asset=background]')).to_be_disabled()
   checks.append('browser without directory access downloads a valid manifest and disables image replacement')
   page.evaluate("""()=>{window.__fallbackReads=0;const text=File.prototype.text;File.prototype.text=function(){__fallbackReads++;return text.call(this);};}""")
@@ -252,6 +252,6 @@ def verify(browser,url,shots):
  finally:fallback.close()
  embedded(browser,root,manifest,checks,errors)
  result={'status':'PASS','kind':'Actual Chromium; offline editor save uses strict directory-handle fixture, native browser folder permission remains a manual gate','checks':checks,'screenshots':str(shots)}
- (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2),flush=True)
+ (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n', encoding='utf-8');print(json.dumps(result,indent=2),flush=True)
 
 if __name__=='__main__':runner.verify=verify;runner.main()

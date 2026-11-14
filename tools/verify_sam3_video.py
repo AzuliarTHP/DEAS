@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix='deas-sam-video-', dir=options.scratch) 
             spec.loader.exec_module(adapter)
             nodes.NODE_CLASS_MAPPINGS.update(adapter.NODE_CLASS_MAPPINGS)
             nodes.NODE_CLASS_MAPPINGS.update({cls.define_schema().node_id:cls for cls in (LoadVideo,GetVideoComponents,SAM3_VideoTrack,SAM3_TrackToMask,MaskToImage,CreateVideo,SaveVideo)})
-            graph = json.loads(options.graph.read_text())
+            graph = json.loads(options.graph.read_text(encoding='utf-8'))
             checkpoint = graph['1']['inputs']['ckpt_name']
             source = graph['2']['inputs']['file']
             assert isinstance(checkpoint,str) and checkpoint and '\\' not in checkpoint
