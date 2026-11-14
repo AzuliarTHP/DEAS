@@ -1,5 +1,17 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.2.33 (published)
+
+Published 2026-11-14 as `v0.2.33` (https://github.com/darksidewalker/DEAS/releases/tag/v0.2.33), rolling up the untagged 0.2.29–0.2.32 sections; tag on gitea and github resolves to source commit `feb3bc032a2535f24b3052931e9637fd190c2638` (tree `db0c2a5a9d350528b1f3ac9e6751cc5ba4ec37a8`). Built locally in the main checkout (clean tree) with `build-linux.sh --release` (rustc 1.97.0, node v26.13.1); Windows exe cross-built with `cargo xwin`; GitHub Actions workflows are disabled, so the release was created manually from the staged four-asset set.
+
+- Gates on the source commit: `npm run typecheck`, `test:core` 158/158, Vitest 1903/1903 (100 files), Python `tools/tests` 11 OK, `cargo fmt --check`, `cargo clippy --locked --release --lib --bins -D warnings`, `cargo clippy --locked --all-targets -D warnings`, serial `cargo test --locked -- --test-threads=1` (975 passed / 72 ignored), `cargo xwin check --all-targets`, `cargo xwin clippy --all-targets -D warnings`.
+- Linux: glibc floor 2.39 (`objdump -T`), `ldd` with zero "not found", embedded `index-DMh4rHtr.js` found in both binaries. Windows exe PE32+, not runtime-accepted.
+- Assets, hashed from the re-downloaded release (`gh release download`, `sha256sum -c SHA256SUMS` OK):
+  - `deas-linux-amd64` `79efbe1ed85e40dbe6689c0c7c0b4531a6d886bf7267e72626208a0750a0755e`
+  - `deas.exe` `e6061d1891030a2b3af3f3ef0ebd0f5514957e381c2013729d9c78df26568eb6`
+  - `BUILD-MANIFEST.json` `568f8f3241910635bdceaf8d0644a27963baf8df6f5e7ab4e0d7fb37ff7944eb`
+  - `SHA256SUMS` `401965029ebe243812ce1af544e6a74df033e87e789240a3e9958f4abbac49af`
+
 ## H3 transitions, slice T1: native transition job (0.2.33; no UI yet)
 
 - Contract source: pack 0.5.52 `nodes/h3_continuity/transition.py` (`transition_spec`, `DaSiWaH3TransitionGuide`/`Render` inputs pinned in `h3_join_contract_pins_pack_nodes_and_json_schema`). The emitted `transition_data` rows pass the pack's own `assembly._request`; grid rules (context 17k+5 ≥ 5, bridge ≥ 12, window 17k+5) mirrored and tested.
