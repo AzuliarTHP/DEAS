@@ -1,26 +1,26 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
-## H3 transitions, slice T1: native transition job (working tree, after 0.2.32; no UI yet)
+## H3 transitions, slice T1: native transition job (0.2.33; no UI yet)
 
 - Contract source: pack 0.5.52 `nodes/h3_continuity/transition.py` (`transition_spec`, `DaSiWaH3TransitionGuide`/`Render` inputs pinned in `h3_join_contract_pins_pack_nodes_and_json_schema`). The emitted `transition_data` rows pass the pack's own `assembly._request`; grid rules (context 17k+5 ≥ 5, bridge ≥ 12, window 17k+5) mirrored and tested.
 - Regressions: `h3_transition_swaps_the_guide_and_renders_only_the_bridge` (exact wire JSON, Guide inputs, `TR` render, Director duration 73/24, model/sampler nodes identical to the plain generation, no SP/SD/7/B7/P), `h3_transition_rejects_off_grid_extra_clips_unsafe_files_and_post_stages` (grid, clip count, path escape, empty trim, prompt length, prefix, unknown field; capture/latent upscale/videoPost refused by the transition rule), `transition_bridge_is_read_only_from_the_render_node_inside_h3_transitions`. Offline `tools/validate_video_graphs.py` on the dumped graph (`dump_h3_transition_graph`): **valid, outputs `TR`**.
 - Not reachable from the UI yet (slice T2), so no version bump or CHANGELOG entry; no real render (slice T3).
 
-## H3 Continuity capture with Seamless loop — 0.2.32 (unreleased working tree)
+## H3 Continuity capture with Seamless loop — 0.2.32 (shipped in 0.2.33)
 
 - Reproduction against the installed pack (`h3_continuity/validation.py::validate_capture_graph`, node pack 0.5.52) on graphs from the DEAS compiler (REF2VA continuation, `videoPost.loop` RIFE beat-aware): New segment only, with and without latent upscale, was **rejected before inference** ("Export images derived from, and audio directly from, the same Segment Decode") because Publish read exporter `7`, whose audio is `PG[1]` ← `LP[1]` (loop-remapped). The full-timeline graph passed graph validation, but `DaSiWa_SeamlessLoop` trims up to 10 % per end and overlaps the seam, so the export is shorter than the saved timeline and the Publish duration check (`nodes.py`, tolerance max(0.125 s, 2 frames)) rejects it after inference unless the trim happens to stay within tolerance (inferred from source, not executed); the pack also forbids the analogous ending changes (`pingpong`, `crop_to_audio`).
 - Fix (`jobs_video.rs` H3 graph): with `videoPost.loop`, `DaSiWaH3ContinuityPublish.filename` reads the baseline `B7` (images/audio straight from the decode, unlooped duration) instead of `7`. The loop product, its gated audio and all graphs without a loop are unchanged. No node-pack change.
 - Evidence: regression `h3_capture_with_seamless_loop_publishes_the_original` (segment/full × with/without latent upscale; RED before, GREEN after). The pack validator now accepts all four compiled graphs; `tools/validate_video_graphs.py` against the owned core: **ALL VALID** (outputs `B7`, `P`, `7`).
 - Not run: a real capture + loop job on a backend (RIFE inference, actual Publish) and native UI check.
 
-## Wildcard executed prompt in picture metadata — 0.2.31 (unreleased working tree)
+## Wildcard executed prompt in picture metadata — 0.2.31 (shipped in 0.2.33)
 
 - Reproduction (closes the PLAN §4.11 reproduction step): `tools/verify_wildcard_node.py` ran the DEAS-compiled wildcard graph through the real `DaSiWa_WildcardPresetPromptBuilder` and the real `DaSiWa_MetadataImageSaver` (node pack 0.5.52, CPU, no model). The saved PNG carries the evaluated prompt only in `parameters` (`manual base, (1girl:1.2)` / `blur`); the `prompt` graph keeps `WP.positive_input` = `manual base` plus seed/`selection_state` (as required for reruns). DEAS readers on that file: **Apply settings from file** (`generationSettings`) was already correct; Media Analysis **Made with** (`comfyMeta.ts::madeSummary`) showed `Booru, {"Character Selection/1 Girl/presets":…}, manual base, blur` for both positive and negative; the Media metadata pane (`imageMetadataRows`) showed the WP template fields and the raw `parameters` row, but no positive/negative row. Video pipelines do not offer wildcards (Run blocked with "image only"); every DEAS wildcard graph uses the DaSiWa saver because both nodes ship in the same pack, so the core-`SaveImage` variant does not occur from DEAS.
 - Fix, DEAS readers only (no node-pack or compiler change): `madeSummary` takes the saver's text when the graph prompt is run-time assembled; `imageMetadataRows` adds `prompt`/`negative_prompt` rows from `parameters` when the graph has no literal prompt. Sentinel-cleaned through `generationSettings`; literal graph prompts are not duplicated; without `parameters` nothing is invented (stays partial).
 - Regression `src/lib/imageMetadata.test.tsx` (compiler graph + the real saver's exact `parameters`): RED before the fix, GREEN after. Gates: typecheck, core 158/158, full UI **1882/1882**.
 - Not covered: the held-job metadata panel still shows base text + rules (it has no output file to read); native Linux/Windows look of the pane.
 
-## Regenerate only and overlay overflow — 0.2.30 (unreleased working tree)
+## Regenerate only and overlay overflow — 0.2.30 (shipped in 0.2.33)
 
 - Added the append-only `Original` target across frontend intent/preferences/history/Run Plan, Rust compiler/admission and node pack 0.5.52. It keeps the draft canvas exactly and uses the existing `interpolation` token only as a no-model transport sentinel; native validation accepts it exclusively for Original, never as a substitute for learned upscaling on the old targets. The backend target-combo probe gates support, while LoRA/model and baseline-first processing safety stay active. The hidden learned-model picker retains its prior choice when switching or restoring Original history.
 - Node regression observed RED (unknown Original), then GREEN. The real shared CPU orchestration is exercised with sampling/model doubles: unchanged dimensions, audio object identity, model cloning, pinned sigmas/CFG 1, no learned-loader or resize invocation and no invented upscale telemetry. Node Regenerate/upscale/Continuity/image-inpaint suites: **157 passed**. This is wiring/numerical contract evidence, not rendered quality acceptance.
@@ -30,7 +30,7 @@
 - Pre-commit review narrowed the pack's same-size skip to interpolation only, so Enhanced Upscale at scale 1.0 with a learned model still runs that model (new regression `test_learned_upscaler_still_runs_at_same_size`). Rerun before commit: pack Regenerate suite 25/25, full pack suite **1250 passed**; serial Rust **971 passed, 71 ignored**, clippy/fmt clean; typecheck, core 158/158, UI **1881/1881**, build, `git diff --check` clean.
 - No GPU render, native WebKitGTK/Windows runtime check or release build performed for this change. Original refines the generated draft resolution, not necessarily the reference picture resolution, and can reinterpret details.
 
-## Processing diagnostics follow-up — 0.2.29 (working tree, not released)
+## Processing diagnostics follow-up — 0.2.29 (shipped in 0.2.33)
 
 - Expanded the existing graph-stage catalog for model patches, sampler/schedule setup and image/video conditioning. Fixed enum and bounded numeric/boolean settings cover more H3, TVE and music options; arbitrary strings, prompts/lyrics, seeds and model paths remain excluded. Node-validation rejection is separate from execution failure and is attached only to known graph nodes.
 - Shared manual/automatic audio stages now retain their export/job UUID and log genuine failures at ERROR. Automatic silent-source inspection logs `no-audio` at INFO, without changing the returned result or the caller's skip decision. Auto Refine retains its current SAM/render job ID through failure/cancellation and adds series/pass context to wait diagnostics.
