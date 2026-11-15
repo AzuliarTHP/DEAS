@@ -6,7 +6,7 @@ Read [the accepted product/architecture decisions](docs/PRODUCT-DECISIONS.md) fo
 
 For any ComfyUI integration, also follow [the project-local ComfyUI rules](docs/COMFYUI-RULES.md) and [execution ownership](docs/EXECUTION-CONTRACT.md).
 
-Every feature/plugin/tab requires maintained user documentation in repository-root `docs/`, updated with its implementation. Keep changelog, news and credits in dedicated documents there. The README is only a brief overview, essential installation/start instructions, representative assets and links to the detailed docs; follow the documentation section of the project rules.
+Every feature/plugin/tab requires maintained user documentation in repository-root `docs/`, updated with its implementation. Use English for authored repository prose, source comments, documentation and test reports, including ignored artifact reports; preserve the intended languages of localized UI resources and verbatim captured user/runtime evidence. Keep changelog, news and credits in dedicated documents there. The README is only a brief overview, essential installation/start instructions, representative assets and links to the detailed docs; follow the documentation section of the project rules.
 
 Every plugin/integration must send diagnostics and errors to its host application's shared logging service: DEAS's central Logs for frontend/native/managed-worker paths, ComfyUI's logging for ComfyUI integrations. Include origin, severity, operation and job identity where available; redact secrets, distinguish cancellation, rate-limit repeated failures and test delivery. See [the logging contract](docs/PROJECT-RULES.md#shared-logging-for-every-plugin-and-implementation); complete existing coverage is not assumed.
 

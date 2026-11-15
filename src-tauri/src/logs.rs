@@ -133,6 +133,106 @@ pub fn native_logs_comfy_drop_error() {
     push(Source::Deas, "ERROR: Comfy file-drop: intake or editor dispatch failed; check the file, available RAM and connected editor (repeats limited to once per minute)");
 }
 
+/// Bounded frontend outcomes; no paths, prompts or remote error text cross this boundary.
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ContinuityJoinNotice {
+    LoadFailed,
+    FileBlocked,
+    AddFailed,
+    PreflightBlocked,
+    PreflightFailed,
+    PreparationFailed,
+    AdmissionFailed,
+    ExecutionFailed,
+    CorrelationFailed,
+    MissingBridge,
+    Cancelled,
+    CancelFailed,
+}
+
+#[tauri::command]
+pub fn native_logs_continuity_join_notice(
+    reason: ContinuityJoinNotice,
+    job_id: Option<String>,
+) -> Result<(), String> {
+    if job_id
+        .as_ref()
+        .is_some_and(|id| !uuid::Uuid::parse_str(id).is_ok_and(|uuid| uuid.to_string() == *id))
+    {
+        return Err("Invalid ContinuityJoin job identity".into());
+    }
+    use ContinuityJoinNotice::*;
+    let (slot, severity, operation, outcome) = match reason {
+        LoadFailed => (0, "ERROR", "session-read", "session unavailable"),
+        FileBlocked => (
+            1,
+            "WARN",
+            "file-pick",
+            "media validation blocked the selection",
+        ),
+        AddFailed => (2, "ERROR", "file-pick", "inspection or upload failed"),
+        PreflightBlocked => (
+            3,
+            "WARN",
+            "preflight",
+            "assembly validation blocked execution",
+        ),
+        PreflightFailed => (4, "ERROR", "preflight", "assembly preflight unavailable"),
+        PreparationFailed => (
+            5,
+            "ERROR",
+            "prepare",
+            "transition settings or references could not be prepared",
+        ),
+        AdmissionFailed => (
+            6,
+            "ERROR",
+            "admission",
+            "job admission or snapshot unavailable",
+        ),
+        ExecutionFailed => (
+            7,
+            "ERROR",
+            "execute",
+            "sequence stopped after a job or transport failure; inspect native job diagnostics",
+        ),
+        CorrelationFailed => (
+            8,
+            "ERROR",
+            "observe",
+            "returned job identity did not match the submitted job",
+        ),
+        MissingBridge => (
+            9,
+            "ERROR",
+            "transition",
+            "successful job returned no bridge",
+        ),
+        Cancelled => (
+            10,
+            "INFO",
+            "cancel",
+            "sequence cancelled; no further submissions",
+        ),
+        CancelFailed => (
+            11,
+            "ERROR",
+            "cancel",
+            "owned job cancellation could not be confirmed",
+        ),
+    };
+    static LAST: Mutex<[Option<std::time::Instant>; 12]> = Mutex::new([None; 12]);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if last[slot].is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
+        return Ok(());
+    }
+    last[slot] = Some(std::time::Instant::now());
+    let correlation = job_id.map_or(String::new(), |id| format!(" job={id}"));
+    push(Source::Deas, &format!("{severity}: Studio ContinuityJoin {operation}{correlation}: {outcome} (repeats limited to once per reason per minute)"));
+    Ok(())
+}
+
 /// Entries newer than `after` (0 = everything still retained).
 #[tauri::command]
 pub fn native_logs(after: u64) -> Vec<Entry> {
@@ -164,6 +264,77 @@ pub async fn native_logs_export(title: String, text: String) -> Result<bool, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn continuity_join_notices_are_fixed_correlated_rate_limited_and_registered() {
+        let id = "11111111-2222-4333-8444-555555555555";
+        let cases = [
+            ("load-failed", "ERROR", "session-read"),
+            ("file-blocked", "WARN", "file-pick"),
+            ("add-failed", "ERROR", "file-pick"),
+            ("preflight-blocked", "WARN", "preflight"),
+            ("preflight-failed", "ERROR", "preflight"),
+            ("preparation-failed", "ERROR", "prepare"),
+            ("admission-failed", "ERROR", "admission"),
+            ("execution-failed", "ERROR", "execute"),
+            ("correlation-failed", "ERROR", "observe"),
+            ("missing-bridge", "ERROR", "transition"),
+            ("cancelled", "INFO", "cancel"),
+            ("cancel-failed", "ERROR", "cancel"),
+        ];
+        for (reason, _, _) in cases {
+            let reason =
+                serde_json::from_value::<ContinuityJoinNotice>(serde_json::json!(reason)).unwrap();
+            native_logs_continuity_join_notice(reason, Some(id.into())).unwrap();
+            native_logs_continuity_join_notice(reason, None).unwrap();
+        }
+        let reports: Vec<_> = native_logs(0)
+            .into_iter()
+            .filter(|e| e.text.contains(": Studio ContinuityJoin "))
+            .collect();
+        assert_eq!(reports.len(), cases.len());
+        for (entry, (_, severity, operation)) in reports.iter().zip(cases) {
+            assert_eq!(entry.source, Source::Deas);
+            assert!(entry.text.starts_with(&format!(
+                "{severity}: Studio ContinuityJoin {operation} job={id}:"
+            )));
+            assert!(entry
+                .text
+                .ends_with("(repeats limited to once per reason per minute)"));
+            assert!(entry.text.len() < 300);
+        }
+        assert!(include_str!("main.rs").contains("deas::native_logs_continuity_join_notice,"));
+        assert!(include_str!("lib.rs").contains("native_logs_continuity_join_notice"));
+        assert!(include_str!("../permissions/logs.toml")
+            .contains("\"native_logs_continuity_join_notice\""));
+        assert!(include_str!("../capabilities/main.json").contains("\"allow-native-logs\""));
+    }
+
+    #[test]
+    fn continuity_join_notices_reject_untrusted_reasons_and_job_identities() {
+        for value in [
+            serde_json::json!("/private/prompt token=secret"),
+            serde_json::json!({"reason":"cancelled"}),
+            serde_json::Value::Null,
+        ] {
+            assert!(serde_json::from_value::<ContinuityJoinNotice>(value).is_err());
+        }
+        for id in [
+            "",
+            "/private/movie.mp4",
+            "secret\nERROR: forged",
+            "11111111222243338444555555555555",
+            "11111111-2222-4333-8444-AAAAAAAAAAAA",
+        ] {
+            assert_eq!(
+                native_logs_continuity_join_notice(
+                    ContinuityJoinNotice::MissingBridge,
+                    Some(id.into())
+                ),
+                Err("Invalid ContinuityJoin job identity".into())
+            );
+        }
+    }
 
     #[test]
     fn comfy_drop_errors_are_shared_rate_limited_and_registered() {

@@ -106,9 +106,10 @@ export const latentOutputSize=(family:VideoFamily,size:{width:number;height:numb
 export type VideoIntentV1=VideoBase&(
  |{readonly family:'ltx-2';readonly latentUpscale?:LtxLatentUpscale;readonly ltx:{textProjection:string;audioVae:string;passes:1|2|3;spatialUpscaler?:string;keyframes?:{image:string;frame:number;strength:number}[];sourceStrength?:number}}
  |{readonly family:'wan';readonly latentUpscale?:never;readonly wan:{lowModel:string;shiftHigh:number;shiftLow:number;refinerStep:number}}
- |{readonly family:'minimax-h3'|'minimax-h3-hyperflow';readonly latentUpscale?:H3LatentUpscale|H3RegenerateUpscale;readonly h3:{mode:'T2VA'|'I2VA'|'L2VA'|'FL2VA'|'REF2VA';audioVae:string;shiftVideo:number;shiftAudio:number;references:{slot:0|1;image:string}[];media?:H3Media[];continuity?:H3Continuity;inputScaling?:H3Scaling;refmods?:{slot:number;name:string;strength:number;description?:string}[]}});
+ |{readonly family:'minimax-h3'|'minimax-h3-hyperflow';readonly latentUpscale?:H3LatentUpscale|H3RegenerateUpscale;readonly h3:{transition?:H3Transition;mode:'T2VA'|'I2VA'|'L2VA'|'FL2VA'|'REF2VA';audioVae:string;shiftVideo:number;shiftAudio:number;references:{slot:0|1;image:string}[];media?:H3Media[];continuity?:H3Continuity;inputScaling?:H3Scaling;refmods?:{slot:number;name:string;strength:number;description?:string}[]}});
 export const isVideoIntent=(i:{recipeId:string}):i is VideoIntentV1=>i.recipeId==='video-generation';
 /** Director parity Join clips: model-free DaSiWaH3ClipAssemble prompt (native `jobs_video::join`); trims are seconds. */
+export interface H3Transition { files:readonly {filename:string;trimStart?:number|null;trimEnd?:number|null}[];contextFrames:number;transitionFrames:number;prompt?:string }
 export type H3JoinIntentV1={readonly recipeId:'h3-join';readonly version:1;readonly h3:{readonly join:
  |{readonly kind:'segments';readonly session:string;readonly chain:readonly string[];readonly copyVideo?:boolean;readonly filenamePrefix?:string}
  |{readonly kind:'files';readonly files:readonly {readonly filename:string;readonly trimStart?:number|null;readonly trimEnd?:number|null}[];readonly copyVideo?:boolean;readonly filenamePrefix?:string}}};
