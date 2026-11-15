@@ -1221,5 +1221,13 @@
   "notes.storageError": "无法保存笔记。本地存储可能已满或不可用，草稿仍保留。",
   "loraDetails.title": "LoRA 详情",
   "loraDetails.open": "{name} 的详情",
-  "loraDetails.noTriggers": "已保存的元数据中没有触发词。"
+  "loraDetails.noTriggers": "已保存的元数据中没有触发词。",
+  "loraSets.selected": "已选 LoRA",
+  "loraSets.reorder": "调整 {name} 的顺序",
+  "loraSets.reorderHelp": "拖动排序，或在拖动手柄上使用上下箭头。拖到面板边缘可自动滚动。",
+  "loraSets.enable": "启用 {name}",
+  "loraSets.disable": "禁用 {name}",
+  "loraSets.disabled": "已禁用",
+  "loraSets.moved": "已将 {name} 移至第 {position} 位，共 {total} 项。",
+  "loraDetails.copySelected": "复制所选（{count}）"
 }

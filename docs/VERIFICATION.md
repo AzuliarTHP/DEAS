@@ -1,5 +1,37 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Selected LoRA panel, order, switches and trigger selection — 2026-11-16
+
+- The picker has separate selected-list and Saved sets scroll areas, smaller 40×48
+  thumbnails and fixed list heading/Add controls. Pointer capture on the stable
+  list supports row reordering without OS drag-and-drop. A requestAnimationFrame
+  loop scrolls at a stationary top/bottom edge; pointer release/cancel, lost capture,
+  blur and unmount stop it. Escape during dragging restores the starting order.
+  Focused grip buttons also support Up/Down arrows with a live announcement.
+- Optional enabled flags default to true for old drafts/sets. Power icons retain
+  disabled entries, weights and positions; saved definitions round-trip order and
+  switches. Disabled entries are excluded from readiness warnings and Run/Run Plan.
+  The mocked submit regression includes a disabled missing file and confirms exact
+  enabled order/weights and absence of UI-only fields in the native payload. Native
+  image/video loader chains already enumerate payload order; their source is unchanged.
+- LoRA detail trigger chips split comma/newline-separated entries while preserving
+  multiword phrases. Copy selected de-duplicates and follows metadata order; Copy all
+  preserves original metadata text. Clipboard refusal retains selection and uses
+  fixed-operation shared diagnostics without logging trigger words.
+- Chromium synthetic acceptance passed with 75 selected entries: real pointer drags,
+  stationary upward/downward edge scrolling, independent panes, Escape rollback,
+  saved switches, smaller thumbnails, control bounds at 960/1366/1920 desktop widths
+  and selective copying through a mocked clipboard. Shared viewport gate: 467 passed.
+- Frontend production build and core suite passed (157 passed / 1 skipped). Full UI
+  run: 1,999 passed / one timing-sensitive existing post-process assertion failed.
+  The entire affected Workbench file rerun passed all 50 tests. Targeted picker/set,
+  clipboard and enabled-order submission tests passed. A complete UI rerun after
+  packaging passed all 2,000 tests across 109 files. Release build passed. Native
+  code was unchanged.
+- No native DEAS capture, real model scan, provider fetch, model download, generation,
+  system clipboard write or backend restart was performed. Runtime data is excluded
+  from publication.
+
 ## Cached LoRA metadata and notification clipping follow-up — 2026-11-16
 
 - Reproduced the Add failure with the actual indexed-listing shape: SnapshotDetails

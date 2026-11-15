@@ -298,7 +298,82 @@ def verify(browser, url, shots):
         assert page.evaluate('__galleryCalls.filter(x=>x.c==="native_media_delete").length')==1
 
         assert not page.evaluate('__galleryCalls.some(x=>x.c==="native_models_scan"&&x.a?.refresh)')
-        result={'status':'PASS','kind':'Chromium; synthetic gallery and strict mocked IPC; no DEAS capture or real models','checks':['Library context-menu addition reaches retained Studio without navigation or scans','detail action buttons stay aligned during added toast','nullable native index metadata handoff','success and failure notices stay fully visible above containment and scrolled dialogs','desktop gallery geometry','independent folder/card wheel scrolling in Library and Studio','folder visibility and Fetch options','collapsible Library and Studio folder trees','all model sort modes','compact declared-family badge without taller cards','non-blocking selected LoRA family labels','folder action icons beside All notes','manual Notes folders/prompts/seed and retained draft','confirmed single/bulk Media delete with mocked paths','model details popup','nested LoRA details and trigger words with Escape/backdrop isolation','three separate Notes panes and reordered fields at desktop widths','60-card bound','navigation reuses snapshot','trigger-word search','details','persisted notes and tags','grid/list switching','no implicit scan, metadata fetch, download or generation'],'artifacts':str(shots)}
+        # Reopen the synthetic app with a long retained selection; no real model/filesystem operations.
+        page.evaluate("()=>{localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify(__galleryModels.slice(0,75).map((m,i)=>({name:m.name,strength:(i+1)/100}))));}")
+        page.reload(wait_until='networkidle')
+        layout.collection.set_locale(page,'en','[data-node="studio"]')
+        page.locator('.wb-lora-button').click()
+        picker=page.get_by_role('dialog',name='Selected LoRAs and sets',exact=True)
+        selected=picker.get_by_role('region',name='Selected LoRAs',exact=True)
+        expect(selected.locator('[data-lora-row]')).to_have_count(75)
+        assert selected.evaluate('(el)=>el.scrollHeight>el.clientHeight+100')
+        thumb=selected.locator('.lora-set-preview').first.bounding_box()
+        assert thumb['width']<=44 and thumb['height']<=52
+        saved_panel=picker.locator('.lora-saved-panel')
+        saved_y=saved_panel.bounding_box()['y']
+        first_name=selected.locator('[data-lora-row]').first.get_attribute('data-lora-row')
+        handle=selected.get_by_role('button',name='Reorder '+first_name,exact=True)
+        box=handle.bounding_box();bounds=selected.bounding_box()
+        page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
+        page.mouse.down()
+        page.mouse.move(box['x']+box['width']/2,bounds['y']+bounds['height']-5,steps=12)
+        page.wait_for_function("document.querySelector('.lora-selected-scroll').scrollTop>180")
+        page.mouse.up()
+        order=selected.locator('[data-lora-row]').evaluate_all('(rows)=>rows.map(row=>row.dataset.loraRow)')
+        down_index=order.index(first_name)
+        assert down_index>3, down_index
+        assert abs(saved_panel.bounding_box()['y']-saved_y)<1
+        assert saved_panel.evaluate('(el)=>el.scrollTop')==0
+        assert picker.evaluate('(el)=>el.scrollTop')==0
+        handle.scroll_into_view_if_needed()
+        start_scroll=selected.evaluate('(el)=>el.scrollTop')
+        assert start_scroll>100
+        box=handle.bounding_box();bounds=selected.bounding_box()
+        page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2)
+        page.mouse.down()
+        page.mouse.move(box['x']+box['width']/2,bounds['y']+5,steps=12)
+        page.wait_for_function('(start)=>document.querySelector(".lora-selected-scroll").scrollTop<start-100',arg=start_scroll)
+        page.mouse.up()
+        order=selected.locator('[data-lora-row]').evaluate_all('(rows)=>rows.map(row=>row.dataset.loraRow)')
+        assert order.index(first_name)<down_index
+        # Escape rolls back the current drag and leaves the selection dialog open.
+        before_cancel=order
+        handle.scroll_into_view_if_needed();box=handle.bounding_box();bounds=selected.bounding_box()
+        page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down()
+        page.mouse.move(box['x']+box['width']/2,bounds['y']+bounds['height']-5,steps=12)
+        page.keyboard.press('Escape');page.mouse.up()
+        expect(picker).to_be_visible()
+        assert selected.locator('[data-lora-row]').evaluate_all('(rows)=>rows.map(row=>row.dataset.loraRow)')==before_cancel
+        selected.evaluate('(el)=>el.scrollTop=0')
+        first=selected.locator('[data-lora-row]').first
+        first.get_by_role('button',name='Disable ',exact=False).click()
+        expect(first).to_have_class('is-disabled')
+        disabled_name=first.get_attribute('data-lora-row')
+        picker.get_by_label('Set name',exact=True).fill('Order and switches')
+        picker.get_by_role('button',name='Save new set',exact=True).click()
+        assert page.evaluate("JSON.parse(localStorage.getItem('deas.pref.studio.loraSets')).find(s=>s.name==='Order and switches').loras[0].enabled") is False
+        page.evaluate("()=>{Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{window.__copiedTriggers=text;}}});}")
+        first.locator('.lora-set-preview').click()
+        details=page.get_by_role('dialog',name='LoRA details',exact=True)
+        chips=details.locator('.lora-trigger-words button')
+        chips.first.click();chips.last.click()
+        expected=', '.join([chips.first.inner_text(),chips.last.inner_text()])
+        details.get_by_role('button',name='Copy selected (2)',exact=True).click()
+        page.wait_for_function('(expected)=>window.__copiedTriggers===expected',arg=expected)
+        details.get_by_role('button',name='Close',exact=True).click()
+        for width,height in [(1366,768),(960,700),(1920,1080)]:
+            page.set_viewport_size({'width':width,'height':height})
+            expect(selected).to_be_visible()
+            assert selected.bounding_box()['height']>200
+            assert picker.evaluate('(el)=>el.scrollHeight<=el.clientHeight+1')
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth+1')
+            for control in first.locator('button,input').all():
+                assert control.evaluate('(el)=>{const b=el.getBoundingClientRect(),r=el.closest(".lora-selected-scroll").getBoundingClientRect();return b.left>=r.left&&b.right<=r.right;}')
+        picker.get_by_role('button',name='Close',exact=True).click()
+        page.locator('.wb-lora-button').click()
+        expect(page.get_by_role('button',name='Enable '+disabled_name,exact=True)).to_be_visible()
+        assert not page.evaluate('__galleryCalls.some(x=>/native_(download_start|model_info|model_scan_start|workbench_run)/.test(x.c))')
+        result={'status':'PASS','kind':'Chromium; synthetic gallery and strict mocked IPC; no DEAS capture or real models','checks':['Library context-menu addition reaches retained Studio without navigation or scans','detail action buttons stay aligned during added toast','nullable native index metadata handoff','success and failure notices stay fully visible above containment and scrolled dialogs','compact independently scrolling selected LoRAs','pointer drag reordering with stationary edge auto-scroll up and down','Escape cancels drag without closing the picker','saved order and on/off flags','selective trigger-word copying without system clipboard access','desktop gallery geometry','independent folder/card wheel scrolling in Library and Studio','folder visibility and Fetch options','collapsible Library and Studio folder trees','all model sort modes','compact declared-family badge without taller cards','non-blocking selected LoRA family labels','folder action icons beside All notes','manual Notes folders/prompts/seed and retained draft','confirmed single/bulk Media delete with mocked paths','model details popup','nested LoRA details and trigger words with Escape/backdrop isolation','three separate Notes panes and reordered fields at desktop widths','60-card bound','navigation reuses snapshot','trigger-word search','details','persisted notes and tags','grid/list switching','no implicit scan, metadata fetch, download or generation'],'artifacts':str(shots)}
         (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(result,indent=2))
     finally:

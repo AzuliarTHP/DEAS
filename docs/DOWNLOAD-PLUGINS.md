@@ -124,7 +124,8 @@ notice that leaves buttons aligned and stays visible above scrolled panes/dialog
 Cached optional null metadata fields are accepted. Storage failures show a failure notice. It preserves
 an existing weight and leaving the current page/popup in place. It neither changes
 the main model nor starts generation. Use the LoRAs button below Studio's model
-picker to manage selected weights and named sets. Click the dark backdrop outside
+picker to manage selected weights, order, on/off switches and named sets. Adding
+a retained disabled LoRA re-enables it with its previous weight and position. Click the dark backdrop outside
 the model-details popup to close it; tags commit before closing.
 
 ### Folder visibility

@@ -1,6 +1,6 @@
 import { ModelPreview } from '../../components/models/ModelPreview';
 import { PromptNotesPanel } from './PromptNotesPanel';
-import { LoraSetsDialog } from './LoraSetsDialog';
+import { LoraSetsDialog,type SelectedLora } from './LoraSetsDialog';
 import { STUDIO_LORA_ADD, takeStudioLoras } from '../../lib/studioLoraSelection';
 import { ModelAutoLoad, ModelViewAllControl } from '../../components/ModelAutoLoad';
 import { modelFolderHidden, validHiddenModelFolders, type HiddenModelFolders } from '../../lib/modelFolders';
@@ -111,8 +111,8 @@ const modelCategories=['checkpoints','diffusion_models','unet'];
 const supportedModelFormat=(m:LocalModel)=>/\.(safetensors|sft|ckpt|pt|pth|gguf)$/i.test(m.name);
 // LoRAs stay safetensors-only: a GGUF LoRA needs a proven LoRA loader first.
 const supportedLoraFormat=(m:LocalModel)=>/\.safetensors$/i.test(m.name);
-type Lora={name:string;strength:number};
-const isLoras=(v:unknown):v is Lora[]=>Array.isArray(v)&&v.every(l=>l&&typeof l.name==='string'&&typeof l.strength==='number');
+type Lora=SelectedLora;
+const isLoras=(v:unknown):v is Lora[]=>Array.isArray(v)&&v.every(l=>l&&typeof l.name==='string'&&typeof l.strength==='number'&&(l.enabled===undefined||typeof l.enabled==='boolean'));
 const isNumber=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 const isFaceRefineSettings=(v:unknown):v is FaceRefineSettings=>!!v&&typeof v==='object'&&typeof (v as FaceRefineSettings).auto==='boolean'&&typeof (v as FaceRefineSettings).prompt==='string'&&(['denoise','cropFactor','feather'] as const).every(k=>typeof (v as FaceRefineSettings)[k]==='number');
 const isMaskGrow=(v:unknown):v is number=>isNumber(v)&&Number.isInteger(v)&&v>=0&&v<=512;
@@ -454,7 +454,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  if(inspection.compatibility==='blocked'&&!(m.misplacedAllInOne&&inspection.reasons.every(r=>r.code==='component')))return `modelCheck.reason.${inspection.reasons[0]?.code??'conflict'}`;
  if(!supportedModelFormat(m))return 'modelMeta.format';
  // LoRA on a quantized base needs execution proof per pipeline; not advertised.
- if(/\.gguf$/i.test(m.name)&&loras.length)return 'studio.run.gguf.lora';
+ if(/\.gguf$/i.test(m.name)&&loras.some(l=>l.enabled!==false))return 'studio.run.gguf.lora';
  const f=familyOf(m);
  if(isGguf(m.name)&&(!f||f.loader!=='diffusion'))return f?'studio.run.gguf.checkpoint':'studio.run.family.unknown';
  if(!f)return m.category==='checkpoints'&&(p==='t2i'||p==='i2i')?'':'studio.run.family.unknown';
@@ -634,7 +634,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
  const loraNames=allLoraModels.map(m=>m.name);
 
- const activeLoras=loras.filter(l=>loraNames.includes(l.name));
+ const activeLoras=loras.filter(l=>l.enabled!==false&&loraNames.includes(l.name)).map(({name,strength})=>({name,strength}));
  const previousUses=useRef<Set<string>|null>(null);
  const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=allLoraModels.find(m=>m.name===l.name);return m?[m]:[];})];
  const appliedUsageKey=appliedUsageModels.map(modelUsageKey).join('\0');
@@ -673,8 +673,8 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   ...mossIssues.map(i=>t('studio.run.moss.plain',{name:i.name})),
   ...(imageRefs.length&&!referenceMethod?[t('studio.run.reference.inactive')]:[]),
   ...(imageRefs.length&&referenceMethod?(!choices?[]:(revisionOk?['CLIPVisionLoader','LoadImage','CLIPVisionEncode','unCLIPConditioning']:[promptEncoder,'LoadImage',...(qwenRefs?['ImageScale']:[])]).filter(n=>!choices.nodes.includes(n))):[]),
-  ...(models?loras.filter(l=>!loraNames.includes(l.name)).map(l=>`LoRA: ${l.name}`):[]),
- ...allLoraModels.filter(m=>(checkLoraForExecution(m).compatibility==='blocked'||!supportedLoraFormat(m))&&loras.some(l=>l.name===m.name)).map(m=>`${checkLoraForExecution(m).compatibility==='blocked'?modelCheckText(checkLoraForExecution(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
+  ...(models?loras.filter(l=>l.enabled!==false&&!loraNames.includes(l.name)).map(l=>`LoRA: ${l.name}`):[]),
+ ...allLoraModels.filter(m=>(checkLoraForExecution(m).compatibility==='blocked'||!supportedLoraFormat(m))&&loras.some(l=>l.name===m.name&&l.enabled!==false)).map(m=>`${checkLoraForExecution(m).compatibility==='blocked'?modelCheckText(checkLoraForExecution(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
   ...(split&&!split.encoders.includes(textEncoder)?[textEncoder||t('studio.run.textEncoder')]:[]),
   ...(dualClip&&split&&(!textEncoder2||!split.encoders.includes(textEncoder2))?[textEncoder2||t('studio.run.textEncoder2')]:[]),
   ...(dualClip&&choices?[...(!choices.nodes.includes(isGguf(textEncoder)||isGguf(textEncoder2)?'DualCLIPLoaderGGUF':'DualCLIPLoader')?[isGguf(textEncoder)||isGguf(textEncoder2)?'DualCLIPLoaderGGUF':'DualCLIPLoader']:[]),
@@ -1964,7 +1964,7 @@ const promptTools=forgeContext&&<>
  useEffect(()=>{
   const apply=()=>{if(!models||!modelsDir||scanning)return;const adds=takeStudioLoras(modelsDir);if(!adds.length)return;
    setModels(old=>{if(!old)return old;const missing=adds.filter(m=>!old.some(existing=>existing.path===m.path||existing.name===m.name));return missing.length?[...old,...missing]:old;});
-   setLoras(old=>{const missing=adds.filter(m=>!old.some(l=>l.name===m.name));return missing.length?[...old,...missing.map(m=>({name:m.name,strength:1}))]:old;});
+   setLoras(old=>{const missing=adds.filter(m=>!old.some(l=>l.name===m.name));const enabled=old.map(l=>l.enabled===false&&adds.some(m=>m.name===l.name)?{...l,enabled:true}:l);return missing.length?[...enabled,...missing.map(m=>({name:m.name,strength:1}))]:enabled.some((l,i)=>l!==old[i])?enabled:old;});
   };
   apply();window.addEventListener(STUDIO_LORA_ADD,apply);return()=>window.removeEventListener(STUDIO_LORA_ADD,apply);
  },[models,modelsDir,scanning,setLoras]);
@@ -2278,7 +2278,7 @@ const promptTools=forgeContext&&<>
    {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel wb-model-browser-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
     {!models&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
     {models&&dockTab==='models'&&(allModels.length===0?<p className="media-help">{t('studio.run.noModels')}</p>:<div className="media-browser">{folderTree(allModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles" data-run-checkpoint>{visibleModelTiles(allModels).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul>{moreModelTiles(allModels)}</div></div>)}
-    {models&&dockTab==='loras'&&(browsedLoraModels.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
+    {models&&dockTab==='loras'&&(browsedLoraModels.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on&&on.enabled!==false,()=>on?.enabled===false?setLoras(loras.map(l=>l.name===m.name?{...l,enabled:true}:l)):toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
    </section>}
   </div>
  </div>

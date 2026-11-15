@@ -15,7 +15,12 @@
   index null metadata fields are accepted and normalized. Both success/error
   notices use the browser top layer to escape pane and dialog clipping.
   The larger selection dialog includes thumbnails and nested read-only details
-  with cached trigger words. Outside clicks/Escape close only the active dialog.
+  with cached trigger words. The selection list scrolls independently, uses compact
+  thumbnails and supports pointer/keyboard reordering with edge auto-scroll.
+  Power icons retain disabled, greyed-out entries and weights; saved sets preserve
+  order and switches. Only enabled entries enter Run/Run Plan, in displayed order.
+  Trigger-word chips support Copy selected alongside Copy all. Outside clicks/Escape
+  close only the active dialog; Escape during a drag cancels that reorder.
 - Treat selected LoRA family labels as advisory in Studio, history and native
   admission. Submit every selected, present LoRA with its exact weight; retain
   file/source, metadata binding, format, loader and integrity validation. Genuine

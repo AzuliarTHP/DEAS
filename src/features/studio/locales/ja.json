@@ -1221,5 +1221,13 @@
   "notes.storageError": "ノートを保存できません。ローカル領域が満杯または使用できません。下書きは保持しています。",
   "loraDetails.title": "LoRA の詳細",
   "loraDetails.open": "{name} の詳細",
-  "loraDetails.noTriggers": "保存されたメタデータにトリガーワードはありません。"
+  "loraDetails.noTriggers": "保存されたメタデータにトリガーワードはありません。",
+  "loraSets.selected": "選択中のLoRA",
+  "loraSets.reorder": "{name}を並べ替え",
+  "loraSets.reorderHelp": "ドラッグで並べ替え、ハンドルでは上下キーも使用できます。パネル端にドラッグするとスクロールします。",
+  "loraSets.enable": "{name}を有効化",
+  "loraSets.disable": "{name}を無効化",
+  "loraSets.disabled": "無効",
+  "loraSets.moved": "{name}を{total}件中{position}番目に移動しました。",
+  "loraDetails.copySelected": "選択項目をコピー（{count}）"
 }

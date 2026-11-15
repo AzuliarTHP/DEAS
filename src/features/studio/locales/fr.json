@@ -1221,5 +1221,13 @@
   "notes.storageError": "Impossible d’enregistrer les notes. Le stockage local est plein ou indisponible. Le brouillon est conservé.",
   "loraDetails.title": "Détails du LoRA",
   "loraDetails.open": "Détails de {name}",
-  "loraDetails.noTriggers": "Aucun mot déclencheur dans les métadonnées enregistrées."
+  "loraDetails.noTriggers": "Aucun mot déclencheur dans les métadonnées enregistrées.",
+  "loraSets.selected": "LoRAs sélectionnés",
+  "loraSets.reorder": "Réordonner {name}",
+  "loraSets.reorderHelp": "Glissez pour réordonner ou utilisez Haut/Bas sur la poignée. Glissez près des bords pour faire défiler.",
+  "loraSets.enable": "Activer {name}",
+  "loraSets.disable": "Désactiver {name}",
+  "loraSets.disabled": "Désactivé",
+  "loraSets.moved": "{name} déplacé en position {position} sur {total}.",
+  "loraDetails.copySelected": "Copier la sélection ({count})"
 }

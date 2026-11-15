@@ -43,7 +43,19 @@ files require explicit Reload; Library and Studio keep their own display filters
 ## Selected LoRAs and named sets
 
 Click **LoRAs · count** below the model picker to edit selected weights (-10 to 10)
-and remove selections. **Add LoRAs** closes the popup and opens the LoRA dock.
+and remove selections. The compact thumbnail list has its own scrollbar; its heading
+and **Add LoRAs** button stay in place, and Saved sets scrolls independently. Drag
+the grip beside a row to reorder it. Holding near the list's top/bottom edge scrolls
+that list automatically. On a focused grip, Up/Down arrows move the entry; Escape
+during a drag restores its starting order without closing the popup.
+
+The power icon enables/disables a selected entry. Disabled entries are greyed out
+and retain their weight and position; they are omitted from generation and Run Plan
+and do not cause missing-file readiness blocks. Enabled entries reach the native
+LoRA chain in the displayed order. Existing selections/sets without an enabled flag
+remain enabled. Saved sets keep order and on/off flags; adding a disabled entry from
+Library or selecting it in the LoRA dock re-enables it without resetting its weight.
+**Add LoRAs** closes the popup and opens the LoRA dock.
 Library's card + button and **Add to Studio LoRAs** detail/context-menu actions add at weight 1
 without changing tabs or opening the popup. Existing selections keep their weights.
 Pending additions are retained locally until Studio is mounted for the same model
@@ -53,7 +65,7 @@ never moves action buttons and stays above scrolled panes/dialogs. Cached native
 metadata with empty/null optional fields can be added. Unavailable storage reports
 a failure instead of success.
 A differing family label does not make the selection unavailable. Missing
-files, unsupported formats and file/source failures remain blockers.
+files, unsupported formats and file/source failures remain blockers for enabled entries.
 
 Name the current selection and use **Save new set**. Select an existing definition
 to **Load set**, **Update selected set**, **Rename set** or **Delete set**. Loading
@@ -84,6 +96,12 @@ History reuse follows the same LoRA-label policy and still rejects missing files
 Studio shows a declared family with a small checkmark over the thumbnail. Hover
 it for the full declaration. This marker does not reserve an extra line below
 the card or enlarge the row; normal card names and family labels stay readable.
+
+In the thumbnail's **LoRA details** popup, click trigger-word chips to select any
+subset, then **Copy selected**. Comma/newline-separated entries become separate
+chips; phrases containing spaces stay together. Selected text is copied in metadata
+order with duplicates removed. **Copy all** keeps the original full metadata text.
+Copying does not insert text into Studio or start generation.
 
 ## Contextual model checks
 

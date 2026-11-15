@@ -42,3 +42,18 @@ it('opens cached details and trigger words above the picker; Escape preserves th
  expect(close).not.toHaveBeenCalled();expect(screen.getByRole('dialog',{name:'Selected LoRAs and sets'})).toBeTruthy();expect(screen.getByLabelText('Set name')).toHaveProperty('value','Draft set');expect(document.activeElement).toBe(thumbnail);
  fireEvent.click(thumbnail);fireEvent.click(within(screen.getByRole('dialog',{name:'LoRA details'})).getByRole('button',{name:'Close'}));expect(screen.getByLabelText('Strength of a.safetensors')).toHaveProperty('value','0.5');
 });
+it('retains order, weights and enabled flags in saved sets and supports keyboard reordering',()=>{
+ const b={...a,name:'b.safetensors',path:'/m/loras/b.safetensors'};
+ const view=render(<Host models={[a,b]} initial={[{name:a.name,strength:.25},{name:b.name,strength:.8}]}/>);
+ fireEvent.keyDown(screen.getByRole('button',{name:'Reorder b.safetensors'}),{key:'ArrowUp'});
+ expect([...document.querySelectorAll('[data-lora-row]')].map(row=>row.getAttribute('data-lora-row'))).toEqual([b.name,a.name]);
+ fireEvent.click(screen.getByRole('button',{name:'Disable b.safetensors'}));
+ expect(document.querySelector('[data-lora-row="b.safetensors"]')?.classList.contains('is-disabled')).toBe(true);
+ expect(screen.getByLabelText('Strength of b.safetensors')).toHaveProperty('value','0.8');
+ fireEvent.change(screen.getByLabelText('Set name'),{target:{value:'Ordered'}});fireEvent.click(screen.getByRole('button',{name:'Save new set'}));
+ view.unmount();render(<Host models={[a,b]} initial={[]}/>);
+ fireEvent.change(screen.getByLabelText('Saved sets'),{target:{value:screen.getByRole('option',{name:'Ordered'}).getAttribute('value')}});fireEvent.click(screen.getByRole('button',{name:'Load set'}));
+ expect([...document.querySelectorAll('[data-lora-row]')].map(row=>row.getAttribute('data-lora-row'))).toEqual([b.name,a.name]);
+ expect(screen.getByRole('button',{name:'Enable b.safetensors'}).getAttribute('aria-pressed')).toBe('false');
+ fireEvent.click(screen.getByRole('button',{name:'Enable b.safetensors'}));expect(screen.getByLabelText('Strength of b.safetensors')).toHaveProperty('value','0.8');
+});

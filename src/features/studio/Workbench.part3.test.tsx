@@ -74,6 +74,8 @@ test('Library additions update the LoRA draft without opening the popup or runni
  fireEvent.click(screen.getByRole('button',{name:'LoRAs · 1'}));expect(screen.getByRole('dialog',{name:'Selected LoRAs and sets'})).toBeTruthy();
  fireEvent.change(screen.getByLabelText('Strength of style.safetensors'),{target:{value:'0.65'}});
  act(()=>requestStudioLora('/m',lora));expect(screen.getByLabelText('Strength of style.safetensors')).toHaveProperty('value','0.65');
+ fireEvent.click(screen.getByRole('button',{name:'Disable style.safetensors'}));
+ act(()=>requestStudioLora('/m',lora));expect(screen.getByRole('button',{name:'Disable style.safetensors'}).getAttribute('aria-pressed')).toBe('true');expect(screen.getByLabelText('Strength of style.safetensors')).toHaveProperty('value','0.65');
  expect(runWorkbenchJob).not.toHaveBeenCalled();expect(scanModels).toHaveBeenCalledTimes(1);
 });
 
@@ -1005,4 +1007,22 @@ test('pre-mount Library additions survive asynchronous inventory and draft resto
  expect(screen.queryByRole('dialog')).toBeNull();expect(runWorkbenchJob).not.toHaveBeenCalled();
  expect(scanModels).toHaveBeenCalledExactlyOnceWith('L:/Models',[]);
  expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)).toEqual([]);
+});
+
+test('disabled LoRAs stay in the draft but do not block or enter Run; submitted order follows the picker',async()=>{
+ const file=(category:string,name:string)=>({category,name,path:'/m/'+category+'/'+name,size:1,info:null,family:'sdxl'});
+ vi.mocked(scanModels).mockResolvedValue([file('checkpoints','a.safetensors'),...['a','b','c'].map(n=>file('loras',n+'.safetensors'))]);
+ localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify([{name:'missing.safetensors',strength:.6,enabled:false},{name:'a.safetensors',strength:.4},{name:'b.safetensors',strength:.8,enabled:false},{name:'c.safetensors',strength:.2}]));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-run]')).toHaveProperty('disabled',false));
+ fireEvent.click(screen.getByRole('button',{name:'LoRAs · 4'}));
+ const handle=screen.getByRole('button',{name:'Reorder c.safetensors'});
+ for(let i=0;i<3;i++)fireEvent.keyDown(handle,{key:'ArrowUp'});
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Selected LoRAs and sets'})).getByRole('button',{name:'Close'}));
+ vi.mocked(runWorkbenchJob).mockResolvedValue({id:'enabled-ordered',baseUrl:evidence.baseUrl,promptId:'fixture',state:'succeeded',outputs:[],error:null,generationReady:false});
+ fireEvent.click(document.querySelector('[data-run]')!);
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1].loras).toEqual([{name:'c.safetensors',strength:.2},{name:'a.safetensors',strength:.4}]);
+ const draft=JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!);expect(draft.find((l:{name:string})=>l.name==='b.safetensors')).toMatchObject({enabled:false,strength:.8});
+ expect(scanModels).toHaveBeenCalledTimes(1);
 });
