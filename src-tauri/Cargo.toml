@@ -57,3 +57,15 @@ custom-protocol = ["tauri/custom-protocol"]
 strip = true
 lto = true
 codegen-units = 1
+
+# Model hashing is measured against the installed library, where a debug build runs SHA-256 roughly 30x
+# slower than release (75 vs 2,254 MiB/s here) and turns a throughput bug into a build artefact. Only the
+# hashing crates get optimized; nothing else in a dev build changes, and release is already optimized.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.dev.package.digest]
+opt-level = 3
+
+[profile.dev.package.block-buffer]
+opt-level = 3
