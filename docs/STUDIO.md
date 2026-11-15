@@ -44,10 +44,13 @@ files require explicit Reload; Library and Studio keep their own display filters
 
 Click **LoRAs · count** below the model picker to edit selected weights (-10 to 10)
 and remove selections. **Add LoRAs** closes the popup and opens the LoRA dock.
-Library's card + button and **Add to Studio LoRAs** detail action add at weight 1
+Library's card + button and **Add to Studio LoRAs** detail/context-menu actions add at weight 1
 without changing tabs or opening the popup. Existing selections keep their weights.
 Pending additions are retained locally until Studio is mounted for the same model
-folder. A differing family label does not make the selection unavailable. Missing
+folder, after its inventory and draft restore finish. Windows case, slash and
+trailing-separator differences identify the same folder. A floating confirmation
+never moves action buttons; unavailable storage reports a failure instead of success.
+A differing family label does not make the selection unavailable. Missing
 files, unsupported formats and file/source failures remain blockers.
 
 Name the current selection and use **Save new set**. Select an existing definition

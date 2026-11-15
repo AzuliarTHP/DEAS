@@ -1,5 +1,24 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Library-to-Studio LoRA handoff follow-up — 2026-11-16
+
+- Added regressions for pre-mount additions during delayed Studio inventory/draft
+  restoration, Windows case/slash/trailing/extended-path identities, duplicate
+  notifications, isolated folders, queue bounds and failed storage writes. Repeated
+  additions keep edited weights. Library card right-click now offers Add to Studio
+  LoRAs while retaining metadata editing.
+- The synthetic Chromium gallery fixture confirms the context-menu addition reaches
+  retained Studio, keeps details open on Add and leaves both action-button bounding
+  boxes unchanged while the floating notice is visible. No real app was captured.
+- Full frontend tests passed: 157 core / 1 skipped and 1,995 UI tests across 108
+  files. Production build, rustfmt, scoped clippy and all 904 native library tests
+  passed (69 ignored). Shared Chromium layout gate passed all 467 checks.
+  Shared diagnostics test includes fixed, rate-limited
+  selection-storage/queue failures without user content.
+- No installed-model scan, real metadata fetch, generation, media deletion or
+  application/backend restart was performed. Local profile data remains excluded
+  from the PR.
+
 ## PR #33 integration with current upstream — 2026-11-16
 
 - Combined the expanded Library/Studio changes with upstream main

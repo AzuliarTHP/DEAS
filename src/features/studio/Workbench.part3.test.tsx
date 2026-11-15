@@ -991,3 +991,18 @@ test('H3 frame people are opt-in, reach the Forge and reset on a new source pict
  fireEvent.click(within(screen.getByRole('dialog',{name:'References'})).getByRole('button',{name:'Edit first.png'}));
  expect(within(screen.getByRole('dialog',{name:'Edit first.png'})).getByRole('combobox',{name:'Character order in first.png'})).toHaveProperty('value','z');
 });
+
+test('pre-mount Library additions survive asynchronous inventory and draft restoration with Windows roots',async()=>{
+ const lora={category:'loras',name:'style.safetensors',path:'L:/Models/loras/style.safetensors',family:'sdxl',size:1,info:null};
+ requestStudioLora('l:\\models\\',lora);
+ let release!:(models:typeof lora[])=>void;
+ vi.mocked(scanModels).mockReturnValueOnce(new Promise(resolve=>{release=resolve;}));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'L:/Models'}}/></I18nProvider>);
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)).toHaveLength(1);
+ await act(async()=>release([{...lora,category:'checkpoints',name:'base.safetensors',path:'L:/Models/checkpoints/base.safetensors'}]));
+ await screen.findByRole('button',{name:'LoRAs · 1'});
+ dock('LoRAs');expect(screen.getByRole('button',{name:lora.name}).getAttribute('aria-pressed')).toBe('true');
+ expect(screen.queryByRole('dialog')).toBeNull();expect(runWorkbenchJob).not.toHaveBeenCalled();
+ expect(scanModels).toHaveBeenCalledExactlyOnceWith('L:/Models',[]);
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)).toEqual([]);
+});

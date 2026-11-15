@@ -40,9 +40,10 @@ function Cover({model}:{model:LocalModel}) {
 
 export function InstalledGallery({models,loaded,root,category,setCategory,selected,setSelected,locked,actions,feedback,renderDetail,onFetch,fetchBusy}:{models:LocalModel[];loaded:boolean;root:string;category:string;setCategory:(value:string)=>void;selected:string;setSelected:(value:string)=>void;locked:boolean;actions:ReactNode;feedback:ReactNode;renderDetail:(model:LocalModel)=>ReactNode;onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;fetchBusy?:boolean}) {
  const {t}=useI18n();
- const [addedLora,setAddedLora]=useState('');
- useEffect(()=>{if(!addedLora)return;const timer=setTimeout(()=>setAddedLora(''),3000);return()=>clearTimeout(timer);},[addedLora]);
- const addLora=(m:LocalModel)=>{if(requestStudioLora(root,m))setAddedLora(m.path);};
+ const [loraNotice,setLoraNotice]=useState<{error:boolean}|null>(null);
+ useEffect(()=>{if(!loraNotice)return;const timer=setTimeout(()=>setLoraNotice(null),3000);return()=>clearTimeout(timer);},[loraNotice]);
+ const addLora=(m:LocalModel)=>setLoraNotice({error:!requestStudioLora(root,m)});
+ const notice=loraNotice&&<div className="library-added-notice" role={loraNotice.error?'alert':'status'}>{t(loraNotice.error?'library.loraAddFailed':'library.loraAdded')}</div>;
  const [fetchOpen,setFetchOpen]=useState(false);const [fetchTarget,setFetchTarget]=useState('filtered');const [missingOnly,setMissingOnly]=useState(true);
  const [viewAll,setViewAll]=usePref('library.local.viewAll',false,(v):v is boolean=>typeof v==='boolean');
  const [query,setQuery]=usePref('library.local.query','',isString);
@@ -82,6 +83,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const clearSelection=()=>{const button=document.querySelector<HTMLButtonElement>('.library-card-main[aria-pressed="true"]');setSelected('');requestAnimationFrame(()=>button?.focus());};
  const backdrop=useDialogBackdropClose(()=>{(document.activeElement as HTMLElement)?.blur();clearSelection();});
  return <section className="installed-library" aria-label={t('library.collection')} data-installed-gallery>
+  {!picked&&notice}
   <header className="library-heading"><div className="library-native-actions">{onFetch&&<button type="button" className="action-button" aria-expanded={fetchOpen} disabled={locked||fetchBusy} onClick={()=>setFetchOpen(v=>!v)}>{t('library.fetch')}</button>}{actions}</div></header>
   <div className="library-fetch-tools">{onFetch&&fetchOpen&&<div className="library-fetch-options" role="group" aria-label={t('library.fetch')}><label>{t('library.fetchTarget')}<select value={fetchTarget} disabled={fetchBusy} onChange={e=>setFetchTarget(e.target.value)}><option value="filtered">{t('library.fetchFiltered')}</option><option value="folder">{t('library.fetchFolder')}</option><option value="category">{t('library.fetchCategory')}</option><option value="all">{t('library.fetchAll')}</option></select></label><label className="library-checkbox"><input type="checkbox" checked={missingOnly} disabled={fetchBusy} onChange={e=>setMissingOnly(e.target.checked)}/>{t('library.fetchMissing')}</label><span>{t('library.fetchCount',{count:fetchModels.length})}</span><button type="button" className="action-button" disabled={locked||fetchBusy||!fetchModels.length} onClick={()=>{onFetch(fetchModels,missingOnly);setFetchOpen(false);}}>{t('library.fetchStart')}</button><p className="field-help">{t('library.fetchHelp')}</p></div>}</div>
   {feedback}
@@ -112,12 +114,11 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
       <div className={`library-card-grid is-${layout}`}>{matching.slice(0,limit).map(m=>{
        const info=m.info?.civitai;const personal=organization[m.path];
        return <article key={m.path} className={`library-card${selected===m.path?' is-selected':''}${blur&&info?.nsfw?' is-sensitive':''}`}>
-        <ModelMetadataTarget model={m}><button type="button" className="download-card library-card-main" aria-label={m.name} aria-haspopup="dialog" aria-keyshortcuts="Shift+F10" aria-pressed={selected===m.path} disabled={locked} onClick={()=>setSelected(selected===m.path?'':m.path)}>
+        <ModelMetadataTarget model={m} actions={m.category==='loras'?[{label:t('library.addLora'),onClick:()=>addLora(m),disabled:locked}]:[]}><button type="button" className="download-card library-card-main" aria-label={m.name} aria-haspopup="dialog" aria-keyshortcuts="Shift+F10" aria-pressed={selected===m.path} disabled={locked} onClick={()=>setSelected(selected===m.path?'':m.path)}>
          <div className="library-card-art"><Cover model={m}/><span className="library-family-badge">{familyOf(m)||t('library.unclassified')}</span>{info?.nsfw&&<span className="library-mature-badge">{t('downloads.nsfwTag')}</span>}</div>
          <div className="library-card-caption"><strong>{titleOf(m)}</strong><span className="library-card-version">{info?.version??filename(m)}</span><div className="library-card-bottom"><span>{sizeOf(m.size)}</span><span title={folderOf(m)}><Glyph name="folder"/>{folderOf(m).split('/').at(-1)||t('library.rootFolder')}</span></div><ModelDeclaredBadge model={m}/><small className="library-model-check">{modelCheckText(checkModel(m),t)}</small></div>
         </button></ModelMetadataTarget>
         {m.category==='loras'&&<button type="button" className="library-add-lora" aria-label={`${t('library.addLora')}: ${m.name}`} title={t('library.addLora')} onClick={()=>addLora(m)}>+</button>}
-        {addedLora===m.path&&!selected&&<small className="library-added-notice" role="status">{t('library.loraAdded')}</small>}
         <button type="button" className="library-star" aria-label={t(personal?.favorite?'library.unfavorite':'library.favorite',{name:m.name})} aria-pressed={!!personal?.favorite} onClick={()=>favorite(m)}>{personal?.favorite?'★':'☆'}</button>
        </article>;
       })}</div>
@@ -132,8 +133,8 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
       <section className="library-detail-section"><h4>{t('library.organize')}</h4><label className="library-checkbox"><input type="checkbox" checked={!!organization[picked.path]?.favorite} onChange={()=>favorite(picked)}/>{t('library.favorites')}</label><label>{t('library.tags')}<input aria-label={t('library.editTags')} maxLength={500} placeholder={t('library.tagsHint')} key={picked.path} defaultValue={(organization[picked.path]?.tags??[]).join(', ')} onBlur={e=>annotate(picked.path,{tags:[...new Set(e.currentTarget.value.split(',').map(tag=>tag.trim().slice(0,50)).filter(Boolean))].slice(0,20)})} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label><label>{t('library.notes')}<textarea data-library-notes maxLength={4000} rows={4} placeholder={t('library.notesHint')} value={organization[picked.path]?.notes??''} onChange={e=>annotate(picked.path,{notes:e.target.value})}/></label><small>{t('library.savedLocally')}</small></section>
       <section className="library-popup-facts"><div><small>{t('downloads.version')}</small><p>{picked.info?.civitai?.version??'—'}</p></div><div><small>{t('modelMeta.filename')}</small><p>{filename(picked)}</p></div><div><small>{t('downloads.installed.path')}</small><p>{picked.path}</p></div><div><small>{t('library.base')}</small><p>{familyOf(picked)||t('library.unclassified')}</p></div><div><small>{t('downloads.size')}</small><p>{sizeOf(picked.size)}</p></div><div><small>{t('library.modelId')}</small><p>{picked.info?.civitai?.modelId??'—'}</p></div><div><small>{t('library.versionId')}</small><p>{picked.info?.civitai?.versionId??'—'}</p></div><div><small>{t('downloads.digest')}</small><p>{picked.info?.sha256??t('downloads.installed.unhashed')}</p></div></section>
       {picked.info?.civitai?.description&&<section className="library-detail-section"><h4>{t('library.aboutVersion')}</h4><p className="library-version-description">{picked.info.civitai.description.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')}</p></section>}
-      {picked.category==='loras'&&<><button type="button" className="action-button" onClick={()=>{addLora(picked);}}>{t('library.addLora')}</button>{addedLora===picked.path&&<p role="status">{t('library.loraAdded')}</p>}</>}
-      <button type="button" className="action-button" onClick={()=>setEditing(true)}>{t('modelMeta.title')}</button>
+      <div className="library-detail-actions">{picked.category==='loras'&&<button type="button" className="action-button" disabled={locked} onClick={()=>addLora(picked)}>{t('library.addLora')}</button>}<button type="button" className="action-button" onClick={()=>setEditing(true)}>{t('modelMeta.title')}</button></div>
+      {notice}
       {editing&&<ModelMetadataEditor key={picked.path} model={picked} onClose={()=>setEditing(false)}/>}
       <div className="library-detail-section library-native-details">{renderDetail(picked)}</div>
       <button type="button" className="library-text-button" onClick={()=>void copy(picked.name,'filename')}>{copied==='filename'?t('library.copied'):t('library.copyFilename')}</button>

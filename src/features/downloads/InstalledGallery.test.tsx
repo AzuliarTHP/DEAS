@@ -144,3 +144,19 @@ it('adds a Library LoRA with a notice without opening a popup or starting work',
  expect(screen.getByRole('status').textContent).toContain('LoRA added');expect(screen.queryByRole('dialog')).toBeNull();
  const queue=JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!);expect(queue).toHaveLength(1);expect(queue[0].model.path).toBe(fox.path);expect(invoke).not.toHaveBeenCalled();
 });
+
+it('adds LoRAs from the right-click menu and keeps metadata editing available',()=>{
+ Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:vi.fn()});
+ vi.spyOn(HTMLDialogElement.prototype,'showModal').mockImplementation(function(this:HTMLDialogElement){this.setAttribute('open','');});
+ render(<Host/>);const card=screen.getByRole('button',{name:fox.name});
+ fireEvent.contextMenu(card);fireEvent.click(screen.getByRole('menuitem',{name:'Add to Studio LoRAs'}));
+ expect(screen.getByRole('status').textContent).toContain('LoRA added');expect(screen.queryByRole('dialog')).toBeNull();
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)[0].model.path).toBe(fox.path);
+ fireEvent.contextMenu(card);const edit=screen.getByRole('menuitem',{name:'Edit meta…'});
+ fireEvent.pointerDown(edit);fireEvent.click(edit);expect(screen.getByRole('dialog',{name:'Edit meta…'})).toBeTruthy();
+});
+it('shows persistence failures instead of an added notice',()=>{
+ render(<Host/>);vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new DOMException('full','QuotaExceededError');});
+ fireEvent.click(screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`}));
+ expect(screen.getByRole('alert').textContent).toContain('Could not add the LoRA');expect(screen.queryByRole('status')).toBeNull();
+});

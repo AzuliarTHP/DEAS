@@ -117,8 +117,18 @@ def verify(browser, url, shots):
         assert page.evaluate('__galleryCalls.filter(x=>x.c==="native_models_scan").length')==after
         page.locator('[data-library-local-search]').fill('gallery_trigger_0')
         expect(page.locator('.library-card')).to_have_count(1)
+        page.locator('.library-card-main').first.click(button='right')
+        page.get_by_role('menuitem',name='Add to Studio LoRAs',exact=True).click()
+        expect(page.get_by_role('status',exact=True)).to_contain_text('LoRA added')
+        expect(page.get_by_role('dialog')).to_have_count(0)
         page.locator('.library-card-main').first.click()
         expect(page.get_by_role('dialog',name='Model details',exact=True)).to_be_visible()
+        actions=page.locator('.library-detail-actions button')
+        action_boxes=[button.bounding_box() for button in actions.all()]
+        page.get_by_role('button',name='Add to Studio LoRAs',exact=True).click()
+        expect(page.get_by_role('dialog').get_by_role('status')).to_contain_text('LoRA added')
+        assert action_boxes==[button.bounding_box() for button in actions.all()]
+        assert abs(action_boxes[0]['y']-action_boxes[1]['y'])<2
         expect(page.get_by_text('Fixture version description',exact=True)).to_be_visible()
         rect=page.get_by_role('dialog',name='Model details').bounding_box()
         assert rect['width']<=800 and rect['height']<=980
@@ -147,6 +157,7 @@ def verify(browser, url, shots):
         page.get_by_label('View all',exact=True).uncheck()
         expect(page.locator('.library-card')).to_have_count(60)
         page.locator('[data-node="studio"]').click()
+        expect(page.locator('.wb-lora-button')).to_contain_text('1')
         page.locator('[data-dock-tab="models"]').click()
         expect(page.locator('.wb-dock-panel [data-model-folder-tree]')).to_be_visible()
         expect(page.locator('.wb-dock [data-model-sort]')).to_be_visible()
@@ -259,7 +270,7 @@ def verify(browser, url, shots):
         assert page.evaluate('__galleryCalls.filter(x=>x.c==="native_media_delete").length')==1
 
         assert not page.evaluate('__galleryCalls.some(x=>x.c==="native_models_scan"&&x.a?.refresh)')
-        result={'status':'PASS','kind':'Chromium; synthetic gallery and strict mocked IPC; no DEAS capture or real models','checks':['desktop gallery geometry','independent folder/card wheel scrolling in Library and Studio','folder visibility and Fetch options','collapsible Library and Studio folder trees','all model sort modes','compact declared-family badge without taller cards','non-blocking selected LoRA family labels','folder action icons beside All notes','manual Notes folders/prompts/seed and retained draft','confirmed single/bulk Media delete with mocked paths','model details popup','nested LoRA details and trigger words with Escape/backdrop isolation','three separate Notes panes and reordered fields at desktop widths','60-card bound','navigation reuses snapshot','trigger-word search','details','persisted notes and tags','grid/list switching','no implicit scan, metadata fetch, download or generation'],'artifacts':str(shots)}
+        result={'status':'PASS','kind':'Chromium; synthetic gallery and strict mocked IPC; no DEAS capture or real models','checks':['Library context-menu addition reaches retained Studio without navigation or scans','detail action buttons stay aligned during added toast','desktop gallery geometry','independent folder/card wheel scrolling in Library and Studio','folder visibility and Fetch options','collapsible Library and Studio folder trees','all model sort modes','compact declared-family badge without taller cards','non-blocking selected LoRA family labels','folder action icons beside All notes','manual Notes folders/prompts/seed and retained draft','confirmed single/bulk Media delete with mocked paths','model details popup','nested LoRA details and trigger words with Escape/backdrop isolation','three separate Notes panes and reordered fields at desktop widths','60-card bound','navigation reuses snapshot','trigger-word search','details','persisted notes and tags','grid/list switching','no implicit scan, metadata fetch, download or generation'],'artifacts':str(shots)}
         (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(result,indent=2))
     finally:

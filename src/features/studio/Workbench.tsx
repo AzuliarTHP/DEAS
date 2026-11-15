@@ -633,7 +633,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const derope=videoFamily==='minimax-h3'?deropePref:defaultDerope;
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
  const loraNames=allLoraModels.map(m=>m.name);
- useEffect(()=>{const apply=()=>{if(!models||!modelsDir)return;const adds=takeStudioLoras(modelsDir);if(!adds.length)return;setModels(old=>{if(!old)return old;return [...old,...adds.filter(m=>!old.some(existing=>existing.path===m.path))];});setLoras(old=>{const next=[...old];for(const m of adds)if(!next.some(l=>l.name===m.name))next.push({name:m.name,strength:1});return next;});};apply();window.addEventListener(STUDIO_LORA_ADD,apply);return()=>window.removeEventListener(STUDIO_LORA_ADD,apply);},[models,modelsDir,setLoras]);
+
  const activeLoras=loras.filter(l=>loraNames.includes(l.name));
  const previousUses=useRef<Set<string>|null>(null);
  const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=allLoraModels.find(m=>m.name===l.name);return m?[m]:[];})];
@@ -1961,6 +1961,13 @@ const promptTools=forgeContext&&<>
  },[openPostCategory,dockTab,planVisible,beginner,dockHidden,closePostCategory]);
  // aria-hidden keeps each tab's accessible name stable; the count stays visible and in the tooltip.
  const dockBadge=(n:number)=>n>0&&<small className="wb-dock-badge" aria-hidden="true" title={t('studio.run.dock.changed',{count:String(n)})}>{n}</small>;
+ useEffect(()=>{
+  const apply=()=>{if(!models||!modelsDir||scanning)return;const adds=takeStudioLoras(modelsDir);if(!adds.length)return;
+   setModels(old=>{if(!old)return old;const missing=adds.filter(m=>!old.some(existing=>existing.path===m.path||existing.name===m.name));return missing.length?[...old,...missing]:old;});
+   setLoras(old=>{const missing=adds.filter(m=>!old.some(l=>l.name===m.name));return missing.length?[...old,...missing.map(m=>({name:m.name,strength:1}))]:old;});
+  };
+  apply();window.addEventListener(STUDIO_LORA_ADD,apply);return()=>window.removeEventListener(STUDIO_LORA_ADD,apply);
+ },[models,modelsDir,scanning,setLoras]);
  const dockNavigation=<div className="wb-dock-tabs" role="tablist" aria-label={t('studio.run.dock')}>{dockTabs.filter(id=>!beginner||id==='media').map(id=><button key={id} role="tab" type="button" data-dock-tab={id} aria-selected={dockTab===id} onClick={e=>{if(!e.currentTarget.dataset.revealOpen)focusDockTab.current=true;setDockTab(id);if(id==='options'||id==='post')loadChoices();}}>{t(id==='wildcards'?'wildcards.title':id==='presets'?'presets.title':`studio.run.dock.${id}`)}{dockBadge(id==='loras'?loras.length:id==='wildcards'?wildcardChanges.length:id==='post'?postChanges.length:id==='options'?optionChanges.length:0)}</button>)}</div>;
  /** Image prompt references: count/limit chip and numbered thumbnails; shown under the prompt and in the References overlay. */
  const insertTag=(tag:string)=>setPositive(positive.trim()?`${positive.trimEnd()} ${tag}`:tag);

@@ -8,7 +8,10 @@
   Favorites, personal tags/notes and detail dialogs. Local JPG/JPEG, PNG, WebP,
   GIF, AVIF and BMP previews use a shared fallback path.
 - Manage selected LoRA weights and named sets from the model-picker button. Add
-  LoRAs from Library with a small notice, without changing tabs or opening a popup.
+  LoRAs from Library cards, details or the right-click menu, without changing tabs
+  or opening a popup. A floating notice keeps action buttons aligned. Pending
+  additions survive asynchronous Studio loading and Windows folder spelling
+  differences; retries preserve weights and storage failures report failure.
   The larger selection dialog includes thumbnails and nested read-only details
   with cached trigger words. Outside clicks/Escape close only the active dialog.
 - Treat selected LoRA family labels as advisory in Studio, history and native
