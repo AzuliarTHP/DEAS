@@ -60,7 +60,7 @@ sys.argv=['main.py','--disable-auto-launch','--cpu']
 import main,nodes
 main.start_comfyui()
 required={'MiniMaxH3Director','MiniMaxH3DirectorGuide','DaSiWaH3ContinuityAppend','DaSiWaH3ContinuityPublish'} if selected=='nodes' else set()
-if gguf: required.update({'UnetLoaderGGUF','CLIPLoaderGGUF','DualCLIPLoaderGGUF','HyperFlowGGUFLoader','HyperFlowSigmas'})
+if gguf: required.update({'UnetLoaderGGUF','CLIPLoaderGGUF','DualCLIPLoaderGGUF','HyperFlowGGUFLoader','HyperFlowLoader','HyperFlowSigmas'})
 if preview: required.add('ModelPreviewOverrideKJ')
 missing=required-set(nodes.NODE_CLASS_MAPPINGS)
 assert not missing, 'Missing selected nodes: '+', '.join(sorted(missing))
