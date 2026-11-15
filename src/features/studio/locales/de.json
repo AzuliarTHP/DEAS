@@ -7,6 +7,7 @@
   "modelCheck.status.missing": "Nicht verfügbar",
   "modelCheck.reason.metadata": "Ungültige oder veraltete Modellmetadaten; Deklaration reparieren/zurücksetzen",
   "modelCheck.reason.integrity": "Dateiintegrität verletzt; Datei ersetzen",
+  "modelCheck.reason.pickleFormat": "Pickel-Format (.pt/.pth/.bin): ComfyUI kann beim Laden Code aus dieser Datei ausführen",
   "modelCheck.reason.conflict": "Header und Identitätsnachweis widersprechen sich",
   "modelCheck.reason.unverified": "Kein struktureller Kompatibilitätsnachweis; unbekannt ist nicht inkompatibel",
   "modelCheck.reason.remote": "Nur Remote-/Katalogeintrag; kein lokaler Header geprüft",

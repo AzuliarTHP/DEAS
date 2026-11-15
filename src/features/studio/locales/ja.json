@@ -7,6 +7,7 @@
   "modelCheck.status.missing": "利用不可",
   "modelCheck.reason.metadata": "メタデータが無効または古いです。宣言を修復・リセットしてください",
   "modelCheck.reason.integrity": "ファイル整合性エラー。ファイルを交換してください",
+  "modelCheck.reason.pickleFormat": "ピクル形式（.pt/.pth/.bin）：ComfyUIはこのファイルの読み込み時にコードを実行する可能性があります",
   "modelCheck.reason.conflict": "ヘッダーと識別情報が矛盾しています",
   "modelCheck.reason.unverified": "構造的互換性は未検証です。不明は非互換ではありません",
   "modelCheck.reason.remote": "リモート・カタログの一覧のみ。ローカルヘッダーは未検査です",

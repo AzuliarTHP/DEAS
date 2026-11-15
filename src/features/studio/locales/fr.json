@@ -7,6 +7,7 @@
   "modelCheck.status.missing": "Indisponible",
   "modelCheck.reason.metadata": "Métadonnées invalides ou périmées ; réparer/réinitialiser la déclaration",
   "modelCheck.reason.integrity": "Intégrité du fichier incorrecte ; remplacer le fichier",
+  "modelCheck.reason.pickleFormat": "Format pickled (.pt/.pth/.bin) : ComfyUI peut exécuter du code de ce fichier au chargement",
   "modelCheck.reason.conflict": "Conflit entre en-tête et identité",
   "modelCheck.reason.unverified": "Compatibilité structurelle non prouvée ; inconnu ne signifie pas incompatible",
   "modelCheck.reason.remote": "Entrée distante/catalogue uniquement ; aucun en-tête local vérifié",

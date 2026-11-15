@@ -7,6 +7,7 @@
   "modelCheck.status.missing": "Unavailable",
   "modelCheck.reason.metadata": "Invalid or stale model metadata; repair/reset the declaration",
   "modelCheck.reason.integrity": "File integrity check failed; replace the file",
+  "modelCheck.reason.pickleFormat": "Pickled format (.pt/.pth/.bin): ComfyUI can execute code from this file when loading it",
   "modelCheck.reason.conflict": "Header and identity evidence conflict",
   "modelCheck.reason.unverified": "No structural compatibility proof; unknown is not incompatible",
   "modelCheck.reason.remote": "Remote/catalog listing only; no local header inspection",

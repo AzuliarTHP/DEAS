@@ -96,6 +96,20 @@ pub(crate) fn describe(
             Some("All-in-one checkpoint requires the checkpoints namespace".into()),
         );
     }
+    // torch.load in the backend runs arbitrary pickled code from these; saying so beats silence.
+    if matches!(
+        model
+            .name
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_ascii_lowercase())
+            .as_deref(),
+        Some("pt") | Some("pth") | Some("bin")
+    ) {
+        check.reasons.push(Reason {
+            code: "pickleFormat",
+            detail: None,
+        });
+    }
     // Inspection alone cannot prove a recipe's loaders or companions are available.
     if check.compatibility == "unknown" {
         check.reasons.push(Reason {
@@ -122,5 +136,43 @@ pub(crate) fn categories(field: &str) -> &'static [&'static str] {
         "latentUpscaleModels" | "h3LatentUpscaleModels" => &["latent_upscale_models"],
         "audioEncoders" => &["audio_encoders"],
         _ => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(name: &str) -> LocalModel {
+        LocalModel {
+            check: None,
+            category: "loras".into(),
+            name: name.into(),
+            path: format!("/models/loras/{name}"),
+            size: 1,
+            info: None,
+            family: None,
+            detected_family: None,
+            family_evidence: None,
+            family_override: None,
+            metadata_error: None,
+            component: None,
+            integrity: None,
+            misplaced_all_in_one: false,
+        }
+    }
+
+    #[test]
+    fn pickled_extensions_warn_without_blocking() {
+        for name in ["a.pt", "B.PTH", "Sub/c.bin"] {
+            let check = describe(&model(name), None, None, None);
+            assert!(
+                check.reasons.iter().any(|r| r.code == "pickleFormat"),
+                "{name}"
+            );
+            assert_ne!(check.compatibility, "blocked");
+        }
+        let safe = describe(&model("a.safetensors"), None, None, None);
+        assert!(!safe.reasons.iter().any(|r| r.code == "pickleFormat"));
     }
 }
