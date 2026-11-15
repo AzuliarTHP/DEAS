@@ -2,11 +2,9 @@
 
 ## 0.2.35 BETA (unreleased)
 
-- **Big model libraries no longer vanish silently.** Library listing and *Scan Files* walk up to 100,000 files (previously the list stopped at 5,000 without a trace, so file #5001+ silently never got a sidecar). Only the webview payload is cut, at 25,000 — and that says so in central Logs. Listing is ~3× faster: files are described in parallel (2,000 files on the reference machine: 1.98 s → 0.66 s).
+- **Big model libraries no longer vanish silently.** Library listing and *Scan Files* walk up to 100,000 files (previously the list stopped at 5,000 without a trace, so file #5001+ silently never got a sidecar). Only the webview payload is cut, at 25,000 — and that says so in central Logs. Listing is ~3× faster: files are described in parallel (2,000 files on the reference machine: 1.98 s → 0.66 s), and *Scan Files* now processes four files at a time (hash + CivitAI lookup); on spinning or SATA drives the drive itself stays the limit.
 
 - **Pickled models warn instead of staying silent.** `.pt`, `.pth` and `.bin` files now carry a *can run code when loaded* note on their Library/Deploy model check — loading them through `torch.load` executes arbitrary code from the file. Nothing is blocked: pickled LoRAs and checkpoints stay fully usable.
-
-- **Big model libraries no longer vanish silently.** Library listing and *Scan Files* walk up to 100,000 files (previously the list stopped at 5,000 without a trace, so file #5001+ silently never got a sidecar). Only the webview payload is cut, at 25,000 — and that says so in central Logs. Listing is ~3× faster: files are described in parallel (2,000 files on the reference machine: 1.98 s → 0.66 s).
 
 - **Model Library scans exFAT drives.** Listing and *Scan Files* asked Windows for a file id that only exists on NTFS/ReFS; every model on an exFAT volume (for example an external T7 Shield) was silently skipped and the Library read "No model files found". Such volumes now fall back to the classic volume-serial + file-index identity. Deleted files on exFAT reuse their indexes, so a stale `.deas.json` stamp can mismatch there and simply re-scans.
 

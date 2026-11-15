@@ -1,4 +1,4 @@
-//! App-owned sequential metadata scans; dropping the invoking webview does not cancel work.
+//! App-owned background metadata scans (4 files at a time); dropping the invoking webview does not cancel work.
 use super::*;
 
 #[derive(Clone, Copy, Deserialize)]
@@ -126,29 +126,57 @@ impl ModelScanEngine {
         let models: Vec<_> = models.into_iter().filter(|m| scope.includes(m)).collect();
         let status = self.update(|s| s.total = models.len());
         report(&status, "INFO", "listed");
+        // shortcut: fixed 4 concurrent files (SHA-NI + one CivitAI lookup each); raise only
+        // together with the provider's rate limit.
+        const POOL: usize = 4;
+        let mut tasks = tokio::task::JoinSet::new();
         for model in models {
-            let status = self.update(|s| s.file = Some(model.path.clone()));
+            while tasks.len() >= POOL {
+                if let Some(result) = tasks.join_next().await {
+                    self.finish(result);
+                }
+            }
+            let provider = provider.clone();
+            let header = header.clone();
+            let path = model.path.clone();
+            let status = self.update(|s| s.file = Some(model.path));
             report(&status, "INFO", "processing");
-            // Reuse the verified-handle hash/cache/publication path, one request at a time.
-            let failed = fetch(&provider, PathBuf::from(model.path), header.clone())
-                .await
-                .is_err();
-            let status = self.update(|s| {
-                s.completed += 1;
-                s.failed += usize::from(failed);
+            // Each fetch carries its own file handle and provider request; nothing is shared.
+            tasks.spawn(async move {
+                let failed = fetch(&provider, path.clone().into(), header).await.is_err();
+                (path, failed)
             });
-            // Do not log provider response bodies: they can contain credentials or arbitrary data.
-            report(
-                &status,
-                if failed { "ERROR" } else { "INFO" },
-                if failed {
-                    "metadata lookup/cache failed; check file access and CivitAI availability"
-                } else {
-                    "processed"
-                },
-            );
+        }
+        while let Some(result) = tasks.join_next().await {
+            self.finish(result);
         }
         Ok(())
+    }
+
+    /// One join: names the finished file itself (the shared `file` field follows spawn order)
+    /// and a task panic counts as that file's failure; counters stay the existing ones.
+    fn finish(&self, result: Result<(String, bool), tokio::task::JoinError>) {
+        let (path, failed) = match result {
+            Ok(pair) => pair,
+            Err(_) => (String::new(), true),
+        };
+        let status = self.update(|s| {
+            if !path.is_empty() {
+                s.file = Some(path);
+            }
+            s.completed += 1;
+            s.failed += usize::from(failed);
+        });
+        // Do not log provider response bodies: they can contain credentials or arbitrary data.
+        report(
+            &status,
+            if failed { "ERROR" } else { "INFO" },
+            if failed {
+                "metadata lookup/cache failed; check file access and CivitAI availability"
+            } else {
+                "processed"
+            },
+        );
     }
 }
 
@@ -238,19 +266,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_scan_is_detached_serial_and_logs_failures_and_counts() {
+    async fn background_scan_is_detached_pooled_and_logs_failures_and_counts() {
         let root = tempfile::tempdir().unwrap();
         let dir = root.path().join("loras");
         std::fs::create_dir(&dir).unwrap();
-        for name in ["a.pt", "b.pt"] {
-            std::fs::write(dir.join(name), b"model").unwrap();
+        for (name, content) in [("a.pt", "model-a"), ("b.pt", "model-b")] {
+            std::fs::write(dir.join(name), content).unwrap();
         }
+        // Pool order is arbitrary, so the fixture answers by content hash: a fails (500), b finds nothing (404).
+        let hash_a = {
+            use sha2::{Digest, Sha256};
+            format!("{:x}", Sha256::digest(b"model-a"))
+        };
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let (release, wait) = std::sync::mpsc::channel();
         let server = std::thread::spawn(move || {
-            for code in [500, 404] {
+            for _ in 0..2 {
                 let deadline = Instant::now() + Duration::from_secs(10);
                 let (mut stream, _) = loop {
                     match listener.accept() {
@@ -274,6 +307,14 @@ mod tests {
                     assert!(request.len() < 8192);
                 }
                 wait.recv_timeout(Duration::from_secs(10)).unwrap();
+                let code = if std::str::from_utf8(&request)
+                    .unwrap_or_default()
+                    .contains(&hash_a)
+                {
+                    500
+                } else {
+                    404
+                };
                 write!(
                     stream,
                     "HTTP/1.1 {code} Fixture\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
@@ -313,7 +354,8 @@ mod tests {
             (active.completed, active.total, active.remaining),
             (0, 2, 2)
         );
-        assert!(active.file.unwrap().ends_with("a.pt"));
+        let file = active.file.unwrap();
+        assert!(file.ends_with("a.pt") || file.ends_with("b.pt"));
         assert!(monitor
             .start(
                 root.path().to_string_lossy().into_owned(),
@@ -357,7 +399,7 @@ mod tests {
             (2, 2, 0, 1)
         );
         assert!(dir.join("b.pt.deas.json").is_file());
-        assert_eq!(std::fs::read(dir.join("a.pt")).unwrap(), b"model");
+        assert_eq!(std::fs::read(dir.join("a.pt")).unwrap(), b"model-a");
         let logs = crate::logs::native_logs(0);
         let entries: Vec<_> = logs
             .iter()
@@ -369,9 +411,10 @@ mod tests {
                 .all(|e| e.source == crate::logs::Source::Deas
                     && !e.text.contains("scan-test-secret"))
         );
-        assert!(entries.iter().any(|e| e.text.contains("ERROR: Library")
-            && e.text.contains("a.pt")
-            && e.text.contains("completed=1 total=2 remaining=1 failed=1")));
+        // Pool completion order is arbitrary: pin the failing file's name, not its intermediate counts.
+        assert!(entries
+            .iter()
+            .any(|e| e.text.contains("ERROR: Library") && e.text.contains("a.pt")));
         assert!(entries.iter().any(|e| e.text.contains("finished")
             && e.text.contains("completed=2 total=2 remaining=0 failed=1")));
     }
