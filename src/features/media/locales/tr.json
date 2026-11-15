@@ -29,5 +29,21 @@
   "media.intake.label": "Buraya yapıştır veya bırak",
   "media.intake.hint": "Panodaki resmi Input klasörüne kaydetmek için buraya tıklayıp Ctrl+V tuşlarına basın veya Medya ya da dosya yöneticisinden bir resmi/videoyu kopyalamak için buraya bırakın. Orijinal yerinde kalır.",
   "media.intake.done": "Input klasörüne kopyalandı: {name}",
-  "media.intake.ignored": "Yalnızca resimler ve videolar kopyalanabilir."
+  "media.intake.ignored": "Yalnızca resimler ve videolar kopyalanabilir.",
+  "media.select.start": "Dosyaları seç",
+  "media.select.cancel": "Seçimi bitir",
+  "media.select.title": "Silinecek medyayı seç",
+  "media.select.count": "{count} seçildi",
+  "media.select.all": "Tümünü seç",
+  "media.select.clear": "Seçimi temizle",
+  "media.select.limit": "Filtreyi en fazla 500 dosyaya daraltın.",
+  "media.select.file": "{name} seç",
+  "media.delete.selected": "Seçilenleri sil…",
+  "media.delete.one": "Sil…",
+  "media.delete.owned": "Yalnızca yönetilen Girdi/Çıktı klasörlerindeki dosyalar silinebilir.",
+  "media.delete.confirm": "{count} dosya kalıcı olarak silinsin mi?",
+  "media.delete.warning": "Asıl dosyalar diskten silinir. Bu işlem geri alınamaz.",
+  "media.delete.busy": "Dosyalar siliniyor…",
+  "media.delete.done": "{count} dosya silindi.",
+  "media.delete.failed": "{count} dosya silinemedi ve seçili kaldı. Bu dosyaları kullanan programları kapatıp yeniden deneyin."
 }

@@ -160,6 +160,20 @@ impl Jobs {
         }
         Ok(())
     }
+    /// Keep preparation/submission idle for the entire explicit filesystem edit.
+    pub(crate) fn with_idle_media_edit<T>(
+        &self,
+        edit: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let session = self.lock()?;
+        if session.preparing.is_some()
+            || session.job.as_ref().is_some_and(|j| !j.terminal())
+            || session.workbench_busy()?
+        {
+            return Err("Wait for native generation to finish before deleting media".into());
+        }
+        edit()
+    }
     pub(crate) fn media_move_ready(
         &self,
         root: &std::path::Path,

@@ -70,3 +70,8 @@
 .media-video-still { position: relative; display: block; flex: none; line-height: 0; }
 .media-library[data-view="list"] .media-video-badge { display: none; }
 .media-video-badge { position: absolute; right: 4px; bottom: 4px; padding: 0 .3rem; border-radius: .25rem; border: 1px solid var(--blue-hi); background: var(--panel); color: var(--chalk); font-size: .62rem; line-height: 1.1rem; pointer-events: none; }
+.media-selection { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; font-size:.78rem; }
+.media-selection button { padding:.25rem .5rem; font-size:.75rem; }
+.media-list .media-pick { position:absolute; top:4px; left:4px; width:1.1rem; height:1.1rem; margin:0; cursor:pointer; }
+.media-list li[data-picked] > button { border-color:var(--ok); background:var(--ok-soft); }
+.media-delete-files { display:block; white-space:pre-wrap; max-height:12rem; overflow:auto; padding-inline-start:1.4rem; overflow-wrap:anywhere; text-align:left; }

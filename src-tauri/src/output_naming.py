@@ -12,11 +12,13 @@ from server import PromptServer
 
 # `prefix_00001_.png` (image savers), `prefix_00001_audio.webm` and its `-first-frame.png` (video combine).
 SAVED = re.compile(r"(.+)_(\d{5,})_?(audio)?(.*)\.(\w+)")
+# Windows rename is atomic and refuses an existing destination, including on exFAT.
+_USE_RENAME = os.name == "nt"
 SAVERS = ("SaveImage", "DaSiWa_MetadataImageSaver", "DaSiWa_EnhancedVideoCombine")
 
 
 def publish(files):
-    """Hard-link one save's files to `prefix-00001[-audio]...` at the first counter free for all of them."""
+    """Publish a save group without clobbering existing files; roll back partial groups."""
     counter = int(files[0][1].group(2))
     while True:
         done = []
@@ -24,24 +26,32 @@ def publish(files):
             for source, match in files:
                 prefix, _, audio, rest, extension = match.groups()
                 target = source.with_name(f"{prefix}-{counter:05}{'-audio' if audio else ''}{rest}.{extension}")
-                # A hard link publishes without overwriting an existing output, on Linux and Windows.
-                os.link(source, target)
-                done.append(target)
+                if _USE_RENAME:
+                    # Unlike POSIX rename, Windows rename fails if target already exists.
+                    # This supports exFAT, which cannot publish through hard links.
+                    os.rename(source, target)
+                else:
+                    os.link(source, target)
+                done.append((source, target))
             break
         except BaseException as error:
             rollback_failed = False
-            for target in done:
+            for source, target in done:
                 try:
-                    target.unlink()
+                    if _USE_RENAME:
+                        os.rename(target, source)
+                    else:
+                        target.unlink()
                 except OSError as cleanup_error:
                     error.add_note(f"DEAS output naming rollback failed for {target}: {cleanup_error}")
                     rollback_failed = True
             if not isinstance(error, FileExistsError) or rollback_failed:
                 raise
             counter += 1
-    for source, _ in files:
-        source.unlink()
-    return {source.name: target.name for (source, _), target in zip(files, done)}
+    if not _USE_RENAME:
+        for source, _ in files:
+            source.unlink()
+    return {source.name: target.name for source, target in done}
 
 
 def wrap_save(save):

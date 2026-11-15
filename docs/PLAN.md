@@ -10,6 +10,41 @@ This is the **single current plan** for DEAS: what is in place, what is still op
 
 Current working-tree source: 0.2.35 (unreleased). Latest published release: **0.2.33 BETA** (`v0.2.33`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
 
+## Local Notes and Media deletion
+
+Manual prompt notes and nested folders are implemented as personal profile data,
+with explicit Save and write-failure recovery. Media has confirmed single/bulk
+native deletion of owned Input/Output files. Fixture validation covers both;
+native WebView user acceptance and Linux runtime deletion remain open. These
+changes do not authorize a real library scan or generation during verification.
+
+## Local selected-LoRA popup and sets
+
+Selected weights, root-scoped personal set CRUD, Library add notifications,
+preview thumbnails, stacked read-only details and backdrop dismissal have fixture coverage. Native WebView interaction and user
+acceptance remain separate; no real model scan or generation is run during checks.
+
+## Local Studio LoRA inventory fix
+
+Studio lists all indexed LoRAs and allows other-family authoring selections,
+and submission. Family-only labels are advisory in Studio and native admission;
+missing-file, loader, integrity and source checks remain. Mocked coverage checks
+exact weights, no family popup and compact declaration markers without generation.
+Native acceptance with the user's collection remains separate.
+
+## Local Studio refocus fix
+
+The model refresh on window focus has been removed. A mocked regression checks
+that Run stays available and model/backend requests do not increase on refocus,
+while explicit Reload still discovers new files. Native-window acceptance remains
+with the user; no live generation is started.
+
+## Local Windows output publication fix
+
+The DEAS naming adapter has tested Windows no-overwrite rename publication and
+multi-file rollback. Real exFAT generation after an owned-backend restart remains
+user acceptance; no live generation is started during implementation.
+
 ## Native model browser proposal
 
 The indexed Library/Studio browser is proposed for review. Windows compilation,

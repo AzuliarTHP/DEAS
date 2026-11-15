@@ -34,6 +34,15 @@ export function checkModel(model?:LocalModel,context:ModelCheckContext={}):Model
  result.evidence=[...new Set(result.evidence)];
  return result;
 }
+/** LoRA family labels are advice. Preserve all non-family blockers, including stale metadata and damaged files. */
+export function checkLoraForExecution(model:LocalModel):ModelCheck {
+ const check=checkModel(model);
+ const advisory=['family','conflict','unverified','pickleFormat'];
+ if(model.category==='loras'&&check.compatibility==='blocked'&&check.reasons.some(r=>r.code==='family'||r.code==='conflict')&&check.reasons.every(r=>advisory.includes(r.code))){
+  return {...check,compatibility:'unknown',reasons:check.reasons.filter(r=>r.code!=='family'&&r.code!=='conflict')};
+ }
+ return check;
+}
 export function modelCheckText(check:ModelCheck,t:(key:string,params?:TranslationParams)=>string):string {
  const status=check.compatibility==='blocked'?'blocked':check.availability==='missing'?'missing':check.compatibility;
  const reasons=check.reasons.map(({code,detail})=>{

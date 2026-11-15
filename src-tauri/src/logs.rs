@@ -89,6 +89,18 @@ pub fn native_logs_people_image_error() {
     );
 }
 
+/// Fixed notes-storage failure; no prompt text or paths are accepted.
+#[tauri::command]
+pub fn native_logs_prompt_notes_error() {
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if last.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
+        return;
+    }
+    *last = Some(std::time::Instant::now());
+    push(Source::Deas, "ERROR: Studio Notes operation=save local profile storage unavailable or full; unsaved draft retained (repeats limited to once per minute)");
+}
+
 /// Fixed Library outcomes; no filenames, clipboard data or user notes are accepted.
 #[tauri::command]
 pub fn native_logs_library_error(operation: String) {
@@ -472,5 +484,18 @@ mod tests {
             s.entries.iter().map(|e| e.text.len()).sum::<usize>()
         );
         assert!(s.entries.iter().all(|e| e.seq > 1));
+    }
+    #[test]
+    fn prompt_notes_storage_error_is_fixed_and_rate_limited() {
+        let start = native_logs(0).last().map_or(0, |entry| entry.seq);
+        native_logs_prompt_notes_error();
+        native_logs_prompt_notes_error();
+        let entries: Vec<_> = native_logs(start)
+            .into_iter()
+            .filter(|entry| entry.text.contains("Studio Notes operation=save"))
+            .collect();
+        assert_eq!(entries.len(), 1);
+        assert!(include_str!("main.rs").contains("deas::native_logs_prompt_notes_error"));
+        assert!(include_str!("../permissions/logs.toml").contains("native_logs_prompt_notes_error"));
     }
 }

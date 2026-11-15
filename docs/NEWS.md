@@ -1,5 +1,77 @@
 # News
 
+## Local advisory LoRA families and compact controls (unreleased)
+
+- Explicitly selected LoRAs enter image/video Runs with their exact weights even
+  when family labels disagree. Studio, saved-set loading, history restoration and
+  native admission treat family-only conflicts as advice without a blocking popup.
+  Missing files/loaders, unsupported formats, source identity, malformed/stale
+  sidecars and damaged-file checks remain enforced. Actual backend load errors
+  remain visible; metadata does not establish successful model compatibility.
+- Studio's manual-family marker is a checkmark over the thumbnail, with the full
+  declaration on hover, so declarations no longer add a tall text row to cards.
+- Notes folder actions are compact icon buttons beside All notes, with accessible
+  names and hover labels. Folder name input and note organization are preserved.
+
+## Local LoRA details and Notes layout refinement (unreleased)
+
+- Other-family grey LoRA cards are selectable for authoring and named sets. Family
+  warnings remain visible and incompatible generation stays blocked.
+- The larger selected-LoRA popup has local/cached preview thumbnails. Clicking a
+  thumbnail opens a second dialog with filename, version, base model, size, path
+  and cached trigger words. Closing it returns to the unchanged LoRA picker.
+- Notes uses separate scrolling folders, folder-specific note list and editor panes.
+  New note sits beside Delete note; Seed follows Note name, before Note folder.
+- Library, Studio cards and LoRA dialogs share local-image preview fallback and
+  fixed shared-log diagnostics. No new model scan or metadata fetch is triggered.
+
+## Local prompt notebook and Media deletion (unreleased)
+
+- Studio adds a Notes tab beside LoRAs/Presets with nested folders, named notes,
+  positive/negative prompt fields and a manually entered seed. Explicit Save,
+  rename/move/delete and unsaved-draft protection keep notebook edits independent
+  of generation settings. Failed profile writes retain the draft and report an error.
+- Media adds confirmed right-click deletion and checkbox selection with Select all,
+  Clear and Delete selected. Native code authorizes owned Input/Output regular
+  files, validates the whole batch first, blocks active generation and reports
+  partial failures without hiding unsuccessful files. Deletion is permanent.
+
+## Local selected LoRAs and named sets (unreleased)
+
+- A LoRAs button below the main model picker opens selected weights/removal and
+  named-set management. Save, update, rename, load and delete personal sets per
+  model folder; loading replaces the draft selection without starting generation.
+- Library LoRA cards/details have Add to Studio actions with a small confirmation,
+  without navigation or opening the popup. Duplicate additions preserve weights.
+- Clicking a model-details or LoRA-popup backdrop closes it; inside clicks/drags
+  do not. Model tags commit before closing the details popup.
+
+
+## Local Studio LoRA inventory visibility fix (unreleased)
+
+- Studio's LoRA dock now browses the full indexed LoRA inventory instead of silently
+  hiding other known families. A remembered Hide other families toggle can restore
+  that filtered view. Mismatched cards remain visible with a disabled
+  activation state and explanatory tooltip. Compatible activation and native
+  execution checks are unchanged; an already-selected mismatch can be removed.
+
+
+## Local Studio refocus refresh fix (unreleased)
+
+- Returning to the window no longer reloads model listings, clears Studio errors or
+  briefly disables Run. Use the model dock's Reload or Library Refresh explicitly
+  after changing files. Root changes and native execution validation remain active.
+
+
+## Local Windows exFAT output publication fix (unreleased)
+
+- DEAS's owned-backend output naming adapter now uses Windows no-overwrite rename
+  instead of hard links, allowing completed PNG/video outputs on exFAT drives.
+- Partial multi-file renames roll back before retrying a collision. A failed rollback
+  preserves remaining files and the original error; it never deletes a moved source.
+  The POSIX hard-link path and unmarked standalone saves retain their behavior.
+
+
 ## 0.2.36 BETA (unreleased)
 
 - **Indexed native model browser.** Library and Studio restore a persistent browsing

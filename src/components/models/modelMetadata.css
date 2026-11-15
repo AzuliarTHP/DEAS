@@ -13,4 +13,7 @@
 .model-meta-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .model-meta-actions button:disabled { opacity: .5; cursor: default; }
 .model-declared { display: block; font-size: .7rem; color: var(--ok); overflow-wrap: anywhere; }
+.wb-tiles button { position:relative; }
+.wb-tiles .model-declared-compact { position:absolute; top:4px; right:4px; width:1.1rem; line-height:1.1rem; padding:0; border:1px solid var(--line); border-radius:.25rem; background:var(--field); font-size:.65rem; white-space:nowrap; }
+.wb-dock[data-view="list"] .model-declared-compact { position:static; flex:none; }
 .wb-tiles button[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }

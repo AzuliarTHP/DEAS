@@ -67,14 +67,14 @@ test('delayed video upload submits the captured endpoint, settings, naming and s
  expect(vi.mocked(runWorkbenchJob).mock.calls[0]).toEqual(['http://127.0.0.1:7801',expect.objectContaining({positivePrompt:'/env/ComfyUI/input/clip.mp4',seed:42,steps:8,outputPrefix:'raw/saved/42',sourceVideo:'deas-inputs/captured.mp4',ltx:expect.objectContaining({sourceStrength:0.7})}),0]);
 });
 
-test.each(['Image → Video','Multi-reference → Video'])('every right-click media action is mirrored in the preview toolbar (%s)',async pipeline=>{
+test.each(['Image → Video','Multi-reference → Video'])('every host media action is mirrored in the preview toolbar (%s)',async pipeline=>{
  vi.mocked(checkRecipePrerequisites).mockResolvedValue(videoEvidence);
  vi.mocked(scanModels).mockResolvedValue([{category:'diffusion_models',name:'MiniMaxH3/h3_ref2va.safetensors',path:'/m/h3.safetensors',size:1,info:null,family:'minimax-h3'}]);
  vi.mocked(invoke).mockImplementation(async command=>command==='native_media_star_status'?{starred:false,unavailable:null}:{path:'/outside',parent:'/',entries:[{name:'pic.png',path:'/outside/pic.png',kind:'file',media:'image',symlink:false,size:1,modified:1}],truncated:false});
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m',input:'/input',output:'/out'}}/></I18nProvider>);
  await waitFor(()=>expect(pipe(pipeline).disabled).toBe(false));choosePipe(pipeline);
  fireEvent.click(await screen.findByRole('button',{name:'pic.png'}));
- const menu=menuOf('pic.png').getAllByRole('menuitem').map(b=>b.firstChild?.textContent??'').filter(label=>label!=="Open in folder");
+ const menu=menuOf('pic.png').getAllByRole('menuitem').map(b=>b.firstChild?.textContent??'').filter(label=>!["Open in folder","Delete…"].includes(label));
  fireEvent.keyDown(document.activeElement??document.body,{key:'Escape'});
  const toolbar=screen.getByRole('region',{name:'Preview'}).querySelector<HTMLElement>(':scope > [data-media-tools]')!;
  expect(menu.length).toBeGreaterThan(0);

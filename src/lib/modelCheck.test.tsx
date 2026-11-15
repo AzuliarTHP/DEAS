@@ -1,8 +1,15 @@
 import {describe,it,expect} from 'vitest';
-import {checkModel} from './modelCheck';
+import {checkLoraForExecution,checkModel} from './modelCheck';
 import type {LocalModel} from './models';
 const model=(extra:Partial<LocalModel>={}):LocalModel=>({category:'checkpoints',name:'unknown.safetensors',path:'/models/unknown.safetensors',size:64,info:null,...extra});
 describe('shared model decisions',()=>{
+ it('treats LoRA family-only conflicts as unknown advice without weakening other blockers or checkpoint checks',()=>{
+  const lora=model({category:'loras',family:'flux',familyEvidence:'conflict',check:{identity:'sha256',compatibility:'blocked',availability:'available',evidence:['header','provider'],reasons:[{code:'conflict'}]}});
+  expect(checkLoraForExecution(lora).compatibility).toBe('unknown');
+  expect(checkModel(lora).compatibility).toBe('blocked');
+  expect(checkLoraForExecution({...lora,category:'checkpoints'}).compatibility).toBe('blocked');
+  for(const issue of [{integrity:'truncated'},{metadataError:'stale'},{check:{...lora.check!,reasons:[{code:'conflict'},{code:'futureBlocker'}]}}])expect(checkLoraForExecution({...lora,...issue}).compatibility).toBe('blocked');
+ });
  it('keeps unknown checkpoints and unknown quantizations unknown, not incompatible',()=>{
   expect(checkModel(model()).compatibility).toBe('unknown');
   expect(checkModel(model({name:'future-Q99.gguf'})).compatibility).toBe('unknown');

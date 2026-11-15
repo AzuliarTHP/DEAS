@@ -6,6 +6,16 @@
 
 DEAS — Dark Engine AI Studio is maintained under the [darksidewalker GitHub project](https://github.com/darksidewalker/DEAS). The [contributor history](https://github.com/darksidewalker/DEAS/graphs/contributors) and Git history identify individual contributions; this document does not invent contributor names or confer rights to upstream works.
 
+The Windows output-publication adapter uses the documented no-overwrite behavior
+of Python's [os.rename](https://docs.python.org/3/library/os.html#os.rename); the
+POSIX hard-link path remains separate.
+
+The local prompt notebook, stacked LoRA details and confirmed Media deletion reuse DEAS's React/Tauri
+components, native filesystem guards and existing Windows/Linux platform bindings;
+no third-party notebook service, deletion worker or new dependency is bundled.
+Compact declaration/folder controls and the advisory LoRA-label policy reuse the
+same components and native source/integrity validators.
+
 ## Current runtime and development foundations
 
 The native Library gallery, horizontal categories, scoped Fetch, folder controls and detail popup take visual/interaction inspiration from

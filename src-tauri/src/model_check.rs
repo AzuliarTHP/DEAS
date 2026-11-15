@@ -25,6 +25,21 @@ impl ModelCheck {
         self.compatibility = "blocked";
         self.reasons.push(Reason { code, detail });
     }
+    /// A selected LoRA's family labels are advisory; file/source validity is not.
+    pub(crate) fn blocks_execution(&self, field: &str) -> bool {
+        self.compatibility == "blocked"
+            && !(field == "loras"
+                && self
+                    .reasons
+                    .iter()
+                    .any(|r| matches!(r.code, "family" | "conflict"))
+                && self.reasons.iter().all(|r| {
+                    matches!(
+                        r.code,
+                        "family" | "conflict" | "unverified" | "pickleFormat"
+                    )
+                }))
+    }
 }
 
 pub(crate) fn describe(
@@ -162,6 +177,23 @@ mod tests {
         }
     }
 
+    #[test]
+    fn lora_family_advice_does_not_waive_other_execution_failures() {
+        let mut check = describe(
+            &model("a.safetensors"),
+            Some("sdxl"),
+            Some("anima"),
+            Some(true),
+        );
+        assert_eq!(check.compatibility, "blocked");
+        assert!(!check.blocks_execution("loras"));
+        assert!(check.blocks_execution("checkpoints"));
+        for code in ["metadata", "integrity", "component", "futureBlocker"] {
+            check.reasons.push(Reason { code, detail: None });
+            assert!(check.blocks_execution("loras"), "{code}");
+            check.reasons.pop();
+        }
+    }
     #[test]
     fn pickled_extensions_warn_without_blocking() {
         for name in ["a.pt", "B.PTH", "Sub/c.bin"] {

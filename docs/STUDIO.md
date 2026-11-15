@@ -2,10 +2,21 @@
 
 [Documentation index](README.md) · [Plan](PLAN.md)
 
+## Output naming on external drives
+
+The owned-backend adapter publishes readable names with a no-overwrite rename on
+Windows, including exFAT. On POSIX it retains hard-link publication. For multi-file
+outputs, occupied names advance the whole group to a free counter; partial renames
+are restored before retry. Restart the owned backend after updating the adapter.
+A naming failure can occur after the saver has written valid original files; do
+not assume inference failed or delete those originals. This adapter applies only
+to marked DEAS submissions and does not modify the DaSiWa node pack.
+
 ## Model browser (proposed)
 
 Models and LoRAs use the saved native browsing index. Reload explicitly refreshes
-it; returning to Studio uses the snapshot. Collapsible folder trees remember their
+it; returning to Studio or refocusing the app uses the current snapshot without a
+model request or readiness reset. Native execution still checks selected files. Collapsible folder trees remember their
 expanded state, and a parent folder includes descendants. The eye beside a folder
 hides its files and descendants from the dock and search, without changing the
 active model or LoRAs. Click the crossed-out eye to show them again. Visibility is
@@ -18,6 +29,56 @@ Only 60 cards render at first. Enable **View all** beside Sort to append matchin
 cards automatically as you scroll. The toggle is remembered; turning it off
 restores manual Show more batches. Neither mode triggers a folder scan. Live execution
 validation remains separate from browsing snapshots.
+
+The LoRA dock browses all indexed LoRA families, as Library does. Enable the
+remembered **Hide other families** checkbox to show only compatible or unknown
+families; turn it off to see the full inventory. Cards targeting
+another known family remain selectable. Family labels are advisory: selected LoRAs
+run with their exact weights without a family confirmation or incompatibility popup.
+A quiet hover hint discloses a differing label; metadata can be incorrect.
+Folder/search/visibility filters only affect browsing; all selected, present LoRAs
+enter the generation intent. All selected entries remain visible in the LoRA count, including mismatches. New external
+files require explicit Reload; Library and Studio keep their own display filters.
+
+## Selected LoRAs and named sets
+
+Click **LoRAs · count** below the model picker to edit selected weights (-10 to 10)
+and remove selections. **Add LoRAs** closes the popup and opens the LoRA dock.
+Library's card + button and **Add to Studio LoRAs** detail action add at weight 1
+without changing tabs or opening the popup. Existing selections keep their weights.
+Pending additions are retained locally until Studio is mounted for the same model
+folder. A differing family label does not make the selection unavailable. Missing
+files, unsupported formats and file/source failures remain blockers.
+
+Name the current selection and use **Save new set**. Select an existing definition
+to **Load set**, **Update selected set**, **Rename set** or **Delete set**. Loading
+replaces selected LoRAs/weights and requires every saved exact file to be listed and
+present in the current inventory. A present other-family entry can load into the
+authoring draft and run without a family popup. Model, loader, integrity and
+source-validity checks still apply.
+A definition with missing files cannot be partially applied. Deleting a set does not delete models or change selected LoRAs. Names are
+unique per model root; up to 100 sets with 128 entries each are stored in local
+profile preferences, separately from model files. No sets are included in source
+control or published by these controls. No action starts generation, hashing or
+metadata fetch. The larger popup has previews beside selected and saved entries.
+Click a thumbnail for a second **LoRA details** dialog with filename, version, base
+model, size, location and cached trigger words. **Copy all** copies its trigger
+words. Missing metadata is shown as unavailable rather than fetched implicitly.
+Close/Escape or click the details backdrop to return to the original popup with
+weights and unsaved set name intact. Each dialog restores focus to its opener.
+Click outside or press Escape to close the main popup.
+
+Native LoRA validation still checks the selected path, source identity, metadata
+binding and safetensors integrity. Family-only provider/header-label/declaration
+conflicts do not reject an explicitly selected LoRA, and no model family is
+silently rewritten. This is permission to try the exact selection, not proof of
+compatibility: genuine backend loading/computation errors remain visible. The
+checkpoint, component and non-LoRA architecture checks retain their behavior.
+History reuse follows the same LoRA-label policy and still rejects missing files.
+
+Studio shows a declared family with a small checkmark over the thumbnail. Hover
+it for the full declaration. This marker does not reserve an extra line below
+the card or enlarge the row; normal card names and family labels stay readable.
 
 ## Contextual model checks
 
@@ -583,6 +644,7 @@ On Linux the native video surface is temporarily hidden during internal drags an
 | Models / LoRAs | Load/reload trees, filter/search subfolders, select compatible models or toggle LoRAs/strengths; missing encoders/VAEs block affected operations |
 | Options | Naming, attention, VAE, cache, sigmas, chunking/output and torch.compile; unavailable capabilities remain diagnosed |
 | Post-Processing | Opt-in image refine/upscale above; not the TrueVideoEnhancer video port |
+| Notes | [Manually organize prompt notes](#prompt-notes) |
 | Presets | [Save and resume Studio settings](PROMPTING.md#presets) |
 | Wildcards | [Prompting guide](PROMPTING.md#wildcards) |
 
@@ -613,3 +675,35 @@ N/A transfers text only. Auto uses the actual valid Generate canvas; an unavaila
 MiniMax H3 references uploaded into `deas-inputs/` do not appear in ComfyUI's top-level image combo. DEAS accepts these references after path validation; the backend loader/Director checks the actual file. If an older app reports `Diagnostic images are not available on this backend: deas-inputs/…`, relaunch the rebuilt app; no backend upgrade is needed for this fix.
 
 Use a checked running backend, compatible models and required nodes. Run snapshots immutable settings; edits do not mutate active jobs. Read blockers before retrying and never silently repeat uncertain submissions. Job-scoped cancellation, persistent editor projects and broad Windows/model acceptance remain open. See [Logs](LOGS.md), [verification](VERIFICATION.md) and [the plan](PLAN.md).
+
+## Prompt notes
+
+Open **Notes**, between LoRAs and Presets, to keep a personal prompt notebook.
+Enter a note name, positive prompt, negative prompt and nonnegative integer seed,
+then click **Save note**. Notes do not copy or change the active generation prompt,
+seed, models or selected LoRAs. Ctrl/Cmd+Enter in the notebook does not run Studio.
+
+The left pane holds folders; the middle pane lists notes for the selected folder.
+All notes shows the whole notebook. Each pane scrolls independently of the editor.
+**New folder**, **Rename folder** and **Delete folder** are compact icons beside
+**All notes**, with hover labels. Type a name in **Folder name** before creating
+or renaming. **New folder** creates a child of the selected folder; select **All notes** first to create a top-level folder. Expand
+folders with the arrow. Rename/delete the selected folder using its name field
+and buttons. Folder deletion asks for confirmation and removes its subfolders
+and their notes. It never removes media or models. Choose another **Note folder**
+in the editor and Save to move a note. **New note** sits beside **Delete note** in
+the editor toolbar. **Save note**,
+**Discard changes** and confirmed **Delete note** manage individual entries.
+The top fields place Seed beside Note name, followed by the Note folder selector.
+
+Unsaved edits disable navigation to another note/folder until Save or Discard.
+Switching dock tabs retains the draft during the current session; restarting
+requires saving first. The notebook is stored in this device's DEAS profile and
+survives normal app restarts. It is independent of model folders and not included
+in source changes. A storage error keeps the draft unsaved and visible for retry;
+shared Logs receive a fixed diagnostic without prompt contents.
+
+Limits: 200 folders, eight folder levels, 500 notes, 100-character note names,
+16,384 characters per prompt and safe integer seeds from 0 to 9,007,199,254,740,991.
+Chromium fixtures cover the authoring flow; native WebView user acceptance remains
+separate. No new external dependency or provider connection is required.

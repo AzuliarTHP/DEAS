@@ -138,3 +138,9 @@ it('View all automatically appends matching cards and remembers the toggle witho
  fireEvent.click(screen.getByLabelText('View all'));
  await waitFor(()=>expect(document.querySelectorAll('.library-card')).toHaveLength(60));
 });
+
+it('adds a Library LoRA with a notice without opening a popup or starting work',()=>{
+ render(<Host/>);fireEvent.click(screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`}));
+ expect(screen.getByRole('status').textContent).toContain('LoRA added');expect(screen.queryByRole('dialog')).toBeNull();
+ const queue=JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!);expect(queue).toHaveLength(1);expect(queue[0].model.path).toBe(fox.path);expect(invoke).not.toHaveBeenCalled();
+});

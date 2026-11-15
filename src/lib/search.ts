@@ -151,6 +151,7 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.options', target: '[data-dock-tab="options"]', aliases: ['settings'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.post', target: '[data-dock-tab="post"]', aliases: ['refine', 'upscale'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.loras', target: '[data-dock-tab="loras"]', aliases: ['lora'] },
+  { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.notes', target: '[data-dock-tab="notes"]', aliases: ['notes', 'prompt notes'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'presets.title', target: '[data-dock-tab="presets"]', aliases: ['preset'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'wildcards.title', target: '[data-dock-tab="wildcards"]', aliases: ['wildcard'] },
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.references', target: '[data-open-references]', aliases: ['reference', 'image', 'refmod', 'create refmod'], reason: 'search.reason.references' },

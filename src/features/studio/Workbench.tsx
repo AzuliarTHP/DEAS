@@ -1,3 +1,7 @@
+import { ModelPreview } from '../../components/models/ModelPreview';
+import { PromptNotesPanel } from './PromptNotesPanel';
+import { LoraSetsDialog } from './LoraSetsDialog';
+import { STUDIO_LORA_ADD, takeStudioLoras } from '../../lib/studioLoraSelection';
 import { ModelAutoLoad, ModelViewAllControl } from '../../components/ModelAutoLoad';
 import { modelFolderHidden, validHiddenModelFolders, type HiddenModelFolders } from '../../lib/modelFolders';
 import { BeginnerLoras,isBeginnerLoraDraft,type BeginnerLoraDraft,type BeginnerLora } from '../beginner/BeginnerLoras';
@@ -33,7 +37,7 @@ import { ModelMetadataTarget, ModelDeclaredBadge, useModelMetadataUpdates } from
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { componentFiles, componentFilesNamed, defaultComponentOverrides, isComponentOverrides, type ComponentFamily, type ComponentSlot } from '../../lib/modelComponents';
 import { ComponentPicker } from './ComponentPicker';
-import {checkModel,modelCheckText} from '../../lib/modelCheck';
+import {checkLoraForExecution,checkModel,modelCheckText} from '../../lib/modelCheck';
 import {ModelAdvice} from '../../components/ModelAdvice';
 import {ModelCompanionAdvice} from '../downloads/ModelCompanionAdvice';
 import { AudioEnhance, AudioEnhanceInstallFeedback } from './AudioEnhance';
@@ -44,7 +48,7 @@ import { DeropeControls, defaultDerope, deropeNodes, fromDerope, isDeropePref, w
 import { ReferencePeople, ReferencesPanel, type FramePeople, directorTags, firstVisualRef, forgeLabels, h3ForgeContext, prefillItems, h3Full, over, refCounts, refsProblem, slotsOf, type RefAdd, type RefMod, type VideoRef } from './ReferencesPanel';
 import { mediaTypes, mediaViews, VideoStill, type MediaAction, type MediaRoots, type MediaType, type MediaView } from '../media/MediaLibrary';
 import { MediaPanel, MediaControls } from '../media/MediaPanel';
-import { describeMedia, dropCssPoint, exportWithoutMetadata, itemFromEntry, dragItem, draggedItem, MEDIA_DRAG, MEDIA_IMAGE_DRAG, normalizedMediaPath, relativeMediaPath, relocatedJob, relocatedMediaItem, type MediaItem, type MediaRelocation } from '../../lib/media';
+import { describeMedia, dropCssPoint, exportWithoutMetadata, itemFromEntry, dragItem, draggedItem, MEDIA_DRAG, MEDIA_IMAGE_DRAG, normalizedMediaPath, relativeMediaPath, relocatedJob, relocatedMediaItem, type MediaDeletion, type MediaItem, type MediaRelocation } from '../../lib/media';
 import { isBoolean, isString, oneOf, readPref, writePref, usePref, PreferencePersistenceContext, resetStudioPreferences, captureStudioSettings, applyStudioSettings } from '../../lib/preferences';
 import { ProjectBar } from '../projects/ProjectBar';
 import type { ImageDraft, ProjectSnapshot } from '../../lib/projects';
@@ -138,7 +142,7 @@ function useBlobSrc(src:string|undefined,active:boolean):{url?:string;error?:str
 const mediaError=(e:React.SyntheticEvent<HTMLMediaElement>)=>{const m=e.currentTarget.error;return m?`error ${m.code}${m.message?`: ${m.message}`:''}`:'';};
 const isSeed=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
 const isSeeds=(v:unknown):v is number[]=>Array.isArray(v)&&v.length<=10&&v.every(isSeed);
-const dockTabs=['media','models','loras','presets','wildcards','post','options'] as const;
+const dockTabs=['media','models','loras','notes','presets','wildcards','post','options'] as const;
 /** Pipeline taxonomy. `t2i`/`i2i` (images) and `t2v`/`i2v` (LTX, Wan, MiniMax H3 per family data) have native recipes; `v2v`/`ref2v` stay listed but disabled. */
 const pipelines=['t2i','i2i','t2v','i2v','v2v','ref2v','t2m','cover'] as const;
 type Pipeline=typeof pipelines[number];
@@ -163,6 +167,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  useEffect(()=>setMediaFault(''),[media?.src]);
  const [outputRevision,setOutputRevision]=useState(0);
  const [savedDockTab,setDockTab]=usePref('studio.dock.tab','media',oneOf(...dockTabs));
+ const notesVisited=useRef(false);if(savedDockTab==='notes')notesVisited.current=true;
  const dockTab=beginner?'media':savedDockTab;
  const focusDockTab=useRef(false);
  const [openPostCategory,setOpenPostCategory]=useState<PostCategoryId|null>(null);
@@ -206,6 +211,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [promptHidden,setPromptHidden]=usePref('beginner.layout.promptHidden',false,isBoolean);
  const [bodyWidth,setBodyWidth]=useState(1000);
  const [sortPref,setSort]=usePref('studio.dock.sort','date',oneOf('date','name','size'));
+ const [hideOtherLoraFamilies,setHideOtherLoraFamilies]=usePref('studio.dock.hideOtherLoraFamilies',false,(v):v is boolean=>typeof v==='boolean');
  const [viewAllModels,setViewAllModels]=usePref('studio.dock.viewAllModels',false,(v):v is boolean=>typeof v==='boolean');
  const [modelSort,setModelSort]=usePref('studio.dock.modelSort','name',isModelSort);const modelUsage=useModelUsage();const [shuffleSeed,setShuffleSeed]=useState(()=>Math.floor(Math.random()*2147483647));
  const [dockView,setDockView]=usePref<MediaView>('studio.dock.view','tiles',oneOf(...mediaViews));
@@ -258,6 +264,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [checkpointPref,setCheckpoint]=usePref('studio.run.checkpoint','',isString);
  const [modelIdentity,setModelIdentity]=useState('');
  const identity=(m:LocalModel)=>JSON.stringify([m.category,m.path,m.name]);
+ const [loraSetsOpen,setLoraSetsOpen]=useState(false);
  const [loras,setLoras]=usePref<Lora[]>('studio.run.loras',[],isLoras);
  // Prompt pictures share attachment UI; only ReVision uses a strength and vision model.
  const [imageRefs,setImageRefs]=useState<{item:MediaItem;strength:number}[]>([]);
@@ -475,7 +482,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  // The same folder tree is used by Library and both Studio model docks.
  const folderTree=(list:LocalModel[])=><ModelFolderTree names={list.map(m=>m.name)} selected={folder} onSelect={path=>setFolders({...folders,[dockTab]:path})} storageKey={`studio:${modelsDir??endpoint}:${dockTab}`} rootLabel={t(`studio.run.dock.${dockTab}`)} hiddenFolders={hiddenFolders} onToggleHidden={path=>setHiddenByDock(old=>({...old,[hiddenFolderKey]:(old[hiddenFolderKey]??[]).includes(path)?(old[hiddenFolderKey]??[]).filter(p=>p!==path):[...old[hiddenFolderKey]??[],path]}))}/>;
  const [modelTileLimit,setModelTileLimit]=useState(60);
- useEffect(()=>setModelTileLimit(60),[dockTab,folder,query,modelSort,viewAllModels]);
+ useEffect(()=>setModelTileLimit(60),[dockTab,folder,query,modelSort,viewAllModels,hideOtherLoraFamilies]);
  const visibleModelTiles=(list:LocalModel[])=>sortModels(list.filter(match),modelSort,modelUsage,shuffleSeed).slice(0,modelTileLimit);
  const moreModelTiles=(list:LocalModel[])=>list.filter(match).length>modelTileLimit&&(viewAllModels?<ModelAutoLoad onMore={()=>setModelTileLimit(n=>n+60)}/>:<button type="button" className="library-load-more" onClick={()=>setModelTileLimit(n=>n+60)}>{t('library.loadMore',{count:Math.min(60,list.filter(match).length-modelTileLimit)})}</button>);
  // ComfyUI's LoadImage reads its input folder, and its output folder through the `name [output]` annotation (resolved and contained by ComfyUI).
@@ -612,8 +619,11 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   :!isFaceRefineBlock(faceRefineBlock)?t('studio.faceRefine.invalid'):'';
  const faceRefineAutoUnavailable=faceRefineSetup;
  const textProjection=video.textProjection||recommended?.textProjections[0]||'';
- // LoRAs of another known family are hidden; unknown ones stay (their target cannot be checked).
- const loraModels=(models??[]).filter(m=>m.category==='loras'&&(!family||!m.family||m.family===(family.loraFamily??family.id))).sort(byName);
+ // Family labels filter browsing only. Every explicitly selected, present LoRA enters the intent.
+ const allLoraModels=(models??[]).filter(m=>m.category==='loras').sort(byName);
+ const loraMatchesFamily=(m:LocalModel)=>!family||!m.family||m.family===(family.loraFamily??family.id);
+ const loraModels=allLoraModels.filter(loraMatchesFamily);
+ const browsedLoraModels=hideOtherLoraFamilies?loraModels:allLoraModels;
  // A custom schedule (Options tab text, else the model's own, e.g. Turbo) replaces steps/scheduler; image-to-image keeps its tail like AlignYourSteps does (round(steps·denoise) steps).
  const schedule=parseSigmas(optionsPref.sigmas??'')??family?.sigmas;
  const tail=(d:number)=>schedule&&schedule.slice(-(Math.max(1,Math.round((schedule.length-1)*d))+1));
@@ -624,10 +634,11 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  // De-rope re-renders a plain MiniMax H3 generation from its own latent (not HyperFlow, not TVE).
  const derope=videoFamily==='minimax-h3'?deropePref:defaultDerope;
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
- const loraNames=loraModels.map(m=>m.name);
+ const loraNames=allLoraModels.map(m=>m.name);
+ useEffect(()=>{const apply=()=>{if(!models||!modelsDir)return;const adds=takeStudioLoras(modelsDir);if(!adds.length)return;setModels(old=>{if(!old)return old;return [...old,...adds.filter(m=>!old.some(existing=>existing.path===m.path))];});setLoras(old=>{const next=[...old];for(const m of adds)if(!next.some(l=>l.name===m.name))next.push({name:m.name,strength:1});return next;});};apply();window.addEventListener(STUDIO_LORA_ADD,apply);return()=>window.removeEventListener(STUDIO_LORA_ADD,apply);},[models,modelsDir,setLoras]);
  const activeLoras=loras.filter(l=>loraNames.includes(l.name));
  const previousUses=useRef<Set<string>|null>(null);
- const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=loraModels.find(m=>m.name===l.name);return m?[m]:[];})];
+ const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=allLoraModels.find(m=>m.name===l.name);return m?[m]:[];})];
  const appliedUsageKey=appliedUsageModels.map(modelUsageKey).join('\0');
  useEffect(()=>{if(!models){previousUses.current=null;return;}const next=new Set(appliedUsageModels.map(modelUsageKey));if(previousUses.current){for(const m of appliedUsageModels)if(!previousUses.current.has(modelUsageKey(m)))recordModelUse(m);}previousUses.current=next;},[models!==null,appliedUsageKey]);
 
@@ -665,7 +676,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   ...(imageRefs.length&&!referenceMethod?[t('studio.run.reference.inactive')]:[]),
   ...(imageRefs.length&&referenceMethod?(!choices?[]:(revisionOk?['CLIPVisionLoader','LoadImage','CLIPVisionEncode','unCLIPConditioning']:[promptEncoder,'LoadImage',...(qwenRefs?['ImageScale']:[])]).filter(n=>!choices.nodes.includes(n))):[]),
   ...(models?loras.filter(l=>!loraNames.includes(l.name)).map(l=>`LoRA: ${l.name}`):[]),
- ...loraModels.filter(m=>(checkModel(m).compatibility==='blocked'||!supportedLoraFormat(m))&&loras.some(l=>l.name===m.name)).map(m=>`${checkModel(m).compatibility==='blocked'?modelCheckText(checkModel(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
+ ...allLoraModels.filter(m=>(checkLoraForExecution(m).compatibility==='blocked'||!supportedLoraFormat(m))&&loras.some(l=>l.name===m.name)).map(m=>`${checkLoraForExecution(m).compatibility==='blocked'?modelCheckText(checkLoraForExecution(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
   ...(split&&!split.encoders.includes(textEncoder)?[textEncoder||t('studio.run.textEncoder')]:[]),
   ...(dualClip&&split&&(!textEncoder2||!split.encoders.includes(textEncoder2))?[textEncoder2||t('studio.run.textEncoder2')]:[]),
   ...(dualClip&&choices?[...(!choices.nodes.includes(isGguf(textEncoder)||isGguf(textEncoder2)?'DualCLIPLoaderGGUF':'DualCLIPLoader')?[isGguf(textEncoder)||isGguf(textEncoder2)?'DualCLIPLoaderGGUF':'DualCLIPLoader']:[]),
@@ -1218,9 +1229,8 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  };
  // The shared shell owns viewport sizing; observe this pane only to bound dock resizing.
  const shell=useRef<HTMLDivElement>(null);const [bodyHeight,setBodyHeight]=useState(600);
- // Files are dropped into model folders while DEAS is in the background: re-scan on window refocus, at most every 10 s, only when Studio is visible.
- const loadOnFocus=useRef(load);loadOnFocus.current=load;
- useEffect(()=>{let last=0;const refocus=()=>{if(Date.now()-last<10000||shell.current?.closest('[hidden]'))return;last=Date.now();void loadOnFocus.current();};window.addEventListener('focus',refocus);return()=>window.removeEventListener('focus',refocus);},[]);
+ // Model discovery is explicit; returning to the window must not invalidate Run readiness.
+
  useEffect(()=>{if(browsed)shell.current?.querySelectorAll<HTMLMediaElement>('.wb-current-preview video, .wb-current-preview audio').forEach(el=>{if(!el.paused)el.pause();});},[browsed?.src]);
  useLayoutEffect(()=>{
   const measure=()=>{const el=shell.current;if(el?.clientWidth)setBodyWidth(el.clientWidth);if(el?.clientHeight)setBodyHeight(el.clientHeight);};measure();
@@ -1335,6 +1345,26 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   };
   window.addEventListener('deas-media-relocated',moved);return()=>window.removeEventListener('deas-media-relocated',moved);
  },[native,outputDir]);
+ useEffect(()=>{
+  const removed=(event:Event)=>{
+   const {deleted}=(event as CustomEvent<MediaDeletion>).detail;
+   const paths=new Set(deleted.map(normalizedMediaPath)),srcs=new Set(deleted.map(path=>native?convertFileSrc(path):path));
+   const missing=(item:MediaItem|null|undefined)=>!!item?.path&&paths.has(normalizedMediaPath(item.path));
+   const keep=(item:MediaItem|null)=>missing(item)?null:item;
+   setMedia(keep);setBrowsed(keep);setLastFrame(keep);setSourceVideo(keep);setMusicSource(keep);setRolePick(keep);
+   setRefs(values=>values.filter(ref=>!missing(ref.item)));setImageRefs(values=>values.filter(ref=>!missing(ref.item)));
+   setLastOnlySrc(value=>value&&srcs.has(value)?null:value);
+   setSourceVideoSize(value=>value&&srcs.has(value.src)?null:value);setRefSize(value=>value&&srcs.has(value.src)?null:value);
+   setSources(values=>Object.fromEntries(Object.entries(values).filter(([,item])=>!missing(item))));
+   setLayers(values=>values.filter(layer=>!srcs.has(layer.src)));setViewer(value=>value&&(srcs.has(value.src)||missing(value.item))?null:value);
+   for(const [key,draft] of drafts.current)drafts.current.set(key,{...draft,media:keep(draft.media),mediaSize:missing(draft.media)?null:draft.mediaSize,musicSource:keep(draft.musicSource),sourceVideo:keep(draft.sourceVideo),sourceVideoSize:missing(draft.sourceVideo)?null:draft.sourceVideoSize,lastFrame:keep(draft.lastFrame),lastOnlySrc:draft.lastOnlySrc&&srcs.has(draft.lastOnlySrc)?null:draft.lastOnlySrc,imageRefs:draft.imageRefs.filter(ref=>!missing(ref.item)),refs:draft.refs.filter(ref=>!missing(ref.item)),layers:draft.layers.filter(layer=>!srcs.has(layer.src)),...(missing(draft.media)?{editor:undefined,masked:false}:{})});
+   const advanced=advancedReferences.current;if(advanced){advanced.sourceVideo=keep(advanced.sourceVideo);advanced.lastFrame=keep(advanced.lastFrame);advanced.lastOnlySrc=advanced.lastOnlySrc&&srcs.has(advanced.lastOnlySrc)?null:advanced.lastOnlySrc;advanced.refs=advanced.refs.filter(ref=>!missing(ref.item));advanced.imageRefs=advanced.imageRefs.filter(ref=>!missing(ref.item));}
+   if(missing(media)){sourceEpoch.current++;setMediaSize(null);setLayers([]);setMasked(false);setEditorSnapshot(undefined);}
+   // Historical intent is retained; the deleted file is no longer the active preview.
+   if(jobs.some(job=>job.id===selectedJob&&job.outputs.some(output=>missing(outputItem(job,output)))))setSelectedJob('');
+  };
+  window.addEventListener('deas-media-deleted',removed);return()=>window.removeEventListener('deas-media-deleted',removed);
+ },[native,media,jobs,selectedJob]);
  // Post-process takes the shown render (its submitted size), else the current edit source.
  const isVideoOut=(o:JobStatus['outputs'][number])=>!!o.format?.startsWith('video/')||/\.(webm|mkv|mp4|avif)$/i.test(o.filename);
  // Full view steps through finished local image results in queue order (each paired product in role order); video/audio are skipped.
@@ -1781,7 +1811,7 @@ const promptTools=forgeContext&&<>
   }
   return true;
  };
- const tile=(m:LocalModel,pressed:boolean,onClick:()=>void,extra?:React.ReactNode,reason='')=><li key={identity(m)}><ModelMetadataTarget model={m}><button type="button" aria-label={m.name} aria-haspopup="menu" aria-keyshortcuts="Shift+F10" aria-pressed={pressed} aria-disabled={!!reason} title={reason?t(reason):m.name} onClick={()=>{if(!reason)onClick();}}>{m.info?.civitai?.preview?<img src={m.info.civitai.preview} alt="" loading="lazy"/>:<span className="wb-thumb" aria-hidden="true">◆</span>}<span className="wb-tile-name">{shortName(m.name)}</span>{familyOf(m)&&<small className="wb-family">{familyOf(m)!.name}</small>}<ModelDeclaredBadge model={m}/></button></ModelMetadataTarget>{extra}</li>;
+ const tile=(m:LocalModel,pressed:boolean,onClick:()=>void,extra?:React.ReactNode,reason='',warning='')=><li key={identity(m)}><ModelMetadataTarget model={m}><button type="button" aria-label={m.name} aria-haspopup="menu" aria-keyshortcuts="Shift+F10" aria-pressed={pressed} aria-disabled={!!reason} data-family-mismatch={!!warning||undefined} title={reason?t(reason):warning?t(warning):m.name} onClick={()=>{if(!reason)onClick();}}><ModelPreview model={m} fallback={<span className="wb-thumb" aria-hidden="true">◆</span>}/><span className="wb-tile-name">{shortName(m.name)}</span>{familyOf(m)&&<small className="wb-family">{familyOf(m)!.name}</small>}<ModelDeclaredBadge model={m} compact/></button></ModelMetadataTarget>{extra}</li>;
  const pick=(id:string,value:string,list:readonly string[],set:(v:string)=>void,onFocus?:()=>void)=><label key={id} className="wb-field"><span>{t(id)}</span><select data-pick={id} value={value} onFocus={onFocus} onPointerDown={onFocus} onChange={e=>set(e.target.value)}>{(list.includes(value)?list:[value,...list]).map(v=><option key={v} value={v}>{v}</option>)}</select></label>;
  const componentPick=(id:string,slot:ComponentSlot,value:string,list:readonly string[],set:(value:string)=>void)=><span key={slot} style={{display:'contents'}} data-run-component={slot}><ComponentPicker label={t(id)} value={value} automatic={recommended?.[slot][0]??''} files={list} all={componentOverrides[slot]} onAll={all=>setComponentOverrides({...componentOverrides,[slot]:all})} onChange={set}/>{companionChecks.find(c=>c.slot===slot&&c.name===(value||recommended?.[slot][0]||''))&&<ModelAdvice check={companionChecks.find(c=>c.slot===slot&&c.name===(value||recommended?.[slot][0]||''))!.check}/>}</span>;
  const naming=outputPrefix(outputNamingTemplate(optionsPref.outputNaming),{type:isMusic?'audio':isVideo?'video':'image',seed,model:checkpoint});
@@ -1933,7 +1963,7 @@ const promptTools=forgeContext&&<>
  },[openPostCategory,dockTab,planVisible,beginner,dockHidden,closePostCategory]);
  // aria-hidden keeps each tab's accessible name stable; the count stays visible and in the tooltip.
  const dockBadge=(n:number)=>n>0&&<small className="wb-dock-badge" aria-hidden="true" title={t('studio.run.dock.changed',{count:String(n)})}>{n}</small>;
- const dockNavigation=<div className="wb-dock-tabs" role="tablist" aria-label={t('studio.run.dock')}>{dockTabs.filter(id=>!beginner||id==='media').map(id=><button key={id} role="tab" type="button" data-dock-tab={id} aria-selected={dockTab===id} onClick={e=>{if(!e.currentTarget.dataset.revealOpen)focusDockTab.current=true;setDockTab(id);if(id==='options'||id==='post')loadChoices();}}>{t(id==='wildcards'?'wildcards.title':id==='presets'?'presets.title':`studio.run.dock.${id}`)}{dockBadge(id==='loras'?activeLoras.length:id==='wildcards'?wildcardChanges.length:id==='post'?postChanges.length:id==='options'?optionChanges.length:0)}</button>)}</div>;
+ const dockNavigation=<div className="wb-dock-tabs" role="tablist" aria-label={t('studio.run.dock')}>{dockTabs.filter(id=>!beginner||id==='media').map(id=><button key={id} role="tab" type="button" data-dock-tab={id} aria-selected={dockTab===id} onClick={e=>{if(!e.currentTarget.dataset.revealOpen)focusDockTab.current=true;setDockTab(id);if(id==='options'||id==='post')loadChoices();}}>{t(id==='wildcards'?'wildcards.title':id==='presets'?'presets.title':`studio.run.dock.${id}`)}{dockBadge(id==='loras'?loras.length:id==='wildcards'?wildcardChanges.length:id==='post'?postChanges.length:id==='options'?optionChanges.length:0)}</button>)}</div>;
  /** Image prompt references: count/limit chip and numbered thumbnails; shown under the prompt and in the References overlay. */
  const insertTag=(tag:string)=>setPositive(positive.trim()?`${positive.trimEnd()} ${tag}`:tag);
  const pipelineOptions=(['image','video','music'] as const).map(id=>{const reason=id==='image'?(why('t2i')&&why('i2i')):id==='video'?(videoPipelines.every(p=>why(p as Pipeline))?'studio.run.pipe.noRecipe':''):(why('t2m')&&why('cover'));return <option key={id} value={id} disabled={!!reason} title={reason?t(reason):undefined}>{t(`studio.run.pipe.${id}`)}</option>;});
@@ -2000,7 +2030,7 @@ const promptTools=forgeContext&&<>
       {!checkpointPref&&!checkpoint&&<option value="" disabled>{t('studio.run.noModels')}</option>}
       {unavailableModelReason&&<option value={checkpointPref} disabled title={unavailableModelReason}>{checkpointPref} — {unavailableModelReason}</option>}
       {usable.map(m=><option key={identity(m)} value={modelValue(m)} title={m.name}>{m.name}</option>)}
-     </select></label><small>{t('studio.run.loras')} {activeLoras.length}</small></div>
+     </select></label><button type="button" className="wb-dock-action wb-lora-button" aria-haspopup="dialog" aria-expanded={loraSetsOpen} onClick={()=>setLoraSetsOpen(true)}>{t('studio.run.loras')} · {loras.length}</button></div>
      {(model||savedModel)&&<ModelAdvice check={selectedModelCheck}/>}
      {model&&<ModelCompanionAdvice model={model} models={models??[]} onOpen={s=>setCompanionDownload(s.target)}/>}
      {pipeline==='i2i'&&<p className="wb-active"><span>{t('studio.run.pipe.input')} · {t(`studio.run.edit.${edit}`)}</span><strong title={inputImage}>{fileName(inputImage)}</strong></p>}
@@ -2126,8 +2156,9 @@ const promptTools=forgeContext&&<>
    <div className="wb-dock-handle" role="separator" aria-orientation="horizontal" aria-label={t('studio.run.dockResize')} title={t('studio.run.dockResize')} tabIndex={0} aria-valuemin={120} aria-valuemax={dockMax} aria-valuenow={dockSize} data-locked={dockHidden||undefined} onKeyDown={e=>{if(!dockHidden)resizeKey(e,dockSize,120,dockMax,setDockHeight,true);}} onPointerDown={e=>{if(!dockHidden)dragPane(e,dockSize,120,dockMax,setDockHeight,true);}}/>
    {paneToggle(dockHidden,setDockHidden,'dock','studio-dock')}
    {dockTab==='media'?<MediaPanel selected={browsed??media} onSelect={setBrowsed} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} toolbar={dockNavigation} marks={marks} actions={mediaActions}/>:<div className="media-toolbar">{dockNavigation}
-    {(dockTab==='models'||dockTab==='loras')&&<><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sorts={sorts} sortControl={<><ModelSortControl value={modelSort} onChange={setModelSort} onShuffle={()=>setShuffleSeed(n=>n+1)}/><ModelViewAllControl value={viewAllModels} onChange={setViewAllModels}/></>}/><button type="button" className="wb-dock-action" data-run-load disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
+    {(dockTab==='models'||dockTab==='loras')&&<><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sorts={sorts} sortControl={<><ModelSortControl value={modelSort} onChange={setModelSort} onShuffle={()=>setShuffleSeed(n=>n+1)}/><ModelViewAllControl value={viewAllModels} onChange={setViewAllModels}/>{dockTab==='loras'&&<label className="model-view-all" title={t('studio.run.hideOtherLoraFamiliesHelp')}><input type="checkbox" checked={hideOtherLoraFamilies} onChange={e=>setHideOtherLoraFamilies(e.target.checked)}/>{t('studio.run.hideOtherLoraFamilies')}</label>}</>}/><button type="button" className="wb-dock-action" data-run-load disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
    </div>}
+   {notesVisited.current&&<div className="wb-dock-panel wb-notes-panel" hidden={dockTab!=='notes'}><PromptNotesPanel/></div>}
    {dockTab==='presets'&&<div className="wb-dock-panel"><PresetPanel disabled={busy||!!current||autoPlan||resolving}/></div>}
     {dockTab==='wildcards'&&<div className="wb-dock-panel"><WildcardPanel library={wildcardLibrary} loading={wildcardLoading} error={wildcardLibraryError} onReload={()=>setWildcardRevision(v=>v+1)} value={wildcard} onChange={setWildcard} enabled={wildcardEnabled} onEnabled={setWildcardEnabled} positive={positive} negative={negative} onInsert={name=>setPositive(p=>`${p.trim()?`${p} `:''}$${name}`)}/></div>}
 {dockTab==='post'&&<section className="wb-dock-panel wb-post" aria-label={t('studio.run.dock.post')}>
@@ -2242,7 +2273,7 @@ const promptTools=forgeContext&&<>
    {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel wb-model-browser-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
     {!models&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
     {models&&dockTab==='models'&&(allModels.length===0?<p className="media-help">{t('studio.run.noModels')}</p>:<div className="media-browser">{folderTree(allModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles" data-run-checkpoint>{visibleModelTiles(allModels).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul>{moreModelTiles(allModels)}</div></div>)}
-    {models&&dockTab==='loras'&&(loraNames.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(loraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(loraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/>);})}</ul>{moreModelTiles(loraModels)}</div></div>)}
+    {models&&dockTab==='loras'&&(browsedLoraModels.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
    </section>}
   </div>
  </div>
@@ -2250,6 +2281,7 @@ const promptTools=forgeContext&&<>
  {companionDownload&&<dialog ref={companionDialog} data-companion-download className="continuity-overlay" aria-label={t('downloads.title')} onCancel={e=>{e.preventDefault();setCompanionDownload(null);}}><header className="continuity-overlay-header"><h2>{t('downloads.title')}</h2><button type="button" onClick={()=>setCompanionDownload(null)}>{t('studio.close')}</button></header><div className="wb-dock-panel"><p>{t('studio.run.latent.consent')}</p><DownloadPanel embedded installTarget={root} modelsDir={modelsDir} initialCategory={companionDownload} onStatus={s=>{if(s.state==='succeeded'){void load();void refreshChoices(false);}}}/></div></dialog>}
   {visionDownload&&<dialog ref={visionDialog} data-vision-download className="continuity-overlay" aria-label={t("studio.run.reference.dlAsk")} onCancel={e=>{e.preventDefault();closeVisionDownload();}}><header className="continuity-overlay-header"><h2>{t("studio.run.reference.dlAsk")}</h2><button type="button" onClick={closeVisionDownload}>{t("studio.close")}</button></header><div className="wb-dock-panel"><p>{t("studio.run.latent.consent")}</p><DownloadPanel embedded installTarget={root} modelsDir={modelsDir} initialEntryIds={visionIds} filenameFilter={["clip_vision_g.safetensors"]} onStatus={visionDownloadStatus}/></div></dialog>}
  {latentDownload&&<dialog ref={latentDialog} data-latent-upscale-download className="continuity-overlay" aria-label={t('studio.run.latent.download')} onCancel={e=>{e.preventDefault();closeLatentDownload();}}><header className="continuity-overlay-header"><h2>{t('studio.run.latent.download')}</h2><button type="button" onClick={closeLatentDownload}>{t('studio.close')}</button></header><div className="wb-dock-panel"><p>{t('studio.run.latent.consent')}</p><DownloadPanel embedded installTarget={root} modelsDir={modelsDir} initialEntryIds={latentIds} filenameFilter={latentDownload==='minimax-h3'?['minimax_h3_latent_upscaler_2d_conv_v1_fp16.safetensors','minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors','MiniMax H3 Latent Upscaler.safetensors','minimax h3 latent upscaler.safetensors','minimax_h3_latent_upscaler.safetensors']:['ltx-2.3-spatial-upscaler-x2-1.1.safetensors','LTX-2.3-Latent-Upscaler.safetensors']} onStatus={latentDownloadStatus}/></div></dialog>}
+ {loraSetsOpen&&<LoraSetsDialog root={modelsDir??endpoint} selected={loras} models={allLoraModels} onChange={setLoras} usable={m=>supportedLoraFormat(m)&&checkLoraForExecution(m).compatibility!=='blocked'} onClose={()=>setLoraSetsOpen(false)} onBrowse={()=>{setLoraSetsOpen(false);setDockTab('loras');}}/>}
  {referencesOpen&&refsTab&&!planVisible&&<ReferencesOverlay pickerHint={t('studio.run.video.roles.pick')} onClose={()=>{setReferencesOpen(false);referencesButton.current?.focus();}} picker={<MediaPanel toolbar={error?<p role="alert" className="error-message">{backendErrorText(error,t)}</p>:undefined} selected={rolePick} onSelect={setRolePick} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} marks={marks} actions={mediaActions}/>}>{videoRoleEditor()}{refmods.length>0&&!isH3Video(videoFamily)&&<div className="wb-ref"><p>{t('studio.run.video.roles.unsupported')}</p><button type="button" className="wb-dock-action" data-video-refmods-clear onClick={()=>updateVideoMode({references:refs.length},()=>setRefmods([]))}>{t('studio.run.video.roles.remove',{role:t('studio.run.video.refmods')})}</button></div>}{(family?.video?.roles.includes('reference')||refs.length>0)&&<ReferencesPanel endpoint={endpoint} root={root} refs={refs} onChange={changeRefs} family={isH3Video(videoFamily)?videoFamily:'ltx-2'} seconds={video.seconds} label={refLabel} onAdd={addRefs} onPack={(adds,mods,replace)=>addRefs(adds,replace,mods)} inputRoot={roots.input} outputRoot={outputDir} refmods={refmods} onRefmods={next=>{if(next.length&&!family?.video?.mixReferences&&(firstFrame||lastFrame)){setError(t('studio.run.video.roles.mixing'));return;}updateVideoMode({references:roleReferenceCounts.current.refs+next.length},()=>{roleReferenceCounts.current.mods=next.length;setRefmods(next);});}} library={native&&endpoint.trim()?()=>readRefMods(endpoint):undefined} refmodCreate={native&&endpoint.trim()&&isH3Video(videoFamily)?{vae,audioVae,modelsDir:roots.models,vaes:family?componentFiles(models??[],family,'vaes'):[],audioVaes:family?componentFiles(models??[],family,'audioVaes'):[],upload:path=>uploadInput(endpoint,path)}:undefined} onInsert={insertTag}/>}</ReferencesOverlay>}
  {referencesOpen&&imageRefsButton&&<ReferencesOverlay onClose={()=>{setReferencesOpen(false);referencesButton.current?.focus();}} picker={<MediaPanel toolbar={error?<p role="alert" className="error-message">{backendErrorText(error,t)}</p>:undefined} selected={null} onSelect={item=>{if(item.path&&validReference(item))togglePromptRef(item as MediaItem&{path:string});}} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} marks={marks} actions={mediaActions}/>}><div className="wb-image-references" data-image-references>{imageRefBar()}</div></ReferencesOverlay>}
  {/* Keep H3 editors with their Workbench state; only their DOM lives in the retained Forge tab. */}

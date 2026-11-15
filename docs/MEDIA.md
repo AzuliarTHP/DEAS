@@ -43,3 +43,32 @@ Dedicated synchronized two-source comparison, collections/tags, persistent asset
 ## Errors
 
 Retry a failed child listing locally; do not clear unrelated folders or run as root. Check selected folder permissions and Backend status. A file extension/thumbnail does not establish codec support. Use [Logs](LOGS.md) for diagnostics and report OS/GPU/version plus the error without private paths/tokens where possible.
+
+## Delete files
+
+Right-click a file and choose **Delete…**, then review its name and confirm.
+For several files, click **Select files**, tick the thumbnails (or click them),
+and choose **Delete selected…**. **Select all** selects all matching eligible files
+in the current listing, including files outside the visible virtualized rows.
+**Clear selection** and **Done selecting** leave files intact. Changing folders,
+media type, search or depth clears the selection so hidden matches are not deleted
+accidentally. The confirmation lists every selected filename and its total count.
+
+Deletion permanently removes the original files from disk; there is no recycle
+bin or undo. Only regular files in the currently native-owned Input/Output roots
+are eligible. External files, symbolic links/reparse paths, project-managed assets,
+read-only files and media with JSON/TXT/XMP sidecars are rejected. This is not a
+folder or model deletion tool. Up to 500 files may be selected per batch; narrow
+the filter for larger folders. No generation or model scan is triggered.
+
+Native code blocks deletion while generation/preparation is active and validates
+all paths before deleting any. If an OS/file-use error occurs after deletion starts,
+successful files disappear and failed files remain selected with an error. Close
+programs using those files and retry only the remaining selection. Native failures
+reach shared Logs with fixed, rate-limited diagnostics that contain no filenames.
+The browser snapshot and active Studio previews are cleared for removed files;
+recent-job history retains the original executed intent and may report missing
+media when a deleted output is revisited. Deleting a file does not delete its job.
+
+Fixture tests use disposable files and mocked browser media. Linux/WebKitGTK and
+Windows/WebView2 interactive acceptance remain separate from Chromium evidence.

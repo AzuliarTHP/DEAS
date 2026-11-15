@@ -1746,17 +1746,25 @@ test('post-processing cards re-read backend model lists on every open, not only 
  await waitFor(()=>expect(vi.mocked(checkRecipePrerequisites).mock.calls.length).toBe(before+1));
 });
 
-test('window refocus re-scans model folders, throttled, so files added outside DEAS appear without a restart',async()=>{
- const a={category:'checkpoints',name:'a.safetensors',path:'/m/a',size:1,info:null};
+test('window refocus preserves Run readiness and models until explicit Reload',async()=>{
+ const a={category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null};
  vi.mocked(checkRecipePrerequisites).mockResolvedValue(evidence);vi.mocked(scanModels).mockResolvedValue([a]);
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
  await waitFor(()=>expect(document.querySelectorAll('[data-model-picker] option')).toHaveLength(1));
+ const run=screen.getByRole('button',{name:'Run'});
+ await waitFor(()=>expect(run).toHaveProperty('disabled',false));
  vi.mocked(scanModels).mockResolvedValue([a,{...a,name:'b.safetensors',path:'/m/b'}]);
- const before=vi.mocked(scanModels).mock.calls.length;
- fireEvent.focus(window);
+ const before=vi.mocked(scanModels).mock.calls.length;const capabilities=vi.mocked(checkRecipePrerequisites).mock.calls.length;
+ fireEvent.blur(window);fireEvent.focus(window);fireEvent.focus(window);fireEvent(document,new Event('visibilitychange'));
+ await act(async()=>{});
+ expect(vi.mocked(scanModels).mock.calls).toHaveLength(before);
+ expect(checkRecipePrerequisites).toHaveBeenCalledTimes(capabilities);
+ expect(run).toHaveProperty('disabled',false);
+ expect(document.querySelectorAll('[data-model-picker] option')).toHaveLength(1);
+ dock('Models');fireEvent.click(document.querySelector('[data-run-load]')!);
  await waitFor(()=>expect(document.querySelectorAll('[data-model-picker] option')).toHaveLength(2));
- fireEvent.focus(window);await act(async()=>{});
- expect(vi.mocked(scanModels).mock.calls.length).toBe(before+1);
+ expect(scanModels).toHaveBeenLastCalledWith('/m',[],true);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
 test('session cache distinguishes same names in separate categories and absolute model roots',async()=>{

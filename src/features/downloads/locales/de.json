@@ -241,5 +241,7 @@
   "library.folderHiddenByParent": "Durch übergeordneten Ordner ausgeblendet",
   "library.viewAll": "Alle anzeigen",
   "library.viewAllHelp": "Weitere passende Karten beim Scrollen automatisch anzeigen. Keine Ordnersuche.",
-  "library.loadingMore": "Weitere Modelle werden geladen…"
+  "library.loadingMore": "Weitere Modelle werden geladen…",
+  "library.addLora": "Zu Studio-LoRAs hinzufügen",
+  "library.loraAdded": "LoRA zu Studio hinzugefügt."
 }

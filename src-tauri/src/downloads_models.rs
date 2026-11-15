@@ -801,9 +801,16 @@ pub(crate) fn validate_selected_context(
             if model
                 .check
                 .as_ref()
-                .is_some_and(|c| c.compatibility == "blocked")
+                .is_some_and(|c| c.blocks_execution(field))
             {
                 return Err(format!("MODEL_EVIDENCE_CONFLICT: {name}"));
+            }
+            // Explicitly selected LoRAs may have incorrect provider, header-label or
+            // declaration families. Keep source/integrity/sidecar checks above and
+            // let the backend loader apply the exact selected file and strength.
+            if field == "loras" {
+                selected_source.verify()?;
+                return Ok(());
             }
             if let Some(expected) = family {
                 if let Some(slot) = slot {
@@ -818,14 +825,7 @@ pub(crate) fn validate_selected_context(
                     selected_source.verify()?;
                     return Ok(());
                 }
-                if ![
-                    "checkpoints",
-                    "diffusionModels",
-                    "ggufDiffusionModels",
-                    "loras",
-                ]
-                .contains(&field)
-                {
+                if !["checkpoints", "diffusionModels", "ggufDiffusionModels"].contains(&field) {
                     selected_source.verify()?;
                     return Ok(());
                 }
@@ -844,16 +844,8 @@ pub(crate) fn validate_selected_context(
                         &source.dir.path.join(&source.name),
                     );
                 source.verify()?;
-                if detected.as_deref().is_some_and(|id| {
-                    if field == "loras" {
-                        crate::model_families::lora_family(id)
-                            != crate::model_families::lora_family(expected)
-                    } else {
-                        id != expected
-                    }
-                }) || (field != "loras"
-                    && expected.starts_with("ace-step")
-                    && detected.is_none())
+                if detected.as_deref().is_some_and(|id| id != expected)
+                    || (expected.starts_with("ace-step") && detected.is_none())
                 {
                     return Err(
                         "MODEL_FAMILY_MISMATCH: intent does not match source-bound model identity"
@@ -1724,6 +1716,43 @@ mod tests {
         assert_no_owned_temps(&first.path().join("checkpoints"));
     }
 
+    #[test]
+    fn selected_lora_labels_are_advisory_but_integrity_and_source_checks_remain() {
+        let (root, path) = family_fixture("loras");
+        let header = br#"{"__metadata__":{"modelspec.architecture":"stable-diffusion-xl"},"fixture.weight":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
+        bytes.extend(header);
+        bytes.extend(0f32.to_le_bytes());
+        std::fs::write(&path, bytes).unwrap();
+        let mut info = fixture_info(&path);
+        info.civitai = Some(civitai_info(&serde_json::json!({"id":1,"modelId":2,"name":"v1","model":{"name":"fixture","type":"LORA"},"baseModel":"Flux.1 D"})).unwrap());
+        write_info(&path, &info);
+        let declared = write_family(&path, Some("anima")).unwrap();
+        assert_eq!(declared.check.as_ref().unwrap().compatibility, "blocked");
+        let roots = [root.path().into()];
+        let reads = HASH_READS.with(|n| n.get());
+        for family in ["sdxl", "anima", "minimax-h3"] {
+            validate_selected_family(&roots, "loras", "unknown.safetensors", Some(family)).unwrap();
+        }
+        assert_eq!(HASH_READS.with(|n| n.get()), reads);
+        assert!(
+            validate_selected_family(&roots, "loras", "../unknown.safetensors", Some("anima"))
+                .is_err()
+        );
+        write_cache_bytes(&sidecar(&path), b"{broken");
+        assert!(
+            validate_selected_family(&roots, "loras", "unknown.safetensors", Some("anima"))
+                .unwrap_err()
+                .contains("MODEL_METADATA_INVALID")
+        );
+        std::fs::remove_file(sidecar(&path)).unwrap();
+        std::fs::write(&path, b"partial").unwrap();
+        assert!(
+            validate_selected_family(&roots, "loras", "unknown.safetensors", Some("anima"))
+                .unwrap_err()
+                .contains("MODEL_INTEGRITY_INVALID")
+        );
+    }
     #[test]
     fn model_check_compatible_variant_provider_and_lora_declaration() {
         let (root, path) = family_fixture("diffusion_models");

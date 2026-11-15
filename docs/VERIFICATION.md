@@ -1,5 +1,137 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Local advisory LoRA families and compact controls — 2026-11-16
+
+- Final `npm test` passed 157 core tests / 1 skipped and all 1,988 UI tests across
+  107 files. Production TypeScript/Vite build passed. A mocked Studio Run submits
+  the selected other-family LoRA at the exact edited 0.65 weight without a dialog
+  or family alert. History restores present LoRAs despite changed family labels;
+  missing inventory/backend entries remain unavailable.
+- Native library suite passed 904 tests / 69 ignored. New disposable-file coverage
+  permits disagreeing header/provider/declaration family labels for selected LoRAs,
+  preserves immutable context and verifies malformed sidecars, unsafe paths and
+  truncated weights still reject. The corresponding non-LoRA checkpoint family
+  rejection remains tested. Selected metadata validation performs no full hashing.
+- Clippy passed with only the existing `chunks_exact_to_as_chunks` and
+  `collapsible_if` baseline allowances. The obsolete native LoRA-family rejection
+  projection was removed; the shared family plugin and frontend browse filters
+  retain their data and declaration behavior.
+- Synthetic Chromium verifies that selecting a differently labelled LoRA leaves
+  Run enabled without submitting a real job. Declared-family badges fit within
+  the thumbnail button and do not increase card height. Folder action icons sit
+  beside All notes without overlap at desktop widths 960/1280/1920; nested details,
+  note persistence, independent scrolling and the existing gallery flows still pass.
+- `npm run test:layout` passed all 467 shared checks. The frontend/native policy
+  tests preserve metadata/integrity/format blockers rather than suppressing real
+  execution errors. No native app capture, installed-model scan, live generation,
+  user-file deletion, cache edit or service restart is performed during checks.
+
+## Local LoRA details and three-pane Notes refinement — 2026-11-16
+
+- Full `npm test` passed: 157 core / 1 skipped and 1,987 UI tests across 107 files.
+  TypeScript/Vite production build passed. Updated authoring regression selects
+  another-family card and verifies the generation blocker remains; the selected
+  count and removable weight controls include it. Present other-family sets load
+  as drafts, while missing-file sets still cannot replace the selection.
+- Shared preview tests cover an indexed JPG, fallback to the cached remote PNG,
+  an exhausted-preview placeholder, changed-source recovery and fixed logging
+  without filenames or URLs. Library, Studio and both LoRA dialogs reuse that path.
+- Nested-dialog tests inspect cached filename/version/base/path/trigger words,
+  isolate bubbled Cancel/Escape from the parent, preserve the unfinished set name
+  and weights and restore focus to the clicked thumbnail.
+- Synthetic Chromium passed grey-card selection, the enlarged popup and thumbnails,
+  actual nested Escape/backdrop dismissal, three separate Notes panes at desktop
+  widths 960/1280/1920, field/button order and retained draft persistence. No model
+  scan refresh, metadata fetch, download job or generation is initiated.
+- `npm run test:layout` passed all 467 shared viewport checks, including retained
+  hidden views and the deliberately broken negative control. These are browser
+  fixtures, not native WebView2/WebKitGTK screenshots or interactive acceptance.
+- This refinement adds no native command, dependency or persistence migration.
+  Previous native fixture results remain applicable; no real models, images,
+  library cache, saved sets or personal notes are edited during verification.
+
+## Local Notes and confirmed Media deletion — 2026-11-16
+
+- `npm test`: 157 core tests passed / 1 skipped, and all 1,983 UI tests passed
+  across 106 files. The production TypeScript/Vite build passed. Notes tests
+  cover nested folders, note editing/moving/deletion, persistence, unsaved drafts,
+  invalid seeds and failed-save retry. Integration checks preserve active prompts
+  and seed, suppress notebook Ctrl/Cmd+Enter generation and clear deleted previews.
+- Media tests cover right-click confirmation/cancel, bulk selection without preview
+  changes, one native request per confirmed batch, partial failure selection,
+  native refusal without hidden files and unmanaged-file rejection.
+- Windows Rust fixtures: full library suite passed 902 tests / 69 ignored. Five
+  deletion tests exercise real disposable-file removal, Unicode names, whole-batch
+  validation, sidecar/project refusal, namespace replacement and fixed shared-log
+  delivery. The job-idle regression additionally proves queued/running/uncertain
+  jobs and preparation reservations cannot invoke the deletion callback.
+- Clippy passed with the existing baseline allowances for
+  `chunks_exact_to_as_chunks` and `collapsible_if`; no new dependency was added.
+- Synthetic Chromium passed actual Notes folder/subfolder creation, positive/
+  negative/seed saving, retained tab drafts, Ctrl+Enter isolation and confirmed
+  Media selection/deletion through mocked IPC. Stable textarea accessible names
+  also remain usable after editing. Native DEAS was not opened or captured.
+- The shared `npm run test:layout` gate passed 467 checks. Fixture artifacts are
+  kept in ignored `output/playwright` rather than the user's profile directory.
+- Linux deletion code is implemented but not executed here. Chromium is not
+  WebKitGTK/WebView2 interactive acceptance. No real media deletion, model scan,
+  generation or backend restart is performed by this verification.
+
+## Local selected LoRAs / sets and backdrop dismissal — 2026-11-16
+
+- Fifteen focused tests passed for Library browsing/add notices, set weight edits,
+  save/update/rename/load/delete, root scoping, missing-file rejection, malformed
+  weights and outside-only pointer dismissal. Workbench integration passed draft
+  updates without opening the dialog, duplicate weight preservation and no native
+  listing or generation on Library additions.
+- Synthetic desktop Chromium checks passed actual backdrop clicks on details and
+  LoRA popups, weight editing/set creation, popup geometry, mixed-family visibility,
+  automatic View all and independent folder/card scrolling.
+- Full frontend suite passed: 157 core / 1 skipped and 1,972 UI tests across
+  105 files. The production frontend build and 467 shared layout checks passed.
+- All records/images are fixtures. No real model-folder scan, native DEAS capture,
+  model generation, provider request or PR update is performed by these checks.
+
+
+## Local Studio LoRA inventory fix — 2026-11-16
+
+- Focused mixed-family regression passed: compatible, unknown and mismatched LoRAs
+  all appear in the dock/tree. A known mismatch explains its disabled state and
+  cannot be activated; a compatible selection works without a new native listing
+  or generation. Production frontend build passed.
+- The remembered Hide other families toggle was tested in unit and desktop browser
+  fixtures. All 45 tests in the affected Workbench file passed. The full suite
+  passed 1,965 UI tests with one H3 continuity timing failure (its button was not
+  yet present); that fixture passed individually and in the complete 45-test rerun.
+- Shared viewport/layout gate: 467 checks passed. No execution compatibility checks
+  were relaxed to make the inventory visible.
+- The browser fixture now uses mixed native LoRA families rather than unresolved
+  ones, so automatic View all coverage also checks the full inventory.
+- No real model scan, native DEAS capture or generation is performed.
+
+
+## Local Studio refocus fix — 2026-11-16
+
+- Focus/visibility regression passed: window return issues no model/capability
+  request, preserves enabled Run and the current listing, and explicit Reload
+  still requests a refreshed listing. The fixture never submits a generation.
+- All 159 tests in the affected Workbench suite and the production frontend build passed.
+- No native app capture, real model-folder scan or live generation was performed.
+
+
+## Local Windows exFAT output naming fix — 2026-11-15
+
+- Thirteen publication/metadata tests passed using temporary workspace fixtures.
+  Windows rename tests use the real no-overwrite operation; POSIX test runs emulate
+  its collision contract. The prior hard-link rollback tests remain covered.
+- New checks cover publication without hard links, second-file collision retry,
+  restoring original files on a later failure, and preserving a newly occupied
+  original path if rollback cannot restore it.
+- No generation, model scan or live backend restart is performed. Actual exFAT
+  generation acceptance remains with the user. The installed DaSiWa node pack is
+  unchanged; the fix belongs to DEAS's owned-backend adapter.
+
+
 ## Proposed indexed native model browser — 2026-11-15
 
 Rebased onto the 0.2.36 source at `f99ee6df33a0a986dd2a78727496210fc3930323`.

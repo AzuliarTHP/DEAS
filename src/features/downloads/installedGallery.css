@@ -152,3 +152,6 @@
 
 .download-module.is-installed { padding:.35rem 0 .25rem; border-bottom:0; }
 .download-module.is-installed>.download-controls { gap:.4rem; }
+
+.library-add-lora { position:absolute; top:.65rem; right:2.75rem; width:1.65rem; height:1.65rem; display:grid; place-items:center; border:1px solid var(--library-border); border-radius:.35rem; background:var(--field); color:var(--chalk); cursor:pointer; }
+.library-added-notice { position:absolute; top:2.7rem; inset-inline:.5rem; background:var(--panel); border:1px solid var(--library-border); border-radius:.3rem; padding:.4rem; color:var(--ok); font-size:.72rem; }
