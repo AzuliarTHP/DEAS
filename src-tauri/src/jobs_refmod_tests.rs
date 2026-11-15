@@ -167,9 +167,31 @@ fn keeps_a_form_both_the_backend_and_compile_accept() {
     );
     assert_eq!(
         loadable(r"Minimax\minimax_h3_video_vae_fp16.safetensors").as_deref(),
-        Some("Minimax/minimax_h3_video_vae_fp16.safetensors")
+        Some(r"Minimax\minimax_h3_video_vae_fp16.safetensors")
     );
     assert_eq!(loadable(r"../h3\video_vae.safetensors"), None);
+}
+
+/// The Windows `VAELoader` combo lists and matches `Sub\file` exactly (TESTPC probe): the
+/// resolver keeps the advertised id and `compile()` forwards it unchanged.
+#[test]
+fn a_native_windows_vae_id_survives_the_resolver_and_compile() {
+    assert_eq!(
+        loadable(r"MiniMaxH3\minimax_h3_video_vae_fp16.safetensors").as_deref(),
+        Some(r"MiniMaxH3\minimax_h3_video_vae_fp16.safetensors")
+    );
+    let mut r = request();
+    r["vae"] = json!(r"MiniMaxH3\video_vae.safetensors");
+    r["audioVae"] = json!(r"MiniMaxH3\audio_vae.safetensors");
+    let g = compile(&r, "req-win").unwrap();
+    assert_eq!(
+        g["V"]["inputs"]["vae_name"],
+        r"MiniMaxH3\video_vae.safetensors"
+    );
+    assert_eq!(
+        g["AV"]["inputs"]["vae_name"],
+        r"MiniMaxH3\audio_vae.safetensors"
+    );
 }
 
 /// A backend whose VAELoader combo advertises `list`: it counts the library reads and keeps the queued prompt.
@@ -216,14 +238,15 @@ async fn submit_fills_blank_lanes_from_the_advertised_library() {
         "one library read covers both lanes"
     );
     let graph = queued_prompt(&posted);
-    // The advertised names enter the graph in the portable form compile() and the loader accept.
+    // Advertised names enter the graph exactly as listed: the Windows combo matches `Sub\file` verbatim
+    // (TESTPC probe) and compile() accepts both forms via comfy_model_name.
     assert_eq!(
         graph["V"]["inputs"]["vae_name"],
-        "Minimax/minimax_h3_video_vae_fp16.safetensors"
+        r"Minimax\minimax_h3_video_vae_fp16.safetensors"
     );
     assert_eq!(
         graph["AV"]["inputs"]["vae_name"],
-        "Minimax/minimax_h3_audio_vae_fp32.safetensors"
+        r"Minimax\minimax_h3_audio_vae_fp32.safetensors"
     );
     task.abort();
 }
