@@ -8,7 +8,7 @@ import './modelMetadata.css';
 const changedEvent='deas:model-family-changed';
 /** Patch exact paths only; no mount-time scan or unrelated metadata requests. */
 export function useModelMetadataUpdates(setModels:Dispatch<SetStateAction<LocalModel[]|null>>) {
- useEffect(()=>{const update=(event:Event)=>{const model=(event as CustomEvent<LocalModel>).detail;setModels(old=>old?.map(m=>m.path===model.path?model:m)??old);};window.addEventListener(changedEvent,update);return()=>window.removeEventListener(changedEvent,update);},[setModels]);
+ useEffect(()=>{const update=(event:Event)=>{const model=(event as CustomEvent<LocalModel>).detail;setModels(old=>old?.map(m=>m.path===model.path?{...model,addedAt:m.addedAt,localPreview:m.localPreview}:m)??old);};window.addEventListener(changedEvent,update);return()=>window.removeEventListener(changedEvent,update);},[setModels]);
 }
 export function ModelDeclaredBadge({model}:{model:LocalModel}) {const {t}=useI18n();return model.familyOverride?<small className="model-declared">{t('modelMeta.declared')}: {families.find(f=>f.id===model.familyOverride)?.name??model.familyOverride}</small>:null;}
 export function ModelMetadataTarget({model,children}:{model:LocalModel;children:ReactNode}) {

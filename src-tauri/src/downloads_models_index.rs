@@ -1,0 +1,569 @@
+//! Persistent browsing snapshots only. Execution continues to inspect live models.
+use super::*;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+const SCHEMA: u32 = 1;
+const MAX_BYTES: u64 = 64 * 1024 * 1024;
+static REFRESH: Mutex<()> = Mutex::new(());
+
+// Owned strings avoid deserializing the native classifier's &'static str fields.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotModel {
+    category: String,
+    name: String,
+    path: String,
+    size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    local_preview: Option<String>,
+    info: Option<ModelInfo>,
+    #[serde(flatten)]
+    details: SnapshotDetails,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SnapshotDetails {
+    #[serde(default)]
+    added_at: Option<u64>,
+    check: Option<SnapshotCheck>,
+    family: Option<String>,
+    detected_family: Option<String>,
+    family_evidence: Option<String>,
+    family_override: Option<String>,
+    metadata_error: Option<String>,
+    component: Option<String>,
+    integrity: Option<String>,
+    #[serde(default)]
+    misplaced_all_in_one: bool,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct SnapshotCheck {
+    identity: String,
+    integrity: Option<String>,
+    compatibility: String,
+    availability: String,
+    evidence: Vec<String>,
+    reasons: Vec<SnapshotReason>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct SnapshotReason {
+    code: String,
+    detail: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+struct Stamp {
+    model: SourceFingerprint,
+    sidecar: Option<SourceFingerprint>,
+    resolved: PathBuf,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Record {
+    stamp: Option<Stamp>,
+    model: SnapshotModel,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Index {
+    schema: u32,
+    detector: String,
+    roots: Vec<PathBuf>,
+    records: Vec<Record>,
+}
+
+const PREVIEW_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
+
+fn preview_path_valid(model: &str, preview: &str) -> bool {
+    let preview = Path::new(preview);
+    preview.is_absolute()
+        && preview.parent() == Path::new(model).parent()
+        && preview.extension().is_some_and(|ext| {
+            PREVIEW_EXTENSIONS
+                .iter()
+                .any(|known| ext.to_string_lossy().eq_ignore_ascii_case(known))
+        })
+        && preview
+            .file_name()
+            .is_some_and(|name| !name.to_string_lossy().chars().any(char::is_control))
+}
+
+type PreviewFolders = HashMap<PathBuf, HashMap<String, String>>;
+// Directory names are read once per worker/folder during explicit refresh only.
+fn local_preview(path: &Path, folders: &mut PreviewFolders) -> Option<String> {
+    let parent = path.parent()?;
+    let names = folders.entry(parent.into()).or_insert_with(|| {
+        let mut names = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir(parent) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if entry.file_type().is_ok_and(|kind| kind.is_file())
+                    && Path::new(&name).extension().is_some_and(|ext| {
+                        PREVIEW_EXTENSIONS
+                            .iter()
+                            .any(|known| ext.to_string_lossy().eq_ignore_ascii_case(known))
+                    })
+                {
+                    names.insert(name.to_lowercase(), name);
+                }
+            }
+        }
+        names
+    });
+    let stem = path.file_stem()?.to_string_lossy();
+    let full = path.file_name()?.to_string_lossy();
+    for base in [
+        format!("{stem}.preview"),
+        stem.into_owned(),
+        format!("{full}.preview"),
+    ] {
+        for ext in PREVIEW_EXTENSIONS {
+            if let Some(name) = names.get(&format!("{base}.{ext}").to_lowercase()) {
+                let source = Source::open(path).ok()?;
+                if let Ok(file) = source.dir.regular(name) {
+                    let size = file.metadata().ok()?.len();
+                    if size > 0 && size <= 32 * 1024 * 1024 && source.verify().is_ok() {
+                        return Some(path.with_file_name(name).to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn stamp(path: &Path) -> Result<Stamp, String> {
+    let source = Source::open(path)?;
+    let name = format!("{}{SIDECAR}", source.name);
+    let sidecar = match std::fs::symlink_metadata(source.dir.path.join(&name)) {
+        Ok(_) => Some(fingerprint(&source.dir.regular(&name)?)?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e.to_string()),
+    };
+    source.verify()?;
+    Ok(Stamp {
+        model: source.stamp,
+        sidecar,
+        resolved: source.dir.path.join(&source.name),
+    })
+}
+
+fn read_any(path: &Path) -> Option<Index> {
+    // A corrupt/obsolete snapshot is a cache miss, never model authority.
+    #[cfg(windows)]
+    let file = crate::win::open_no_follow(path).ok()?;
+    #[cfg(not(windows))]
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        File::options()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)
+            .ok()?
+    };
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > MAX_BYTES {
+        return None;
+    }
+    let index: Index = serde_json::from_reader(file.take(MAX_BYTES + 1)).ok()?;
+    let roots = &index.roots;
+    (index.schema == SCHEMA
+        && index.detector == env!("CARGO_PKG_VERSION")
+        && !roots.is_empty()
+        && roots.len() <= 32
+        && roots.iter().all(|root| root.is_absolute())
+        && index.records.len() <= MAX_WALK * roots.len()
+        && index.records.iter().all(|record| {
+            let m = &record.model;
+            Path::new(&m.path).is_absolute()
+                && roots
+                    .iter()
+                    .any(|root| Path::new(&m.path).starts_with(root))
+                && m.local_preview.as_ref().is_none_or(|preview| {
+                    preview.len() <= 32768 && preview_path_valid(&m.path, preview)
+                })
+                && !m.name.is_empty()
+                && m.name.len() <= 32768
+                && m.path.len() <= 32768
+                && Path::new(&m.path).ends_with(&m.name)
+                && Path::new(&m.name)
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                && crate::settings::model_folder_category(&m.category).is_some()
+        }))
+    .then_some(index)
+}
+
+fn read(path: &Path, roots: &[PathBuf]) -> Option<Index> {
+    read_any(path).filter(|index| index.roots == roots)
+}
+
+pub fn directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    app.path()
+        .app_cache_dir()
+        .map(|path| path.join("model-index-v1"))
+        .map_err(|e| e.to_string())
+}
+
+/// Patch one explicitly edited file into existing indexes; never walk model folders.
+pub fn update(directory: &Path, path: &Path) -> Result<(), String> {
+    update_many(directory, &[path.to_path_buf()])
+}
+
+/// Publish a completed metadata batch once per index, without a model-folder walk.
+pub fn update_many(directory: &Path, paths: &[PathBuf]) -> Result<(), String> {
+    if !directory.exists() {
+        return Ok(());
+    }
+    let _guard = REFRESH
+        .lock()
+        .map_err(|_| "Model index update lock failed")?;
+    let mut snapshots = HashMap::new();
+    let mut folders = PreviewFolders::new();
+    for path in paths {
+        let (category, base) = model_category(path)?;
+        let model = describe(category, base, path)?;
+        let mut snapshot: SnapshotModel =
+            serde_json::from_value(serde_json::to_value(model).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        snapshot.local_preview = local_preview(path, &mut folders);
+        snapshots.insert(path.clone(), (snapshot, stamp(path).ok()));
+    }
+    for entry in std::fs::read_dir(directory)
+        .map_err(|e| e.to_string())?
+        .take(128)
+    {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.file_name().to_string_lossy().starts_with("models-")
+            || entry.path().extension().is_none_or(|ext| ext != "json")
+        {
+            continue;
+        }
+        let Some(mut index) = read_any(&entry.path()) else {
+            continue;
+        };
+        let mut changed = false;
+        for record in &mut index.records {
+            if let Some((snapshot, stamp)) = snapshots.get(Path::new(&record.model.path)) {
+                let added = record.model.details.added_at;
+                record.model = snapshot.clone();
+                record.model.details.added_at = added;
+                record.stamp = stamp.clone();
+                changed = true;
+            }
+        }
+        if changed {
+            publish(&entry.path(), &index)?;
+        }
+    }
+    Ok(())
+}
+
+fn publish(path: &Path, index: &Index) -> Result<(), String> {
+    let bytes = serde_json::to_vec(index).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("Model browsing index exceeds its size limit".into());
+    }
+    let parent = path.parent().ok_or("Missing index directory")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    temp.write_all(&bytes).map_err(|e| e.to_string())?;
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+    temp.persist(path).map_err(|e| e.error.to_string())?;
+    Ok(())
+}
+
+fn payload(index: Index) -> Vec<SnapshotModel> {
+    let mut models: Vec<_> = index.records.into_iter().map(|r| r.model).collect();
+    if models.len() > MAX_LISTING {
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            "WARN: Library index operation=list webview model limit reached",
+        );
+        models.truncate(MAX_LISTING);
+    }
+    models
+}
+
+pub fn load(
+    directory: &Path,
+    roots: Vec<PathBuf>,
+    refresh: bool,
+) -> Result<Vec<SnapshotModel>, String> {
+    if roots.is_empty()
+        || roots.len() > 32
+        || roots.iter().any(|p| {
+            !p.is_absolute()
+                || p.to_string_lossy().len() > 32768
+                || p.to_string_lossy().chars().any(char::is_control)
+        })
+    {
+        return Err("Invalid model index roots".into());
+    }
+    let key = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&roots).map_err(|e| e.to_string())?)
+    );
+    let path = directory.join(format!("models-{key}.json"));
+    if !refresh {
+        if let Some(index) = read(&path, &roots) {
+            return Ok(payload(index));
+        }
+    }
+    let _guard = REFRESH
+        .lock()
+        .map_err(|_| "Model index refresh lock failed")?;
+    let mut previous = read(&path, &roots);
+    // Coalesce simultaneous cold starts from Library and Studio.
+    if !refresh {
+        if let Some(index) = previous.take() {
+            return Ok(payload(index));
+        }
+    }
+    let old: HashMap<_, _> = previous
+        .into_iter()
+        .flat_map(|i| i.records)
+        .map(|r| ((r.model.category.clone(), r.model.path.clone()), r))
+        .collect();
+    let mut jobs = vec![];
+    for root in &roots {
+        if resolve_directory(root).is_err() {
+            return Err("Models folder could not be read; saved index retained".into());
+        }
+        for (category, base) in crate::settings::model_locations(root) {
+            walk(category, &base, &base, 0, &mut jobs);
+        }
+    }
+    let chunk = jobs.len().div_ceil(4).max(1);
+    let records = std::thread::scope(|scope| {
+        let handles: Vec<_> = jobs
+            .chunks(chunk)
+            .map(|part| {
+                let old = &old;
+                scope.spawn(move || {
+                    let mut preview_folders = PreviewFolders::new();
+                    part.iter()
+                        .filter_map(|(category, base, path)| {
+                            let stamp = stamp(path).ok();
+                            if let Some(saved) = old
+                                .get(&(category.to_string(), path.to_string_lossy().into_owned()))
+                            {
+                                if stamp.is_some() && stamp == saved.stamp {
+                                    let mut saved = saved.clone();
+                                    saved.model.local_preview =
+                                        local_preview(path, &mut preview_folders);
+                                    return Some(saved);
+                                }
+                            }
+                            let model = describe(category, base, path).ok()?;
+                            let mut model: SnapshotModel =
+                                serde_json::from_value(serde_json::to_value(model).ok()?).ok()?;
+                            model.local_preview = local_preview(path, &mut preview_folders);
+                            model.details.added_at = old
+                                .get(&(category.to_string(), path.to_string_lossy().into_owned()))
+                                .and_then(|saved| saved.model.details.added_at)
+                                .or_else(|| {
+                                    std::fs::metadata(path)
+                                        .ok()?
+                                        .created()
+                                        .ok()?
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .ok()
+                                        .map(|d| d.as_secs())
+                                })
+                                .or_else(|| {
+                                    std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .ok()
+                                        .map(|d| d.as_secs())
+                                });
+                            Some(Record { stamp, model })
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let mut records = vec![];
+        for handle in handles {
+            records.extend(
+                handle
+                    .join()
+                    .map_err(|_| "Model index worker failed".to_owned())?,
+            );
+        }
+        Ok::<_, String>(records)
+    })?;
+    if records.len() < jobs.len() {
+        crate::logs::push(crate::logs::Source::Deas, &format!("WARN: Library index operation=inspect skipped={} model files; check file access and metadata", jobs.len()-records.len()));
+    }
+    let mut seen = std::collections::HashSet::new();
+    let records = records
+        .into_iter()
+        .filter(|r| {
+            seen.insert((
+                r.model.category.clone(),
+                r.model.name.clone(),
+                r.stamp
+                    .as_ref()
+                    .map(|s| s.resolved.clone())
+                    .unwrap_or_else(|| PathBuf::from(&r.model.path)),
+            ))
+        })
+        .collect();
+    let index = Index {
+        schema: SCHEMA,
+        detector: env!("CARGO_PKG_VERSION").into(),
+        roots,
+        records,
+    };
+    if publish(&path, &index).is_err() {
+        crate::logs::push(crate::logs::Source::Deas, "WARN: Library index operation=save snapshot could not be persisted; current listing remains available");
+    }
+    crate::logs::push(
+        crate::logs::Source::Deas,
+        &format!(
+            "INFO: Library index operation=refresh listed={} reused={} (browsing snapshot only)",
+            index.records.len(),
+            index
+                .records
+                .iter()
+                .filter(|r| old
+                    .get(&(r.model.category.clone(), r.model.path.clone()))
+                    .is_some_and(|old| old.stamp.is_some() && old.stamp == r.stamp))
+                .count()
+        ),
+    );
+    Ok(payload(index))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sibling_previews_support_raster_formats_and_refresh_without_model_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        let folder = root.join("loras");
+        std::fs::create_dir_all(&folder).unwrap();
+        let model = folder.join("a.pt");
+        std::fs::write(&model, b"fixture").unwrap();
+        let cache = dir.path().join("index");
+        assert!(load(&cache, vec![root.clone()], false).unwrap()[0]
+            .local_preview
+            .is_none());
+        for ext in ["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "JpG"] {
+            let image = folder.join(format!("a.preview.{ext}"));
+            std::fs::write(&image, b"synthetic image fixture").unwrap();
+            assert!(load(&cache, vec![root.clone()], false).unwrap()[0]
+                .local_preview
+                .is_none());
+            let refreshed = load(&cache, vec![root.clone()], true).unwrap();
+            assert_eq!(refreshed[0].local_preview.as_deref(), image.to_str());
+            assert_eq!(
+                load(&cache, vec![root.clone()], false).unwrap()[0]
+                    .local_preview
+                    .as_deref(),
+                image.to_str()
+            );
+            std::fs::remove_file(image).unwrap();
+            assert!(load(&cache, vec![root.clone()], true).unwrap()[0]
+                .local_preview
+                .is_none());
+        }
+        assert!(!preview_path_valid(
+            model.to_str().unwrap(),
+            folder.join("x.svg").to_str().unwrap()
+        ));
+        assert!(!preview_path_valid(
+            model.to_str().unwrap(),
+            dir.path().join("x.jpg").to_str().unwrap()
+        ));
+    }
+
+    #[test]
+    fn refresh_reuses_unchanged_records_but_not_changed_sidecars_and_recovers_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        std::fs::create_dir_all(root.join("loras")).unwrap();
+        std::fs::write(root.join("loras/a.pt"), b"fixture").unwrap();
+        let cache = dir.path().join("cache");
+        load(&cache, vec![root.clone()], false).unwrap();
+        let file = std::fs::read_dir(&cache)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let mut index = read(&file, std::slice::from_ref(&root)).unwrap();
+        index.records[0].model.details.family = Some("fixture-reused".into());
+        publish(&file, &index).unwrap();
+        let reused = load(&cache, vec![root.clone()], true).unwrap();
+        assert_eq!(reused[0].details.family.as_deref(), Some("fixture-reused"));
+        std::fs::write(root.join("loras/a.pt.deas.json"), b"invalid cache").unwrap();
+        let changed = load(&cache, vec![root.clone()], true).unwrap();
+        assert!(changed[0].details.metadata_error.is_some());
+        assert_ne!(changed[0].details.family.as_deref(), Some("fixture-reused"));
+        std::fs::write(&file, b"corrupt index").unwrap();
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 1);
+        let missing = dir.path().join("offline");
+        std::fs::rename(&root, &missing).unwrap();
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 1);
+        assert!(load(&cache, vec![root.clone()], true).is_err());
+        assert!(read(&file, &[root]).is_some());
+        assert!(load(&cache, vec![missing.join("missing")], false).is_err());
+    }
+
+    #[test]
+    fn persisted_index_survives_restart_and_refresh_tracks_changes_without_rewriting_models() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        let folder = root.join("loras/group/nested");
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("a.pt");
+        std::fs::write(&file, b"original").unwrap();
+        let cache = dir.path().join("index");
+        let first = load(&cache, vec![root.clone()], false).unwrap();
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].name.replace('\\', "/"), "group/nested/a.pt");
+        std::fs::write(&file, b"changed-size").unwrap();
+        std::fs::write(folder.join("b.pt"), b"new").unwrap();
+        let saved = load(&cache, vec![root.clone()], false).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].size, 8); // A warm load does not walk or inspect changed files.
+        let updated = load(&cache, vec![root.clone()], true).unwrap();
+        assert_eq!(updated.len(), 2);
+        assert_eq!(
+            updated
+                .iter()
+                .find(|m| m.name.ends_with("a.pt"))
+                .unwrap()
+                .size,
+            12
+        );
+        let again = load(&cache, vec![root.clone()], true).unwrap();
+        assert_eq!(again.len(), 2);
+        write_family(&file, Some("sdxl")).unwrap();
+        update(&cache, &file).unwrap();
+        let edited = load(&cache, vec![root.clone()], false).unwrap();
+        assert_eq!(
+            edited
+                .iter()
+                .find(|m| m.name.ends_with("a.pt"))
+                .unwrap()
+                .details
+                .family_override
+                .as_deref(),
+            Some("sdxl")
+        );
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 2);
+        assert_eq!(load(&cache, vec![root], true).unwrap().len(), 1);
+        assert_eq!(std::fs::read(folder.join("b.pt")).unwrap(), b"new");
+    }
+}

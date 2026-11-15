@@ -2,6 +2,14 @@
 
 ## 0.2.36 BETA (unreleased)
 
+- **Indexed native model browser.** Library and Studio restore a persistent browsing
+  snapshot across restarts; explicit Refresh checks file changes and reuses unchanged
+  metadata. Library adds preview cards/list mode, details, search, Favorites, notes
+  and tags. Both browsers offer collapsible folders, folder visibility, sorting,
+  independent scrolling and automatic View all batches. Sibling raster previews
+  and scoped CivitAI metadata Fetch are supported. Execution still validates live
+  files separately; browsing does not authorize generation or implicit downloads.
+
 - H3 Hi-Res Regenerate now has its own refiner-LoRA strength. Upscale refine strength and 2D sharpness are shared with Latent upscale: change either card and both show the same values. The new Hi-Res tuning needs DaSiWa node pack 0.5.55; normal authoring starts at the existing shared strength 0.2, while 1 restores the full three-step Hi-Res preset.
 
 ## 0.2.35 BETA

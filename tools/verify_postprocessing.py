@@ -197,9 +197,9 @@ def verify(browser, url, screenshots):
         context.close()
 
 
-def main(*, serve=True):
+def main(*, serve=True, artifact_root=None):
     root = Path(__file__).resolve().parents[1]
-    scratch = Path.home()/'.hermes/cache/scratch'
+    scratch = Path(artifact_root) if artifact_root is not None else Path.home()/'.hermes/cache/scratch'
     scratch.mkdir(parents=True, exist_ok=True)
     screenshots = Path(tempfile.mkdtemp(prefix='deas-postprocessing-', dir=scratch))
     def run(url):

@@ -1,3 +1,5 @@
+import { ModelAutoLoad, ModelViewAllControl } from '../../components/ModelAutoLoad';
+import { modelFolderHidden, validHiddenModelFolders, type HiddenModelFolders } from '../../lib/modelFolders';
 import { BeginnerLoras,isBeginnerLoraDraft,type BeginnerLoraDraft,type BeginnerLora } from '../beginner/BeginnerLoras';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { backendErrorText } from '../../lib/backendErrors';
@@ -24,6 +26,9 @@ import { videoRoles, videoRoleBlock, videoRolePipeline, type VideoRole, type Vid
 import { defaultPlan, isContinuityPlan, nextStep, resolveClip, continuitySource, type ContinuityPlan } from '../../lib/continuity';
 import { checkRecipePrerequisites } from '../../lib/recipePrerequisites';
 import { scanModels, type LocalModel } from '../../lib/models';
+import { ModelFolderTree } from '../../components/ModelFolderTree';
+import { ModelSortControl } from '../../components/ModelSortControl';
+import { isModelSort, sortModels, useModelUsage, recordModelUse, modelUsageKey } from '../../lib/modelBrowsing';
 import { ModelMetadataTarget, ModelDeclaredBadge, useModelMetadataUpdates } from '../../components/models/ModelMetadataEditor';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { componentFiles, componentFilesNamed, defaultComponentOverrides, isComponentOverrides, type ComponentFamily, type ComponentSlot } from '../../lib/modelComponents';
@@ -201,6 +206,8 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [promptHidden,setPromptHidden]=usePref('beginner.layout.promptHidden',false,isBoolean);
  const [bodyWidth,setBodyWidth]=useState(1000);
  const [sortPref,setSort]=usePref('studio.dock.sort','date',oneOf('date','name','size'));
+ const [viewAllModels,setViewAllModels]=usePref('studio.dock.viewAllModels',false,(v):v is boolean=>typeof v==='boolean');
+ const [modelSort,setModelSort]=usePref('studio.dock.modelSort','name',isModelSort);const modelUsage=useModelUsage();const [shuffleSeed,setShuffleSeed]=useState(()=>Math.floor(Math.random()*2147483647));
  const [dockView,setDockView]=usePref<MediaView>('studio.dock.view','tiles',oneOf(...mediaViews));
  const [dockType,setDockType]=usePref<MediaType>('studio.dock.type','all',oneOf(...mediaTypes));
  const [query,setQuery]=useState('');
@@ -415,7 +422,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   if(!native||(!automatic&&(lock.current||scanning))||(!modelsDir&&!endpoint.trim()))return;
   setScanning(true);setError('');const version=++epoch.current;
   try{
-   const next=modelsDir?await scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[])
+   const next=modelsDir?await (automatic?scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[]):scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[],true))
     :await checkRecipePrerequisites(endpoint).then(e=>{if(live.current&&version===epoch.current)setChoices(e.allowlist);return [...e.allowlist.checkpoints.map(name=>({category:'checkpoints',name})),...(e.allowlist.loras??[]).map(name=>({category:'loras',name}))].map(m=>({...m,path:'',size:0,info:null}));});
    if(live.current&&version===epoch.current){setModels(next);if(modelsDir&&!automatic&&endpoint.trim())await refreshChoices();}
   }catch(e){if(live.current&&version===epoch.current)setError(e instanceof Error?e.message:String(e));}
@@ -463,15 +470,14 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const sorts=dockTab==='media'?['date','name','size'] as const:['name','size'] as const;
  const sort=(sorts as readonly string[]).includes(sortPref)?sortPref:sorts[0];
  const [folders,setFolders]=useState<Record<string,string>>({});const folder=folders[dockTab]??'';
- const match=(m:LocalModel)=>(!folder||m.name.replace(/\\/g,'/').startsWith(folder+'/'))&&m.name.toLowerCase().includes(query.trim().toLowerCase());
- // Model names carry their subfolders (`sdxl/base.safetensors`); the tree is those prefixes, always open, filtering the tiles beside it.
- const folderTree=(list:LocalModel[])=>{
-  const dirs=new Set(list.flatMap(m=>m.name.split(/[\\/]/).slice(0,-1).map((_,i,p)=>p.slice(0,i+1).join('/'))));
-  const node=(path:string,label:string):React.ReactNode=><li key={path}><div className="media-folder-row"><button type="button" className="media-folder-name" aria-current={folder===path?'location':undefined} onClick={()=>setFolders({...folders,[dockTab]:path})}>{label}</button></div>
-   <ul>{[...dirs].filter(d=>d.slice(0,Math.max(d.lastIndexOf('/'),0))===path).sort().map(d=>node(d,d.slice(d.lastIndexOf('/')+1)))}</ul></li>;
-  return dirs.size>0&&<nav className="media-folders" aria-label={t('media.folders')}><ul>{node('',t(`studio.run.dock.${dockTab}`))}</ul></nav>;
- };
- const bySort=(a:LocalModel,b:LocalModel)=>sort==='size'?b.size-a.size:byName(a,b);
+ const [hiddenByDock,setHiddenByDock]=usePref<HiddenModelFolders>('studio.dock.hiddenFolders',{},validHiddenModelFolders);const hiddenFolderKey=`${modelsDir??endpoint}:${dockTab}`;const hiddenFolders=hiddenByDock[hiddenFolderKey]??[];
+ const match=(m:LocalModel)=>!modelFolderHidden(m.name,hiddenFolders)&&(!folder||m.name.replace(/\\/g,'/').startsWith(folder+'/'))&&m.name.toLowerCase().includes(query.trim().toLowerCase());
+ // The same folder tree is used by Library and both Studio model docks.
+ const folderTree=(list:LocalModel[])=><ModelFolderTree names={list.map(m=>m.name)} selected={folder} onSelect={path=>setFolders({...folders,[dockTab]:path})} storageKey={`studio:${modelsDir??endpoint}:${dockTab}`} rootLabel={t(`studio.run.dock.${dockTab}`)} hiddenFolders={hiddenFolders} onToggleHidden={path=>setHiddenByDock(old=>({...old,[hiddenFolderKey]:(old[hiddenFolderKey]??[]).includes(path)?(old[hiddenFolderKey]??[]).filter(p=>p!==path):[...old[hiddenFolderKey]??[],path]}))}/>;
+ const [modelTileLimit,setModelTileLimit]=useState(60);
+ useEffect(()=>setModelTileLimit(60),[dockTab,folder,query,modelSort,viewAllModels]);
+ const visibleModelTiles=(list:LocalModel[])=>sortModels(list.filter(match),modelSort,modelUsage,shuffleSeed).slice(0,modelTileLimit);
+ const moreModelTiles=(list:LocalModel[])=>list.filter(match).length>modelTileLimit&&(viewAllModels?<ModelAutoLoad onMore={()=>setModelTileLimit(n=>n+60)}/>:<button type="button" className="library-load-more" onClick={()=>setModelTileLimit(n=>n+60)}>{t('library.loadMore',{count:Math.min(60,list.filter(match).length-modelTileLimit)})}</button>);
  // ComfyUI's LoadImage reads its input folder, and its output folder through the `name [output]` annotation (resolved and contained by ComfyUI).
  const under=(item:MediaItem|null,root?:string)=>item?.media==='image'&&item.path&&root?relativeMediaPath(item.path,root):'';
  // The overview names the picture only; the full ComfyUI name (folders, `[output]`) stays in the tooltip.
@@ -620,6 +626,11 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
  const loraNames=loraModels.map(m=>m.name);
  const activeLoras=loras.filter(l=>loraNames.includes(l.name));
+ const previousUses=useRef<Set<string>|null>(null);
+ const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=loraModels.find(m=>m.name===l.name);return m?[m]:[];})];
+ const appliedUsageKey=appliedUsageModels.map(modelUsageKey).join('\0');
+ useEffect(()=>{if(!models){previousUses.current=null;return;}const next=new Set(appliedUsageModels.map(modelUsageKey));if(previousUses.current){for(const m of appliedUsageModels)if(!previousUses.current.has(modelUsageKey(m)))recordModelUse(m);}previousUses.current=next;},[models!==null,appliedUsageKey]);
+
 
  const beginnerLoraModels=loraModels.filter(m=>!!family&&m.family===(family.loraFamily??family.id)&&supportedLoraFormat(m)&&!m.metadataError);
  const beginnerLoraDraft=useRef<BeginnerLoraDraft|null>(readPref('beginner.loras',null,isBeginnerLoraDraft));
@@ -2115,7 +2126,7 @@ const promptTools=forgeContext&&<>
    <div className="wb-dock-handle" role="separator" aria-orientation="horizontal" aria-label={t('studio.run.dockResize')} title={t('studio.run.dockResize')} tabIndex={0} aria-valuemin={120} aria-valuemax={dockMax} aria-valuenow={dockSize} data-locked={dockHidden||undefined} onKeyDown={e=>{if(!dockHidden)resizeKey(e,dockSize,120,dockMax,setDockHeight,true);}} onPointerDown={e=>{if(!dockHidden)dragPane(e,dockSize,120,dockMax,setDockHeight,true);}}/>
    {paneToggle(dockHidden,setDockHidden,'dock','studio-dock')}
    {dockTab==='media'?<MediaPanel selected={browsed??media} onSelect={setBrowsed} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} toolbar={dockNavigation} marks={marks} actions={mediaActions}/>:<div className="media-toolbar">{dockNavigation}
-    {(dockTab==='models'||dockTab==='loras')&&<><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sorts={sorts}/><button type="button" className="wb-dock-action" data-run-load disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
+    {(dockTab==='models'||dockTab==='loras')&&<><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sorts={sorts} sortControl={<><ModelSortControl value={modelSort} onChange={setModelSort} onShuffle={()=>setShuffleSeed(n=>n+1)}/><ModelViewAllControl value={viewAllModels} onChange={setViewAllModels}/></>}/><button type="button" className="wb-dock-action" data-run-load disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
    </div>}
    {dockTab==='presets'&&<div className="wb-dock-panel"><PresetPanel disabled={busy||!!current||autoPlan||resolving}/></div>}
     {dockTab==='wildcards'&&<div className="wb-dock-panel"><WildcardPanel library={wildcardLibrary} loading={wildcardLoading} error={wildcardLibraryError} onReload={()=>setWildcardRevision(v=>v+1)} value={wildcard} onChange={setWildcard} enabled={wildcardEnabled} onEnabled={setWildcardEnabled} positive={positive} negative={negative} onInsert={name=>setPositive(p=>`${p.trim()?`${p} `:''}$${name}`)}/></div>}
@@ -2228,10 +2239,10 @@ const promptTools=forgeContext&&<>
    </section>}
 
    {dockTab==='options'&&<section className="wb-dock-panel" aria-label={t('studio.run.dock.options')}><OptionsPanel value={optionsPref} onChange={setOptions} allow={choices} family={family?.id} video={isVideo} imageInput={pipeline==='i2i'} onRead={loadChoices} canRead={native&&!!endpoint.trim()}/></section>}
-   {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
+   {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel wb-model-browser-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
     {!models&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
-    {models&&dockTab==='models'&&(allModels.length===0?<p className="media-help">{t('studio.run.noModels')}</p>:<div className="media-browser">{folderTree(allModels)}<ul className="wb-tiles" data-run-checkpoint>{allModels.filter(match).sort(bySort).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul></div>)}
-    {models&&dockTab==='loras'&&(loraNames.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(loraModels)}<ul className="wb-tiles wb-loras">{loraModels.filter(match).sort(bySort).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/>);})}</ul></div>)}
+    {models&&dockTab==='models'&&(allModels.length===0?<p className="media-help">{t('studio.run.noModels')}</p>:<div className="media-browser">{folderTree(allModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles" data-run-checkpoint>{visibleModelTiles(allModels).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul>{moreModelTiles(allModels)}</div></div>)}
+    {models&&dockTab==='loras'&&(loraNames.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(loraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(loraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/>);})}</ul>{moreModelTiles(loraModels)}</div></div>)}
    </section>}
   </div>
  </div>

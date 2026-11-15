@@ -89,6 +89,27 @@ pub fn native_logs_people_image_error() {
     );
 }
 
+/// Fixed Library outcomes; no filenames, clipboard data or user notes are accepted.
+#[tauri::command]
+pub fn native_logs_library_error(operation: String) {
+    let (slot, message) = match operation.as_str() {
+        "clipboard" => (0, "ERROR: Library gallery clipboard: copy failed; select and copy the text manually"),
+        "listing" => (1, "ERROR: Library gallery listing: models folder could not be read; previous browsing snapshot retained if available"),
+        "preview" => (2, "WARN: Library gallery preview: image unavailable; placeholder shown"),
+        _ => return,
+    };
+    static LAST: Mutex<[Option<std::time::Instant>; 3]> = Mutex::new([None; 3]);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if last[slot].is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
+        return;
+    }
+    last[slot] = Some(std::time::Instant::now());
+    push(
+        Source::Deas,
+        &format!("{message} (repeats limited to once per operation per minute)"),
+    );
+}
+
 /// Fixed beginner-interface diagnostics; never accept paths, prompts or remote error text.
 #[tauri::command]
 pub fn native_logs_beginner_error(operation: String) {
@@ -264,6 +285,25 @@ pub async fn native_logs_export(title: String, text: String) -> Result<bool, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_gallery_errors_are_shared_fixed_and_rate_limited() {
+        let start = native_logs(0).last().map_or(0, |e| e.seq);
+        native_logs_library_error("secret-user-note".into());
+        for operation in ["clipboard", "listing", "preview"] {
+            native_logs_library_error(operation.into());
+            native_logs_library_error(operation.into());
+        }
+        let entries: Vec<_> = native_logs(start)
+            .into_iter()
+            .filter(|e| e.text.contains("Library gallery"))
+            .collect();
+        assert_eq!(entries.len(), 3);
+        assert!(entries
+            .iter()
+            .all(|e| e.source == Source::Deas && !e.text.contains("secret-user-note")));
+        assert!(include_str!("main.rs").contains("deas::native_logs_library_error"));
+    }
 
     #[test]
     fn continuity_join_notices_are_fixed_correlated_rate_limited_and_registered() {

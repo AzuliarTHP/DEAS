@@ -1,0 +1,32 @@
+.model-folder-tree { min-width:0; font-size:.75rem; }
+.model-folder-tree ul { list-style:none; margin:0; padding:0; }
+.model-folder-tree li { margin:0; padding:0; }
+.model-folder-row { display:grid; grid-template-columns:1.2rem minmax(0,1fr) auto; align-items:center; gap:.1rem; min-width:0; border:1px solid transparent; border-radius:.35rem; }
+.model-folder-row.is-selected { background:rgb(var(--ink-rgb) / .06); color:var(--copper); border-color:rgb(var(--ink-rgb) / .1); }
+.model-folder-row:hover { background:rgb(var(--ink-rgb) / .04); }
+.model-folder-toggle,.model-folder-spacer { width:1.2rem; flex:none; }
+.model-folder-tree button { border:0; background:none; color:inherit; font:inherit; cursor:pointer; }
+.model-folder-toggle { padding:.4rem 0; font-size:1rem!important; }
+.model-folder-select { display:flex; align-items:center; gap:.4rem; flex:1; min-width:0; text-align:left; padding:.5rem .25rem .5rem 0; }
+.model-folder-select>span { min-width:0; overflow-wrap:anywhere; white-space:normal; text-align:start; }
+.model-folder-select>svg { flex:none; opacity:.7; }
+.model-folder-select>small { margin-inline-start:auto; flex:none; white-space:nowrap; font-size:.6rem; opacity:.6; padding-inline-end:.3rem; }
+.model-folder-tree button:focus-visible { outline:2px solid var(--copper); outline-offset:-2px; }
+.wb-dock-panel .model-folder-tree { width:clamp(14rem,22%,20rem); max-width:40%; flex:none; border-inline-end:1px solid rgb(var(--ink-rgb) / .1); padding-inline-end:.5rem; }
+.media-browser>.studio-model-results { flex:1; min-width:0; overflow:auto; }
+.studio-model-results>.wb-tiles { overflow:visible; }
+
+.model-folder-visibility { display:flex; flex:none; align-items:center; justify-content:center; padding:.4rem .2rem; border-radius:.25rem; }
+.model-folder-row.is-hidden .model-folder-select { opacity:.45; }
+.model-folder-row.is-hidden .model-folder-visibility { color:var(--muted); }
+.model-folder-visibility:disabled { opacity:.35; cursor:default; }
+
+/* The dock supplies the available height; each browser column owns its scroll. */
+.wb-dock-panel.wb-model-browser-panel { display:flex; overflow:hidden; }
+.wb-model-browser-panel>.media-browser { overflow:hidden; }
+.wb-model-browser-panel .model-folder-tree { min-height:0; overflow:auto; overscroll-behavior:contain; }
+.wb-model-browser-panel .studio-model-results { min-height:0; overflow:auto; overscroll-behavior:contain; }
+
+.model-folder-tree .model-folder-select { width:auto; max-width:100%; }
+.model-folder-tree .model-folder-visibility { width:1.7rem; min-width:1.7rem; }
+.model-folder-tree { overflow-x:hidden; }

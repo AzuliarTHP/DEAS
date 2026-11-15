@@ -21,13 +21,26 @@ test('IPC fixture: with an environment the models folder is scanned on mount ins
  expect(checkRecipePrerequisites).toHaveBeenCalledTimes(1); // only the sampler/scheduler lists, never the model list
 });
 
+test('folder eye toggles hide Studio descendants without changing the active model or scanning',async()=>{
+ const a={category:'checkpoints',name:'group/nested/a.pt',path:'/m/checkpoints/group/nested/a.pt',size:1,info:null};
+ vi.mocked(scanModels).mockResolvedValue([a,{...a,name:'other/b.pt',path:'/m/checkpoints/other/b.pt'}]);
+ render(<I18nProvider><Workbench endpoint="" roots={{models:'/m'}}/></I18nProvider>);dock('Models');
+ await screen.findByRole('button',{name:a.name});const active=(screen.getByRole('combobox',{name:'Checkpoint'}) as HTMLSelectElement).value;
+ fireEvent.click(screen.getByRole('button',{name:'Expand group'}));fireEvent.click(screen.getByRole('button',{name:'Hide group folder'}));
+ expect(screen.queryByRole('button',{name:a.name})).toBeNull();expect(screen.getByRole('button',{name:'Show nested folder'})).toHaveProperty('disabled',true);
+ expect((screen.getByRole('combobox',{name:'Checkpoint'}) as HTMLSelectElement).value).toBe(active);
+ dock('LoRAs');dock('Models');expect(screen.queryByRole('button',{name:a.name})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Show group folder'}));expect(screen.getByRole('button',{name:a.name})).toBeTruthy();
+ expect(scanModels).toHaveBeenCalledTimes(1);expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
 test('Windows model tree filtering and short names preserve the exact selected identifier',async()=>{
  const name='sdxl\\anime\\My Model.safetensors';
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name,path:'C:\\models\\'+name,size:1,info:null}]);
  render(<I18nProvider><Workbench endpoint="http://127.0.0.1:7801" roots={{models:'C:\\models'}}/></I18nProvider>);
  dock('Models');
- const tree=await screen.findByRole('navigation',{name:'Folders'});
- fireEvent.click(within(tree).getByRole('button',{name:'anime'}));
+ const tree=await screen.findByRole('navigation',{name:'Model folders'});
+ fireEvent.click(within(tree).getByRole('button',{name:'Expand sdxl'}));fireEvent.click(within(tree).getByRole('treeitem',{name:'anime'}));
  const tile=screen.getByRole('button',{name});
  expect(tile.querySelector('.wb-tile-name')!.textContent).toBe('My Model');
  fireEvent.click(tile);
@@ -39,14 +52,14 @@ test('model and LoRA docks get a subfolder tree from the scanned names that filt
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'sdxl/base.safetensors',path:'/m/checkpoints/sdxl/base.safetensors',size:1,info:null},{category:'checkpoints',name:'sd15/old.safetensors',path:'/m/checkpoints/sd15/old.safetensors',size:1,info:null},{category:'checkpoints',name:'sdxl/anime/pony.safetensors',path:'/m/checkpoints/sdxl/anime/pony.safetensors',size:1,info:null},{category:'loras',name:'grain.safetensors',path:'/m/loras/grain.safetensors',size:1,info:null}]);
  render(<I18nProvider><Workbench endpoint="http://127.0.0.1:7801" roots={{models:'/m'}}/></I18nProvider>);
  dock('Models');
- const tree=await screen.findByRole('navigation',{name:'Folders'});
- fireEvent.click(within(tree).getByRole('button',{name:'anime'}));
+ const tree=await screen.findByRole('navigation',{name:'Model folders'});
+ fireEvent.click(within(tree).getByRole('button',{name:'Expand sdxl'}));fireEvent.click(within(tree).getByRole('treeitem',{name:'anime'}));
  expect(screen.getByRole('button',{name:'sdxl/anime/pony.safetensors'})).toBeTruthy();expect(screen.queryByRole('button',{name:'sdxl/base.safetensors'})).toBeNull();
- fireEvent.click(within(tree).getByRole('button',{name:'sdxl'}));
+ fireEvent.click(within(tree).getByRole('treeitem',{name:'sdxl'}));
  expect(screen.getByRole('button',{name:'sdxl/base.safetensors'})).toBeTruthy();expect(screen.queryByRole('button',{name:'sd15/old.safetensors'})).toBeNull();
- dock('LoRAs');expect(screen.queryByRole('navigation',{name:'Folders'})).toBeNull();expect(screen.getByRole('button',{name:'grain.safetensors'})).toBeTruthy(); // no subfolders, no tree, unfiltered
- dock('Models');expect(within(screen.getByRole('navigation',{name:'Folders'})).getByRole('button',{name:'sdxl'}).getAttribute('aria-current')).toBe('location');
- fireEvent.click(within(screen.getByRole('navigation',{name:'Folders'})).getByRole('button',{name:'Models'}));
+ dock('LoRAs');expect(screen.getByRole('navigation',{name:'Model folders'})).toBeTruthy();expect(screen.getByRole('button',{name:'grain.safetensors'})).toBeTruthy(); // root-only tree remains available and the list is unfiltered
+ dock('Models');expect(within(screen.getByRole('navigation',{name:'Model folders'})).getByRole('treeitem',{name:'sdxl'}).getAttribute('aria-current')).toBe('location');
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Model folders'})).getByRole('treeitem',{name:'Models'}));
  expect(screen.getByRole('button',{name:'sd15/old.safetensors'})).toBeTruthy();
  // Tiles print the short name; the full path stays the accessible name. The view choice is remembered.
  expect(screen.getByRole('button',{name:'sd15/old.safetensors'}).querySelector('.wb-tile-name')!.textContent).toBe('old');

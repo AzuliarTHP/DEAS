@@ -10,6 +10,14 @@ This is the **single current plan** for DEAS: what is in place, what is still op
 
 Current working-tree source: 0.2.35 (unreleased). Latest published release: **0.2.33 BETA** (`v0.2.33`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
 
+## Native model browser proposal
+
+The indexed Library/Studio browser is proposed for review. Windows compilation,
+unit tests and mocked Chromium verification are recorded in VERIFICATION.md.
+Real-library performance, native WebView interaction, Linux/WebKit acceptance and
+large-library memory behavior still need maintainer/user acceptance. No model
+weights are downloaded or generation started by the browser.
+
 ## 1. Evidence levels
 
 An item is only as accepted as its strongest evidence. Keep the levels separate when updating this plan.

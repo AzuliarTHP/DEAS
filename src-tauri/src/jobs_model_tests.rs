@@ -20,12 +20,9 @@ fn model_file(root: &Path, category: &str, name: &str) -> PathBuf {
 
 async fn declaration(root: &Path, category: &str, name: &str) -> PathBuf {
     let path = model_file(root, category, name);
-    crate::downloads::models::native_model_family_write(
-        path.to_str().unwrap().into(),
-        Some("sdxl".into()),
-    )
-    .await
-    .unwrap();
+    crate::downloads::models::family_operation(path.to_str().unwrap().into(), Some("sdxl".into()))
+        .await
+        .unwrap();
     path
 }
 
@@ -519,7 +516,7 @@ async fn gguf_sidecar_split_preparation_checks_real_loader_catalog_fields() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         // Advisory-family fixture only, not a loadable quantized model.
         std::fs::write(&path, b"unknown architecture fixture").unwrap();
-        crate::downloads::models::native_model_family_write(
+        crate::downloads::models::family_operation(
             path.to_str().unwrap().into(),
             Some("anima".into()),
         )
@@ -559,12 +556,9 @@ async fn gguf_sidecar_split_preparation_checks_real_loader_catalog_fields() {
         }
         assert!(jobs.lock().unwrap().job.is_none());
         task.abort();
-        let reset = crate::downloads::models::native_model_family_write(
-            path.to_str().unwrap().into(),
-            None,
-        )
-        .await
-        .unwrap();
+        let reset = crate::downloads::models::family_operation(path.to_str().unwrap().into(), None)
+            .await
+            .unwrap();
         assert!(reset.family_override.is_none());
         assert!(reset.family.is_none());
     }

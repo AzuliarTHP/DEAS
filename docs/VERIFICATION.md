@@ -1,5 +1,35 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Proposed indexed native model browser — 2026-11-15
+
+Rebased onto the 0.2.36 source at `f99ee6df33a0a986dd2a78727496210fc3930323`.
+Windows source/fixture evidence, without a native app launch or real-library scan:
+
+- `npm run build`: passed.
+- `npm test`: 157 core passed / 1 skipped; 1,965 UI passed across 103 files.
+- `cargo test --locked --offline --manifest-path src-tauri/Cargo.toml --lib`:
+  896 passed, 69 ignored. Model fixtures use a workspace-local temporary directory.
+- Chromium 156: shared viewport/layout gate passed 467 checks; dedicated mocked
+  Library/Studio browser checks passed cards, filters, details, folder visibility,
+  independent wheel scrolling, header alignment and automatic View all batches.
+- Clippy with warnings denied initially reports pre-existing
+  `chunks_exact_to_as_chunks` diagnostics under Rust 1.100, and the upstream
+  nested condition in `jobs.rs` for H3 Regenerate tuning (`collapsible_if`).
+  Both lint categories were excluded for the remaining all-targets check. No
+  unrelated H3 code is changed by this proposal.
+
+The model-index tests cover warm restore without model access, explicit incremental
+refresh, changed/new/deleted files, sidecar changes, offline roots, corrupt cache,
+metadata updates and sibling raster covers. Fetch selection tests cover deduplication,
+root containment, missing-only metadata and stale records. No real provider request,
+model download or generation was executed. Screenshots from browser verification
+are synthetic fixtures and are excluded from the PR.
+
+Maintainer acceptance remains for Linux/WebKit, actual native WebView interaction,
+external-drive behavior, real-library refresh time and very large View all memory
+use. Browsing snapshots remain advisory; execution validates selected files live.
+
+
 ## H3 Join continuation: native Linux owned backend, audio seams and RAM reclaim — 2026-11-15
 
 Owner-authorized continuation of items 1–3 (RAM admission, native-owned sequence, audio/export/platform acceptance), including explicit authorization for scoped node-pack changes with isolated testing only (no push, no live-install update).

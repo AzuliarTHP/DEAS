@@ -5,12 +5,13 @@ import { I18nProvider } from '../../i18n/I18nProvider';
 import { DownloadPanel, AuthPanel } from './DownloadPluginPanel';
 import { DownloadWorkspace } from './DownloadWorkspace';
 import { browseDownloads, planDownloads, setAuthToken, removeAuthToken } from '../../lib/downloads';
+import { clearInstalledListing } from './installedListing';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true)}));
 const resource={id:'file',label:'Remote file',kind:'file',url:'https://example.invalid/file',downloadable:true,size:23};
 const catalog={version:1,providers:[{id:'fixture',label:'Fixture provider',kind:'http',origin:'https://example.invalid',scopes:['index','repo'],anonymousNotice:'Fixture limits'}],entries:[{id:'curated',label:'Curated index',providerId:'fixture',scope:'index',locator:'https://example.invalid/index',kind:'file',target:'models'}]};
 const mount=(auth=false)=>render(<I18nProvider>{auth?<AuthPanel/>:<DownloadPanel/>}</I18nProvider>);
 const click=(name:string)=>fireEvent.click(screen.getByRole('button',{name}));
-beforeEach(()=>{localStorage.clear();localStorage.setItem('deas.locale.v1','en');vi.mocked(isTauri).mockReturnValue(true);vi.mocked(invoke).mockImplementation(async c=>{
+beforeEach(()=>{clearInstalledListing();localStorage.clear();localStorage.setItem('deas.locale.v1','en');vi.mocked(isTauri).mockReturnValue(true);vi.mocked(invoke).mockImplementation(async c=>{
  if(c==='native_download_catalog')return catalog;
  if(c==='native_download_browse')return {resources:[resource,{id:'installed',label:'Installed model',kind:'model',downloadable:false}],nextCursor:'page2',warnings:['Bounded listing']};
  if(c==='native_pick_directory')return '/parent';
@@ -348,10 +349,10 @@ it('saves and resets installed family metadata locally, showing declaration on c
  vi.mocked(invoke).mockImplementation(async(c,a)=>c==='native_download_catalog'?catalog:c==='native_models_scan'?[model]:c==='native_model_scan_status'?{state:'idle',id:''}:c==='native_model_family_write'?{...model,...((a as {family:string|null}).family?{familyOverride:'sdxl'}:{})}:[]);
  render(<I18nProvider><DownloadPanel embedded installTarget="/env" modelsDir="/models"/></I18nProvider>);await screen.findByRole('tab',{name:'Models'});tab('Installed');
  const card=await screen.findByRole('button',{name:model.name});fireEvent.click(card);fireEvent.keyDown(card,{key:'ContextMenu'});fireEvent.click(screen.getByRole('menuitem',{name:'Edit meta…'}));
- expect(screen.getByLabelText('Model family')).toHaveProperty('value','sdxl');fireEvent.click(screen.getByRole('button',{name:'Save'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ expect(screen.getByLabelText('Model family')).toHaveProperty('value','sdxl');fireEvent.click(screen.getByRole('button',{name:'Save'}));await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Edit meta…'})).toBeNull());
  expect(invoke).toHaveBeenCalledWith('native_model_family_write',{path:model.path,family:'sdxl'});
  expect(card.textContent).toContain('User-declared family');expect(document.querySelector('.download-picker .model-declared')).toBeTruthy();
- fireEvent.contextMenu(card);fireEvent.click(screen.getByRole('menuitem',{name:'Edit meta…'}));fireEvent.click(screen.getByRole('button',{name:'Reset to detection'}));await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ fireEvent.contextMenu(card);fireEvent.click(screen.getByRole('menuitem',{name:'Edit meta…'}));fireEvent.click(screen.getByRole('button',{name:'Reset to detection'}));await waitFor(()=>expect(screen.queryByRole('dialog',{name:'Edit meta…'})).toBeNull());
  expect(invoke).toHaveBeenCalledWith('native_model_family_write',{path:model.path,family:null});expect(document.querySelector('.model-declared')).toBeNull();
  expect(vi.mocked(invoke).mock.calls.some(([c])=>['native_model_info','native_download_start','native_model_scan_start'].includes(c))).toBe(false);
  // A save from another mounted view refreshes this exact installed path without rescanning.
@@ -386,7 +387,7 @@ it('lists installed models per folder and fetches CivitAI metadata by hash on re
  expect(document.querySelector('img.download-preview')?.getAttribute('src')).toBe(fetched.info.civitai.preview);
  // Batch scan: scope selection + long-running hint, then one native background job.
  expect(screen.getByLabelText('Scope')).toBeTruthy();
- expect(screen.getByText(/take a long time/)).toBeTruthy();
+ expect(screen.getByRole('button',{name:'Scan Files'}).getAttribute('title')).toContain('take a long time');
  click('Scan Files');
  // One native job owns the sequential batch; React never drives per-file requests.
  click('Scan Files');
@@ -394,6 +395,50 @@ it('lists installed models per folder and fetches CivitAI metadata by hash on re
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_model_scan_start')).toHaveLength(1);
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_model_info')).toHaveLength(1);
  expect((screen.getByRole('button',{name:'Scan Files'}) as HTMLButtonElement).disabled).toBe(true);
+});
+it('keeps the listing across navigation and refreshes only on explicit request',async()=>{
+ const model={category:'loras',name:'cached.pt',path:'/models/loras/cached.pt',size:5,info:null};
+ let response=[model];let fail=false;
+ vi.mocked(invoke).mockImplementation(async c=>{
+  if(c==='native_download_catalog')return catalog;
+  if(c==='native_models_scan'){if(fail)throw new Error('unavailable');return response;}
+  if(c==='native_model_scan_status')return {id:'',state:'idle'};
+  if(c==='native_auth_status')return [];
+  return null;
+ });
+ const mountLibrary=()=>render(<I18nProvider><DownloadPanel embedded installTarget="/env" modelsDir="/models"/></I18nProvider>);
+ let view=mountLibrary();await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ await screen.findByRole('button',{name:'cached.pt'});
+ tab('Catalog');tab('Installed');await screen.findByRole('button',{name:'cached.pt'});
+ view.unmount();
+ act(()=>window.dispatchEvent(new CustomEvent('deas:model-family-changed',{detail:{...model,familyOverride:'sdxl'}})));
+ view=mountLibrary();await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ expect((await screen.findByRole('button',{name:'cached.pt'})).textContent).toContain('User-declared family');
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(1);
+ response=[{...model,name:'new.pt',path:'/models/loras/new.pt'}];click('Refresh models');
+ await screen.findByRole('button',{name:'new.pt'});
+ expect(screen.queryByRole('button',{name:'cached.pt'})).toBeNull();
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(2);
+ fail=true;await waitFor(()=>expect((screen.getByRole('button',{name:'Refresh models'}) as HTMLButtonElement).disabled).toBe(false));click('Refresh models');
+ await screen.findByText('The models folder could not be read.');
+ expect(screen.getByRole('button',{name:'new.pt'})).toBeTruthy();
+ view.unmount();view=mountLibrary();await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ await screen.findByRole('button',{name:'new.pt'});
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(3);
+});
+it('shares an unfinished listing across remounts and lists a changed folder separately',async()=>{
+ let finish!:(models:unknown)=>void;
+ const pending=new Promise(resolve=>{finish=resolve;});
+ vi.mocked(invoke).mockImplementation(async(c,args)=>c==='native_download_catalog'?catalog:c==='native_auth_status'?[]:c==='native_models_scan'?((args as {root:string}).root==='/models'?pending:[]):c==='native_model_scan_status'?{id:'',state:'idle'}:null);
+ const renderLibrary=(root:string)=>render(<I18nProvider><DownloadPanel embedded installTarget="/env" modelsDir={root}/></I18nProvider>);
+ let view=renderLibrary('/models');await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ await screen.findByText('Loading your collection…');view.unmount();
+ view=renderLibrary('/models');await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(1);
+ await act(async()=>{finish([]);});await screen.findByText('No model files found under /models.');
+ view.unmount();view=renderLibrary('/other');await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ await screen.findByText('No model files found under /other.');
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(2);
 });
 it('reattaches to the native scan after tab changes and unmount without restarting it',async()=>{
  const local={category:'loras',name:'scan.pt',path:'/models/loras/scan.pt',size:5,info:null};
@@ -410,6 +455,8 @@ it('reattaches to the native scan after tab changes and unmount without restarti
  status={...status,state:'failed',completed:3,remaining:0,failed:1};
  await waitFor(()=>expect(screen.getByText(/Scan finished with errors.*3\/3 processed · 0 remaining · 1 failed/)).toBeTruthy(),{timeout:2500});
  expect((screen.getByRole('button',{name:'Scan Files'}) as HTMLButtonElement).disabled).toBe(false);
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(2);
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan').every(([,args])=>!(args as {refresh?:boolean}).refresh)).toBe(true);
  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_model_scan_start'||c==='native_model_info'||c==='native_download_cancel')).toBe(false);
 });
 it('does not update or continue polling an unmounted scan view',async()=>{
@@ -419,4 +466,26 @@ it('does not update or continue polling an unmounted scan view',async()=>{
  await act(async()=>{});tab('Installed');await act(async()=>{});expect(resolve).toBeTypeOf('function');view.unmount();
  await act(async()=>{resolve({id:'job',state:'running',completed:0,total:1,remaining:1,failed:0});await vi.advanceTimersByTimeAsync(5000);});
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_model_scan_status')).toHaveLength(1);
+});
+
+it('starts a background Fetch for filtered indexed paths without a folder rescan and reloads the saved index on completion',async()=>{
+ const root='/env/ComfyUI/models';const local={category:'loras',name:'style.pt',path:root+'/loras/style.pt',size:7,info:null};
+ let started=false;let done=false;
+ vi.mocked(invoke).mockImplementation(async(c)=>{
+  if(c==='native_download_catalog')return catalog;
+  if(c==='native_auth_status')return [];
+  if(c==='native_models_scan')return [local];
+  if(c==='native_model_scan_start'){started=true;return {id:'fetch-1',root,state:'running',file:null,completed:0,total:1,remaining:1,failed:0};}
+  if(c==='native_model_scan_status')return {id:started?'fetch-1':'',root,state:started?(done?'succeeded':'running'):'idle',file:null,completed:done?1:0,total:started?1:0,remaining:done?0:1,failed:0};
+  return null;
+ });
+ render(<I18nProvider><DownloadPanel embedded installTarget="/env"/></I18nProvider>);tab('Installed');
+ await screen.findByRole('button',{name:'style.pt'});
+ const fetchButton=screen.getByRole('button',{name:'Fetch'});await waitFor(()=>expect(fetchButton).toHaveProperty('disabled',false));
+ fireEvent.click(fetchButton);click('Start fetch');
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_model_scan_start',{root,scope:'all',authenticated:false,paths:[local.path],missingOnly:true}));
+ done=true;
+ await waitFor(()=>expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(2),{timeout:2500});
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan').every(([,args])=>!(args as {refresh?:boolean}).refresh)).toBe(true);
+ expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_model_info'||c==='native_download_start')).toBe(false);
 });

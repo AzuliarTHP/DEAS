@@ -71,6 +71,106 @@ Live authenticated provider, gated license acceptance, provider rate/speed entit
 
 ## Folder settings and local presence
 
+### Native Installed gallery (proposed)
+
+Installed has a preview gallery and a compact list view, with horizontal model-type navigation
+above the collection and a modal detail popup for the selected file. The toolbar searches
+filenames, CivitAI names/versions, trigger words, base families, personal tags and
+notes. Folder, base-model, metadata-presence, tag and Favorites filters combine;
+Clear filters resets them. Collapsible folders include descendant files and remember expansion. Sort by name (both directions), date added, size, Studio use count, local version count, shuffled order or base model. Studio use counts start with this patch and count subsequent model/LoRA activations, not completed generations. Date added uses file creation time when available, otherwise first discovery. Local versions use distinct known CivitAI version IDs.
+Only 60 matching cards are rendered initially. Enable **View all** beside Sort
+to automatically append the next cards as you scroll, without pressing Show more.
+The toggle survives restart. Turn it off for manual 60-card batches. Both modes
+use the saved snapshot without rescanning. Search and filtering still cover the complete loaded native snapshot.
+
+- Stars mark Favorites. Notes (up to 4,000 characters) and comma-separated tags
+  (up to 20, 50 characters each) are personal preferences keyed by the exact model
+  path. Tags commit on blur or Enter. These preferences, view mode and search survive
+  restart in DEAS's local profile; they do not write to model files, `.deas.json` or
+  other managers' metadata. If profile storage is unavailable/full, the existing
+  preference service keeps changes only for the current session. Path changes
+  require reorganizing the new path; there is no automatic file rename/move/delete.
+- Preview covers prefer a sibling image found during explicit Refresh, then fall
+  back to existing CivitAI metadata. Supported extensions are JPG/JPEG, PNG, WebP,
+  GIF, AVIF and BMP (case insensitive); browser decoding determines whether a file
+  is valid. For `name.safetensors`, discovery tries `name.preview.<ext>`,
+  `name.<ext>`, then `name.safetensors.preview.<ext>`, in that order. Each group
+  prefers JPG, JPEG, PNG, WebP, GIF, AVIF, then BMP. Covers must be regular sibling
+  files, 1 byte to 32 MiB; symlinks are skipped. Missing/failed covers show a format
+  placeholder. Refresh discovers added/removed covers, while ordinary navigation
+  uses the saved index. No model hashing, metadata fetch or other manager's metadata
+  import is triggered. Known mature previews are blurred
+  by default, with a remembered checkbox. Unknown maturity cannot be inferred.
+- Click a model for its popup, previous/next navigation, version/filename/location/base/size/identity facts, trigger-word copy buttons, personal organization,
+  existing native compatibility advice, companion suggestions and metadata fetch.
+  Right-click or Shift+F10 on a model retains Edit meta. Copy filename preserves the
+  exact category-relative model name. Clipboard refusal is shown inline; preview,
+  clipboard and listing failures are rate-limited in central Logs with no filenames,
+  user notes, remote URLs or clipboard contents.
+- Catalog browsing, versions, explicit downloads and provider authorization retain
+  the existing DEAS native tools. The Installed view hides the irrelevant download
+  basket action. Personal recipes, workflow application, bulk filesystem management,
+  video previews and LoRA Manager browser-extension integration are not part of this
+  native gallery slice. No LoRA Manager service or custom nodes are installed.
+
+The wider folder column wraps long names and keeps counts and eye controls visible.
+Folders/filters and model cards have independent scroll areas in the Library
+workspace. Scrolling cards keeps the folder column in place.
+
+### Folder visibility
+
+Click the eye beside a folder to hide its files and descendants from cards,
+searches, Favorites results and Fetch targets. The folder stays in the tree with
+its eye crossed out, so it can be shown again. Hiding the root hides the entire
+current category. A child hidden by its parent has a disabled eye until the parent
+is shown; independently hidden children remain hidden when the parent is restored.
+Folder counts describe the indexed inventory, including hidden files. Clear filters
+does not reset visibility. Visibility is remembered per browser, root and category;
+Library and Studio keep separate preferences. Files, metadata and active Studio
+selections are unchanged. This is a display preference, not an access restriction.
+
+### Fetch metadata and previews
+
+The **Fetch** control sits beside **Refresh models** in the collection header;
+its options expand below the compact action row. It works from the current saved listing. Choose current filtered
+results (including matching cards beyond Show more), current folder and descendants,
+current model category or the entire library. **Only missing metadata or previews**
+is enabled initially; native code skips source-valid CivitAI records with a preview
+link. Uncheck it to refresh existing records. A no-match CivitAI result remains
+missing and can be retried explicitly. The count is an upper bound before native
+missing-record checks. In a card's popup, Fetch/Refresh metadata handles that file.
+
+**Start fetch** is explicit. It looks up CivitAI by SHA-256, reuses valid cached hashes
+and may read whole weight files when hashing is needed. Native code validates and
+deduplicates the selected paths, keeps four requests in flight, reports progress
+and errors through central Logs, and continues when switching views. It caches
+metadata and preview URLs beside each model without downloading weights or
+replacing local covers. Preview images load from those links when displayed;
+this is not an offline image downloader. Configured CivitAI credentials use the
+existing native authorization flow. Closing DEAS stops in-flight work.
+
+Completed batches patch the native index once per saved index, then refresh the
+visible cards from that saved index. No recursive model-folder listing is triggered
+by Fetch or by returning to Library. **Scan Files** retains its older explicit
+whole-folder discovery workflow; **Refresh models** discovers local file changes.
+
+The layout is inspired by [ComfyUI LoRA Manager](https://github.com/willmiao/ComfyUI-Lora-Manager),
+implemented with DEAS's existing model/auth/download services. Global search includes
+local model search, Favorites, folder/base filters and Refresh models.
+
+The proposed native browser stores a native browsing index in the app cache, keyed by
+configured model roots and detector version. The first load builds the index;
+subsequent visits and restarts read it without walking model folders. A detector
+upgrade, missing or invalid index requires rebuilding. **Refresh models** explicitly
+walks folders and reuses unchanged file/sidecar records. External additions and removals appear after Refresh models. Completed metadata
+batches patch existing index records and reload that saved index without walking
+model folders.
+Individual metadata edits/fetches update the matching cached record without a
+model-directory scan. A failed refresh retains the previous listing. Library and
+Studio share the native index, collapsible folder navigation, bounded card batches
+and sorting controls. The snapshot is browsing advice; native generation validation
+still checks selected files live. No background filesystem watcher is added.
+
 `native_settings_read({root})` / `native_settings_write({root, folders:{models?,input?,output?}})` keep `deas-settings.json` beside the environment (absolute existing directories only). The owned backend start appends `--input-directory`, `--output-directory` and `--extra-model-paths-config <root>/deas-models.yaml` (generated, `base_path` = models folder with the standard ComfyUI subfolders) when set; a folder removed since saving fails the start. The Library targets `<models>/<category>` for model categories when a models folder is configured. `native_files_present({paths})` reports which absolute files exist; the Library marks listed files found in the destination as "already local" and does not offer them for download. Catalog cards (model pages) are not checked until their files are listed.
 
 `native_models_scan({root})` lists model files (`safetensors/sft/ckpt/pt/pth/gguf/bin`, hidden names skipped, 5000 cap) under the standard ComfyUI category folders of `root` with any cached `<file>.deas.json` sidecar and a `family` ID for model and LoRA files (safetensors header `modelspec.architecture` or tensor-key signature from `src/families/builtin.json`, else the cached CivitAI base model; absent = unknown). `native_model_info({path, authenticated})` hashes the file (reusing the cached hash while the size is unchanged), queries CivitAI `api/v1/model-versions/by-hash/<sha256>` through the catalog's CivitAI provider (token when configured and requested) and writes the sidecar atomically: `sha256`, `size`, `fetchedAt`, and `civitai` (model/version IDs and names, type → ComfyUI category, base model, NSFW flag, trigger words, 450px preview URL, first showcase image settings) or `null` for an unknown hash. Previews are shown from CivitAI URLs, not downloaded. Sidecar metadata is informational: it is not a verified download, license acceptance or architecture check.

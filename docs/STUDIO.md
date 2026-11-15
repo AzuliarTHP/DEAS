@@ -2,6 +2,23 @@
 
 [Documentation index](README.md) · [Plan](PLAN.md)
 
+## Model browser (proposed)
+
+Models and LoRAs use the saved native browsing index. Reload explicitly refreshes
+it; returning to Studio uses the snapshot. Collapsible folder trees remember their
+expanded state, and a parent folder includes descendants. The eye beside a folder
+hides its files and descendants from the dock and search, without changing the
+active model or LoRAs. Click the crossed-out eye to show them again. Visibility is
+saved per root and dock, separately from Library; it does not modify files. Sort by name, date added,
+size, Studio activations, known local versions, shuffle or family. Use counts begin
+with subsequent selections after this patch, without inventing historical counts.
+The wider folder tree wraps long labels and keeps eye controls visible.
+The folder tree and card list scroll independently within the dock.
+Only 60 cards render at first. Enable **View all** beside Sort to append matching
+cards automatically as you scroll. The toggle is remembered; turning it off
+restores manual Show more batches. Neither mode triggers a folder scan. Live execution
+validation remains separate from browsing snapshots.
+
 ## Contextual model checks
 
 Model selection, component pickers, Library, Prompt Forge, Media Analysis, audio enhancement and TVE share a model-check result. **Suitable** means the supplied facts match this context, not that inference or output quality has been tested. **Blocked** names a structural/integrity/metadata conflict. **Compatibility unknown** is not an incompatibility: explicitly supported unknown self-contained checkpoints remain usable. **Unavailable** names a missing backend-listed file, loader or specialized runtime. Missing dependencies never authorize a substitute model.

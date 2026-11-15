@@ -4,6 +4,8 @@
 use super::*;
 #[path = "downloads_models_scan.rs"]
 pub mod background;
+#[path = "downloads_models_index.rs"]
+pub mod index;
 use serde_json::Value;
 use std::{
     fs::File,
@@ -477,6 +479,8 @@ pub struct Settings {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CivitaiInfo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub model_id: u64,
     pub version_id: u64,
     pub name: String,
@@ -619,7 +623,6 @@ fn sidecar(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-#[cfg(test)]
 fn read_info(path: &Path) -> Option<ModelInfo> {
     let source = Source::open(path).ok()?;
     let (_, info) = source
@@ -646,6 +649,14 @@ fn validate_info(info: &ModelInfo) -> Result<(), String> {
         return Err("Invalid cache fingerprint/timestamp".into());
     }
     if let Some(c) = &info.civitai {
+        if c.description.as_ref().is_some_and(|text| {
+            text.chars().count() > 8000
+                || text
+                    .chars()
+                    .any(|c| c.is_control() && c != '\n' && c != '\t')
+        }) {
+            return Err("Invalid cached model description".into());
+        }
         bounded_text(&c.name, 240)?;
         bounded_text(&c.version, 240)?;
         if c.model_id == 0
@@ -964,9 +975,12 @@ fn walk(
     let Ok(entries) = std::fs::read_dir(&resolved) else {
         return;
     };
-    let mut entries: Vec<_> = entries.flatten().map(|e| dir.join(e.file_name())).collect();
-    entries.sort();
-    for path in entries {
+    let mut entries: Vec<_> = entries
+        .flatten()
+        .filter_map(|e| Some((dir.join(e.file_name()), e.file_type().ok()?)))
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    for (path, kind) in entries {
         if out.len() >= MAX_WALK {
             return;
         }
@@ -976,7 +990,7 @@ fn walk(
         if hidden {
             continue;
         }
-        if resolve_directory(&path).is_ok() {
+        if (kind.is_dir() || kind.is_symlink()) && resolve_directory(&path).is_ok() {
             if depth < MAX_DEPTH {
                 walk(category, base, &path, depth + 1, out);
             }
@@ -1089,6 +1103,12 @@ pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
     bounded_text(version, 240)?;
     let model_type = model.get("type").and_then(Value::as_str).unwrap_or("");
     Ok(CivitaiInfo {
+        description: v.get("description").and_then(Value::as_str).map(|text| {
+            text.chars()
+                .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+                .take(8000)
+                .collect()
+        }),
         model_id: v
             .get("modelId")
             .and_then(Value::as_u64)
@@ -1315,8 +1335,7 @@ fn write_family(path: &Path, family: Option<&str>) -> Result<LocalModel, String>
     Ok(model)
 }
 
-#[tauri::command]
-pub async fn native_model_family_write(
+pub(crate) async fn family_operation(
     path: String,
     family: Option<String>,
 ) -> Result<LocalModel, String> {
@@ -1335,8 +1354,31 @@ pub async fn native_model_family_write(
     result
 }
 
+async fn update_index(app: &tauri::AppHandle, model: &LocalModel) {
+    let Ok(directory) = index::directory(app) else {
+        return;
+    };
+    let path = PathBuf::from(&model.path);
+    let result = tokio::task::spawn_blocking(move || index::update(&directory, &path)).await;
+    if !matches!(result, Ok(Ok(()))) {
+        crate::logs::push(crate::logs::Source::Deas, "WARN: Library index operation=metadata-update saved metadata is available; browsing cache update failed");
+    }
+}
+
+#[tauri::command]
+pub async fn native_model_family_write(
+    app: tauri::AppHandle,
+    path: String,
+    family: Option<String>,
+) -> Result<LocalModel, String> {
+    let model = family_operation(path, family).await?;
+    update_index(&app, &model).await;
+    Ok(model)
+}
+
 /// The webview payload carries its own cap; a listing that big already signals a misconfigured
 /// root, and silence about dropped files is worse than the cap.
+#[cfg(test)]
 fn cap_for_ui(models: Vec<LocalModel>) -> Vec<LocalModel> {
     let total = models.len();
     if total > MAX_LISTING {
@@ -1352,19 +1394,32 @@ fn cap_for_ui(models: Vec<LocalModel>) -> Vec<LocalModel> {
 // async + blocking pool: a sync command runs on the main thread and would freeze the UI during the header reads.
 #[tauri::command]
 pub async fn native_models_scan(
+    app: tauri::AppHandle,
     root: String,
     extra_roots: Option<Vec<String>>,
-) -> Result<Vec<LocalModel>, String> {
+    refresh: Option<bool>,
+) -> Result<Vec<index::SnapshotModel>, String> {
+    let directory = index::directory(&app)?;
     let mut roots = vec![PathBuf::from(&root)];
     if let Some(extra) = extra_roots {
         roots.extend(extra.iter().map(PathBuf::from));
     }
-    tauri::async_runtime::spawn_blocking(move || scan_roots(&roots).map(cap_for_ui))
-        .await
-        .map_err(|e| e.to_string())?
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        index::load(&directory, roots, refresh.unwrap_or(false))
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if result.is_err() {
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            "ERROR: Library index operation=load failed; check configured folders and cache access",
+        );
+    }
+    result
 }
 #[tauri::command]
 pub async fn native_model_info(
+    app: tauri::AppHandle,
     engine: tauri::State<'_, DownloadEngine>,
     auth: tauri::State<'_, AuthState>,
     path: String,
@@ -1377,7 +1432,9 @@ pub async fn native_model_info(
         .find(|p| p.kind == "civitai")
         .ok_or("No CivitAI provider in catalog")?;
     let h = credential(&auth, p, authenticated)?;
-    fetch(p, PathBuf::from(path), h).await
+    let model = fetch(p, PathBuf::from(path), h).await?;
+    update_index(&app, &model).await;
+    Ok(model)
 }
 
 #[cfg(test)]
@@ -2330,13 +2387,11 @@ mod tests {
     async fn family_errors_are_redacted_in_shared_logs_and_command_is_registered() {
         let secret = "hf_do_not_log_this_path";
         assert!(
-            native_model_family_write(secret.into(), Some("secret-family".into()))
+            family_operation(secret.into(), Some("secret-family".into()))
                 .await
                 .is_err()
         );
-        assert!(native_model_family_write(secret.into(), None)
-            .await
-            .is_err());
+        assert!(family_operation(secret.into(), None).await.is_err());
         let logs = crate::logs::native_logs(0);
         for operation in ["write", "reset"] {
             let expected = format!("models operation=family-{operation} outcome=failed");
