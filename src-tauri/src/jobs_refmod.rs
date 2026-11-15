@@ -2,6 +2,7 @@
 //! Workbench job, so it cannot enter generation history, the queue view or Stop all; the node itself
 //! checks interruption before it writes and never overwrites an existing archive.
 use super::*;
+use std::path::Path;
 
 const CONCEPTS: [&str; 5] = ["generic", "identity", "style", "motion", "audio"];
 const OUTPUT: &str = "refmod";
@@ -104,7 +105,13 @@ pub(crate) fn compile(r: &Value, request_id: &str) -> Result<Value, String> {
     }
     crate::jobs_video::validate_h3_media(&json!(plain), true, true)?;
     let (visual, audio) = lane_flags(&plain);
-    let vae = |key: &str| o.get(key).and_then(Value::as_str).filter(|v| model_name(v));
+    // Both separator forms are valid input (see `comfy_model_name`) and the value is forwarded to the
+    // graph unchanged: this backend matches its `VAELoader` enum exactly and lists `Minimax\file`.
+    let vae = |key: &str| {
+        o.get(key)
+            .and_then(Value::as_str)
+            .filter(|v| comfy_model_name(v))
+    };
     let mut inputs = json!({"request_id":request_id,"name":name,"description":description,"concept_type":concept});
     let mut graph = json!({});
     for (needed, key, input, node) in [
@@ -202,57 +209,162 @@ fn pick_h3_vae(catalog: &[String], want_audio: bool) -> Option<String> {
         .map(|(_, _, name)| name.to_owned())
 }
 
-/// The form the request must carry: ComfyUI matches a combo value exactly, while `compile()` reads a
-/// portable `/` name (see `comfy_model_name`), so a native `\` id crosses only after normalization and
-/// a name neither form accepts resolves to nothing.
+/// Whether the id is acceptable, and acceptable **in the form it arrives in**. ComfyUI matches a combo
+/// value exactly, and a Windows backend lists `Minimax\file`, so the rule is the repo's own
+/// (`comfy_model_name`): validate both separators, forward the exact ID. Rewriting `\` to `/` here used to
+/// satisfy `compile()` and then fail the backend's enum check with "not in […\…]".
 fn loadable(name: &str) -> Option<String> {
-    if model_name(name) {
-        return Some(name.to_owned());
+    let trimmed = name.trim();
+    comfy_model_name(trimmed).then(|| trimmed.to_owned())
+}
+
+/// The VAE files the configured model folders already hold, named exactly as the backend on this machine
+/// lists them (`Minimax\file` on Windows). The model library does not have to be scanned and the backend
+/// does not have to be running: these are the folders `deas-settings.json` points at, walked through the
+/// same category map that writes `deas-models.yaml` (so `vae_approx` also sees `vae`, where the tiny
+/// decoders live).
+fn disk_vaes(models: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for (category, dir) in crate::settings::model_locations(models) {
+        if category != "vae" && category != "vae_approx" {
+            continue;
+        }
+        collect_vaes(&dir, &dir, 0, &mut found);
     }
-    let slash = name.replace('\\', "/");
-    model_name(&slash).then_some(slash)
+    found.sort();
+    found.dedup();
+    found
+}
+
+/// One model folder, bounded: 4 levels deep and 512 files, so a misconfigured root can never turn a RefMod
+/// click into a walk of the drive. Sidecars (`.deas.json`) are not models and never match.
+fn collect_vaes(root: &Path, dir: &Path, depth: usize, found: &mut Vec<String>) {
+    if depth > 3 || found.len() >= 512 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            collect_vaes(root, &path, depth + 1, found);
+            continue;
+        }
+        let extension = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !["safetensors", "sft", "ckpt", "pt", "pth", "gguf", "bin"].contains(&extension.as_str())
+        {
+            continue;
+        }
+        if let Ok(relative) = path.strip_prefix(root) {
+            // Relative to the category folder, native separators: folder_paths values are exactly what is
+            // on disk, and the prompt is validated against that list.
+            found.push(relative.to_string_lossy().into_owned());
+        }
+    }
+}
+
+/// One lane's default and where it came from. The running backend goes first because its combo is what the
+/// prompt is validated against; the folders on disk are the fallback, so a backend that is simply not
+/// started never reports itself as a missing VAE.
+fn resolve_lane(
+    combo: &[String],
+    disk: &[String],
+    want_audio: bool,
+) -> Option<(&'static str, String)> {
+    pick_h3_vae(combo, want_audio)
+        .map(|name| ("backend", name))
+        .or_else(|| pick_h3_vae(disk, want_audio).map(|name| ("library", name)))
+}
+
+/// Why a lane stayed empty, in the words an operator needs: which sources were consulted and found nothing.
+fn unresolved_reason(backend_unreachable: bool, models: Option<&Path>) -> String {
+    let backend = if backend_unreachable {
+        "backend not reachable"
+    } else {
+        "no MiniMax H3 file in the backend's VAE list"
+    };
+    match models {
+        Some(dir) => format!("{backend}; none under {} either", dir.display()),
+        None => format!("{backend}; no configured models folder was supplied"),
+    }
 }
 
 /// Fills the lanes `compile()` would refuse on with the library's own H3 VAEs before it runs. An explicit
-/// choice always wins, and a fetch, shape or candidate gap leaves the request untouched so `compile()`
-/// reports its existing reason unchanged.
-async fn fill_h3_vaes(base: &reqwest::Url, mut request: Value) -> Value {
+/// choice always wins; when neither source can name a file the request is left untouched so `compile()`
+/// reports its existing reason, and every outcome is written to central Logs.
+async fn fill_h3_vaes(base: &reqwest::Url, mut request: Value, models: Option<&Path>) -> Value {
     let (visual, audio) = request
         .as_object()
         .and_then(|o| o.get("media"))
         .and_then(Value::as_array)
         .map(|media| lane_flags(media))
         .unwrap_or((false, false));
-    let mut catalog: Option<Vec<String>> = None;
+    let lane = |want_audio: bool| if want_audio { "audio" } else { "video" };
+    let mut combo: Option<Vec<String>> = None;
+    let mut disk: Option<Vec<String>> = None;
+    let mut unreachable = false;
     for (key, want_audio, needed) in [("vae", false, visual), ("audioVae", true, audio)] {
-        if !needed
-            || request
-                .get(key)
-                .and_then(Value::as_str)
-                .is_some_and(|v| !v.trim().is_empty())
-        {
+        if !needed {
             continue;
         }
-        if catalog.is_none() {
-            catalog = Some(
+        // An explicit choice always wins, carried in the exact form the app showed the user - the backend
+        // matches its combo value character for character, so nothing here rewrites it.
+        if let Some(given) = request.get(key).and_then(Value::as_str) {
+            if !given.trim().is_empty() {
+                if loadable(given).is_none() {
+                    log(&format!(
+                        "WARN: RefMod {} VAE {given} is not a loadable model id",
+                        lane(want_audio)
+                    ));
+                }
+                continue;
+            }
+        }
+        if combo.is_none() {
+            combo = Some(
                 match request_json(base, "object_info/VAELoader", None).await {
                     Ok((status, v)) if status.is_success() => advertised_vaes(&v),
-                    _ => Vec::new(),
+                    _ => {
+                        unreachable = true;
+                        Vec::new()
+                    }
                 },
             );
         }
-        let chosen = catalog
-            .as_ref()
-            .and_then(|list| pick_h3_vae(list, want_audio))
-            .and_then(|name| loadable(&name));
-        if let Some(name) = chosen {
+        if disk.is_none() {
+            disk = Some(models.map(disk_vaes).unwrap_or_default());
+        }
+        let Some((source, found)) =
+            resolve_lane(combo.as_ref().unwrap(), disk.as_ref().unwrap(), want_audio)
+        else {
             log(&format!(
-                "INFO: RefMod {} VAE resolved from library: {name}",
-                if want_audio { "audio" } else { "video" }
+                "WARN: RefMod {} VAE unresolved: {}",
+                lane(want_audio),
+                unresolved_reason(unreachable, models)
             ));
-            if let Some(o) = request.as_object_mut() {
-                o.insert(key.to_owned(), json!(name));
-            }
+            continue;
+        };
+        let Some(name) = loadable(&found) else {
+            log(&format!(
+                "WARN: RefMod {} VAE resolved to {found}, which is not a loadable model id",
+                lane(want_audio)
+            ));
+            continue;
+        };
+        log(&format!(
+            "INFO: RefMod {} VAE resolved from {source}: {name}",
+            lane(want_audio)
+        ));
+        if let Some(o) = request.as_object_mut() {
+            o.insert(key.to_owned(), json!(name));
         }
     }
     request
@@ -260,9 +372,13 @@ async fn fill_h3_vaes(base: &reqwest::Url, mut request: Value) -> Value {
 
 /// Queue the export; the prompt runs in the backend's normal queue.
 #[tauri::command]
-pub async fn native_h3_refmod_submit(base_url: String, request: Value) -> Result<Value, String> {
+pub async fn native_h3_refmod_submit(
+    base_url: String,
+    request: Value,
+    models_dir: Option<String>,
+) -> Result<Value, String> {
     let base = crate::validate_base_url(&base_url)?;
-    let request = fill_h3_vaes(&base, request).await;
+    let request = fill_h3_vaes(&base, request, models_dir.as_deref().map(Path::new)).await;
     let graph = compile(&request, &uuid::Uuid::new_v4().to_string())?;
     let client_id = format!("deas-refmod-{}", uuid::Uuid::new_v4());
     let (status, v) = request_json(
