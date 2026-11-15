@@ -1,4 +1,6 @@
 {
+  "studio.run.cont.join.smoothAudioSeams": "平滑音频接缝",
+  "studio.run.cont.join.smoothAudioSeamsHint": "仅在内部边界进行 5 ms 淡出/淡入；不重叠，不改变时长。需要 DaSiWa 节点包 0.5.53 或更新版本。",
   "modelCheck.status.suitable": "适合当前用途",
   "modelCheck.status.blocked": "已阻止",
   "modelCheck.status.unknown": "兼容性未知",

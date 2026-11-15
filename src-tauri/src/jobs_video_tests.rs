@@ -2651,6 +2651,51 @@ fn h3_join_compile_emits_pinned_assembly_prompt() {
 }
 
 #[test]
+fn h3_join_audio_smoothing_is_strict_and_default_graph_is_unchanged() {
+    for join in [
+        json!({"kind":"files","files":[{"filename":"a.mp4"},{"filename":"b.mp4"}]}),
+        json!({"kind":"segments","session":"s","chain":["a","b"]}),
+    ] {
+        let mut intent = json!({"recipeId":"h3-join","version":1,"h3":{"join":join}});
+        let legacy = compile(&intent).unwrap();
+        intent["h3"]["join"]["smoothAudioSeams"] = json!(false);
+        assert_eq!(compile(&intent).unwrap(), legacy);
+        intent["h3"]["join"]["smoothAudioSeams"] = json!(true);
+        let mut expected = legacy;
+        let mut data: Value =
+            serde_json::from_str(expected["7"]["inputs"]["assembly_data"].as_str().unwrap())
+                .unwrap();
+        assert_eq!(data["audio_policy"], "preserve");
+        data["audio_policy"] = json!("smooth-seams");
+        expected["7"]["inputs"]["assembly_data"] = json!(data.to_string());
+        assert_eq!(compile(&intent).unwrap(), expected);
+        for malformed in [
+            json!(null),
+            json!("true"),
+            json!("false"),
+            json!(1),
+            json!(0),
+            json!([]),
+            json!({}),
+        ] {
+            intent["h3"]["join"]["smoothAudioSeams"] = malformed.clone();
+            assert_eq!(
+                compile(&intent).unwrap_err(),
+                "h3.join.smoothAudioSeams must be boolean",
+                "{malformed}"
+            );
+        }
+    }
+    let mut generation = h3();
+    compile(&generation).unwrap();
+    generation["smoothAudioSeams"] = json!(true);
+    assert_eq!(
+        compile(&generation).unwrap_err(),
+        "Missing or unknown video intent fields"
+    );
+}
+
+#[test]
 fn h3_join_rejects_invalid_blocks() {
     let base = || {
         json!({"recipeId":"h3-join","version":1,

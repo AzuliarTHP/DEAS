@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.35 BETA (unreleased)
+
+- **Optional audio-seam smoothing for Join clips.** A default-OFF **Smooth audio seams** option in Continuity → Join clips applies a 5 ms fade-out/fade-in at each internal clip boundary of the final model-free join. Duration, sample count, video (including lossless copy) and the outer edges are unchanged; transition generation is not affected. It needs ComfyUI-DaSiWa-Nodes 0.5.53 or newer: older packs refuse it at preflight, so Join stays disabled instead of silently ignoring the option. With the option off, the emitted graph is unchanged. Six languages and global search are included.
+
 ## 0.2.34 BETA (unreleased)
 
 - **H3 transitions between joined video files.** In Continuity → Join clips → Video files, the default-OFF transition option renders one short H3 bridge per cut with the captured Workbench model, sampler and Director settings, then joins clips and bridges in order. Context per side starts at 22 frames and transition length at 29; an optional description guides the bridge. Each job uses the original admission fence and exact job identity. Cancel or a failed/unknown cut prevents later cuts and the final join; completed bridges remain in backend Input and are listed in the dialog. Close/Escape are locked while Join owns work; **Cancel join sequence** remains available. Existing model-free joins stay unchanged when the option is off. Six languages and global search are included. Real GPU bridges/joins and bounded native Windows UI/playback checks passed, including an owner-reviewed 10-second reference film. Full native-owned sequence/cancellation, sequential RAM admission and broader audio-seam acceptance remain open; see VERIFICATION.md.

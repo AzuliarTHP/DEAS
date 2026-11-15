@@ -1,5 +1,9 @@
 # News
 
+## 0.2.35 BETA (unreleased)
+
+- New in Join clips: **Smooth audio seams** (off by default) softens clicks where clips meet with a short 5 ms fade. Requires the DaSiWa node pack 0.5.53 or newer.
+
 ## 0.2.34 BETA (unreleased)
 
 - Join video files with optional generated H3 transitions: enable the switch in Continuity → Join clips → Video files, check the clips, then Join now. The current H3 model/settings render each bridge before the final join. Cancel stops the sequence without deleting completed bridges. A real 10-second reference film and native Windows playback were verified; full native sequence/cancellation and broader resource/audio-seam acceptance remain open.

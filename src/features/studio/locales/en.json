@@ -1,4 +1,6 @@
 {
+  "studio.run.cont.join.smoothAudioSeams": "Smooth audio seams",
+  "studio.run.cont.join.smoothAudioSeamsHint": "5 ms fade-out/in at internal boundaries only; no overlap or duration change. Requires DaSiWa pack 0.5.53 or newer.",
   "modelCheck.status.suitable": "Suitable for this context",
   "modelCheck.status.blocked": "Blocked",
   "modelCheck.status.unknown": "Compatibility unknown",

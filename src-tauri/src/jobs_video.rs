@@ -861,13 +861,16 @@ fn join(i: &Value) -> Result<Value, String> {
     if j.get("copyVideo").is_some_and(|b| !b.is_boolean()) {
         return Err("h3.join.copyVideo must be boolean".into());
     }
+    if j.get("smoothAudioSeams").is_some_and(|b| !b.is_boolean()) {
+        return Err("h3.join.smoothAudioSeams must be boolean".into());
+    }
     let prefix = filename_prefix(j, "H3_Joined", "h3.join")?;
     let data = json!({
         "version": 1,
         "rows": rows,
         "repair_transitions": false,
         "copy_video": j["copyVideo"].as_bool().unwrap_or(false),
-        "audio_policy": "preserve",
+        "audio_policy": if j["smoothAudioSeams"] == true { "smooth-seams" } else { "preserve" },
     });
     if data.to_string().len() > 65536 {
         return Err("h3.join request exceeds the pack's 64 KiB budget".into());
