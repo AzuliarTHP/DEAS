@@ -5,7 +5,7 @@ export const STUDIO_LORA_ADD='deas:studio-lora-add';
 type Request={root:string;model:LocalModel};
 const queuePreferenceKeys=['studio.loraAddQueue'];
 const key=queuePreferenceKeys[0];
-const valid=(v:unknown):v is Request[]=>Array.isArray(v)&&v.length<=128&&v.every(r=>r&&typeof r.root==='string'&&r.root.length<=32768&&r.model?.category==='loras'&&typeof r.model.name==='string'&&r.model.name.length<=32768&&typeof r.model.path==='string'&&r.model.path.length<=32768&&Number.isSafeInteger(r.model.size)&&r.model.size>=0&&(r.model.family===undefined||typeof r.model.family==='string')&&(r.model.metadataError===undefined||typeof r.model.metadataError==='string'));
+const valid=(v:unknown):v is Request[]=>Array.isArray(v)&&v.length<=128&&v.every(r=>r&&typeof r.root==='string'&&r.root.length<=32768&&r.model?.category==='loras'&&typeof r.model.name==='string'&&r.model.name.length<=32768&&typeof r.model.path==='string'&&r.model.path.length<=32768&&Number.isSafeInteger(r.model.size)&&r.model.size>=0&&(r.model.family==null||typeof r.model.family==='string')&&(r.model.metadataError==null||typeof r.model.metadataError==='string'));
 /** Lexical request identity only; native Run still authorizes real files. */
 function identity(path:string){
  const windows=/^[a-z]:[\\/]|^\\\\|^\/\//i.test(path);
@@ -20,7 +20,7 @@ export function requestStudioLora(root:string,model:LocalModel) {
  const existing=queue.some(r=>identity(r.root)===identity(root)&&identity(r.model.path)===identity(model.path));
  if(!existing&&queue.length>=128){reportLibraryError('selection');return false;}
  // Store browsing facts only; do not silently report success on unavailable storage.
- if(!existing&&!persist([...queue,{root,model:{...model,info:null}}]))return false;
+ if(!existing&&!persist([...queue,{root,model:{...model,family:model.family??undefined,metadataError:model.metadataError??undefined,info:null}}]))return false;
  // Re-notify for an existing request too: Studio may have become ready since it was queued.
  window.dispatchEvent(new Event(STUDIO_LORA_ADD));return true;
 }

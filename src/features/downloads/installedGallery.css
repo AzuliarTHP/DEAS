@@ -154,7 +154,7 @@
 .download-module.is-installed>.download-controls { gap:.4rem; }
 
 .library-add-lora { position:absolute; top:.65rem; right:2.75rem; width:1.65rem; height:1.65rem; display:grid; place-items:center; border:1px solid var(--library-border); border-radius:.35rem; background:var(--field); color:var(--chalk); cursor:pointer; }
-.library-added-notice { position:fixed; bottom:1.25rem; left:50%; transform:translateX(-50%); z-index:1100; max-width:calc(100% - 3rem); background:var(--panel); border:1px solid var(--library-border); border-radius:.4rem; padding:.55rem .8rem; color:var(--ok); font-size:.78rem; box-shadow:0 3px 12px #0006; pointer-events:none; }
+.library-added-notice[popover] { position:fixed; inset:auto; margin:0; bottom:1.25rem; left:50%; box-sizing:border-box; width:max-content; overflow-wrap:anywhere; transform:translateX(-50%); z-index:1100; max-width:min(36rem,calc(100vw - 2rem)); background:var(--panel); border:1px solid var(--line); border-radius:.4rem; padding:.55rem .8rem; color:var(--ok); font-size:.78rem; box-shadow:0 3px 12px #0006; pointer-events:none; }
 .library-added-notice[role="alert"] { color:var(--danger); }
 .library-detail-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
 .library-detail-actions>.action-button { margin:0; }

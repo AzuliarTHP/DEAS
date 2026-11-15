@@ -43,7 +43,8 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const [loraNotice,setLoraNotice]=useState<{error:boolean}|null>(null);
  useEffect(()=>{if(!loraNotice)return;const timer=setTimeout(()=>setLoraNotice(null),3000);return()=>clearTimeout(timer);},[loraNotice]);
  const addLora=(m:LocalModel)=>setLoraNotice({error:!requestStudioLora(root,m)});
- const notice=loraNotice&&<div className="library-added-notice" role={loraNotice.error?'alert':'status'}>{t(loraNotice.error?'library.loraAddFailed':'library.loraAdded')}</div>;
+ const noticeRef=useRef<HTMLDivElement>(null);
+ const notice=loraNotice&&<div ref={noticeRef} popover="manual" className="library-added-notice" role={loraNotice.error?'alert':'status'}>{t(loraNotice.error?'library.loraAddFailed':'library.loraAdded')}</div>;
  const [fetchOpen,setFetchOpen]=useState(false);const [fetchTarget,setFetchTarget]=useState('filtered');const [missingOnly,setMissingOnly]=useState(true);
  const [viewAll,setViewAll]=usePref('library.local.viewAll',false,(v):v is boolean=>typeof v==='boolean');
  const [query,setQuery]=usePref('library.local.query','',isString);
@@ -73,6 +74,8 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const picked=models.find(m=>m.path===selected);const popup=useRef<HTMLDialogElement>(null);const [editing,setEditing]=useState(false);
  useEffect(()=>{const dialog=popup.current;if(!picked||!dialog)return;if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');return()=>{if(dialog.open&&typeof dialog.close==='function')dialog.close();};},[!!picked]);
  useEffect(()=>setEditing(false),[picked?.path]);
+ // Use the top layer to escape Library containment, modal clipping and shared alert styles.
+ useEffect(()=>{const element=noticeRef.current;if(!loraNotice||!element)return;element.showPopover?.();return()=>element.hidePopover?.();},[loraNotice,!!picked]);
  const annotate=(path:string,change:Partial<Annotation>)=>setOrganization(old=>({...old,[path]:{...old[path],...change}}));
  const favorite=(m:LocalModel)=>annotate(m.path,{favorite:!organization[m.path]?.favorite});
  const copy=async(text:string,key:string)=>{try{await navigator.clipboard.writeText(text);setCopied(key);}catch{setCopied('error');reportLibraryError('clipboard');}};
@@ -83,7 +86,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const clearSelection=()=>{const button=document.querySelector<HTMLButtonElement>('.library-card-main[aria-pressed="true"]');setSelected('');requestAnimationFrame(()=>button?.focus());};
  const backdrop=useDialogBackdropClose(()=>{(document.activeElement as HTMLElement)?.blur();clearSelection();});
  return <section className="installed-library" aria-label={t('library.collection')} data-installed-gallery>
-  {!picked&&notice}
+  {!picked&&notice&&createPortal(notice,document.body)}
   <header className="library-heading"><div className="library-native-actions">{onFetch&&<button type="button" className="action-button" aria-expanded={fetchOpen} disabled={locked||fetchBusy} onClick={()=>setFetchOpen(v=>!v)}>{t('library.fetch')}</button>}{actions}</div></header>
   <div className="library-fetch-tools">{onFetch&&fetchOpen&&<div className="library-fetch-options" role="group" aria-label={t('library.fetch')}><label>{t('library.fetchTarget')}<select value={fetchTarget} disabled={fetchBusy} onChange={e=>setFetchTarget(e.target.value)}><option value="filtered">{t('library.fetchFiltered')}</option><option value="folder">{t('library.fetchFolder')}</option><option value="category">{t('library.fetchCategory')}</option><option value="all">{t('library.fetchAll')}</option></select></label><label className="library-checkbox"><input type="checkbox" checked={missingOnly} disabled={fetchBusy} onChange={e=>setMissingOnly(e.target.checked)}/>{t('library.fetchMissing')}</label><span>{t('library.fetchCount',{count:fetchModels.length})}</span><button type="button" className="action-button" disabled={locked||fetchBusy||!fetchModels.length} onClick={()=>{onFetch(fetchModels,missingOnly);setFetchOpen(false);}}>{t('library.fetchStart')}</button><p className="field-help">{t('library.fetchHelp')}</p></div>}</div>
   {feedback}

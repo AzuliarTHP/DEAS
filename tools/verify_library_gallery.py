@@ -10,7 +10,7 @@ localStorage.setItem('deas.locale.v1','en');
 window.__galleryCalls=[];
 const galleryInvoke=window.__TAURI_INTERNALS__.invoke;
 const titles=['Aurora portrait','Quiet architecture','Analog light','Botanical study','Cinematic depth','Ink and paper','Golden hour','Soft geometry'];
-window.__galleryModels=Array.from({length:96},(_,i)=>({category:i<88?'loras':'checkpoints',name:(i%2?'Portraits/Characters/':'Styles/Illustration/')+titles[i%titles.length]+'-'+i+'.safetensors',path:'/fixture/models/'+i+'.safetensors',size:(i+1)*64*1048576,addedAt:1700000000+i,family:i%3?'sdxl':'flux',...(i%3===1?{familyOverride:'sdxl'}:{}),info:{sha256:'fixture',size:1,fetchedAt:1,civitai:{description:'Fixture version description',modelId:i+1,versionId:i+1,name:titles[i%titles.length],version:'v'+(i%3+1)+'.0',modelType:'LORA',category:'loras',base:i%3?'SDXL 1.0':'Flux.1 D',nsfw:false,trainedWords:['gallery_trigger_'+i,'soft light'],preview:'https://image.civitai.com/gallery-fixture/'+i+'.svg'}}}));
+window.__galleryModels=Array.from({length:96},(_,i)=>({category:i<88?'loras':'checkpoints',name:(i%2?'Portraits/Characters/':'Styles/Illustration/')+titles[i%titles.length]+'-'+i+'.safetensors',path:'/fixture/models/'+i+'.safetensors',size:(i+1)*64*1048576,addedAt:1700000000+i,metadataError:null,detectedFamily:null,familyOverride:null,family:i%3?'sdxl':'flux',...(i%3===1?{familyOverride:'sdxl'}:{}),info:{sha256:'fixture',size:1,fetchedAt:1,civitai:{description:'Fixture version description',modelId:i+1,versionId:i+1,name:titles[i%titles.length],version:'v'+(i%3+1)+'.0',modelType:'LORA',category:'loras',base:i%3?'SDXL 1.0':'Flux.1 D',nsfw:false,trainedWords:['gallery_trigger_'+i,'soft light'],preview:'https://image.civitai.com/gallery-fixture/'+i+'.svg'}}}));
 window.__TAURI_INTERNALS__.invoke=async(c,a)=>{
  window.__galleryCalls.push({c,a});
  if(c==='native_models_scan')return structuredClone(window.__galleryModels);
@@ -54,6 +54,16 @@ def independent_scroll(page, folders_selector, cards_selector):
     assert abs(cards.evaluate('(el)=>el.scrollTop')-card_scroll)<2
     folders.evaluate("(el)=>{el.querySelector('[data-scroll-fixture]').remove();el.scrollTop=0;}")
     cards.evaluate('(el)=>el.scrollTop=0')
+
+
+def assert_notice(page, notice):
+    expect(notice).to_be_visible()
+    assert notice.evaluate('(el)=>getComputedStyle(el).position')=='fixed'
+    assert notice.evaluate("(el)=>el.matches(':popover-open')")
+    box=notice.bounding_box()
+    viewport=page.viewport_size
+    assert box['x']>=0 and box['y']>=0 and box['x']+box['width']<=viewport['width'] and box['y']+box['height']<=viewport['height']
+    assert notice.evaluate('(el)=>el.scrollHeight<=el.clientHeight+1&&el.scrollWidth<=el.clientWidth+1')
 
 
 def verify(browser, url, shots):
@@ -120,6 +130,7 @@ def verify(browser, url, shots):
         page.locator('.library-card-main').first.click(button='right')
         page.get_by_role('menuitem',name='Add to Studio LoRAs',exact=True).click()
         expect(page.get_by_role('status',exact=True)).to_contain_text('LoRA added')
+        assert_notice(page,page.get_by_role('status',exact=True))
         expect(page.get_by_role('dialog')).to_have_count(0)
         page.locator('.library-card-main').first.click()
         expect(page.get_by_role('dialog',name='Model details',exact=True)).to_be_visible()
@@ -129,6 +140,23 @@ def verify(browser, url, shots):
         expect(page.get_by_role('dialog').get_by_role('status')).to_contain_text('LoRA added')
         assert action_boxes==[button.bounding_box() for button in actions.all()]
         assert abs(action_boxes[0]['y']-action_boxes[1]['y'])<2
+        assert_notice(page,page.get_by_role('dialog').get_by_role('status'))
+        # Make storage unavailable, exactly like a quota/permissions failure, without changing user data.
+        page.evaluate("()=>{window.__gallerySetItem=Storage.prototype.setItem;Storage.prototype.setItem=function(){throw new DOMException('fixture full','QuotaExceededError');};}")
+        for width,height in [(1366,768),(1920,1080),(960,700)]:
+            page.set_viewport_size({'width':width,'height':height})
+            page.get_by_role('button',name='Add to Studio LoRAs',exact=True).click()
+            expect(page.get_by_role('alert')).to_contain_text('Could not add the LoRA')
+            assert_notice(page,page.get_by_role('alert'))
+            page.get_by_role('dialog',name='Model details').evaluate('(el)=>el.scrollTop=el.scrollHeight')
+            assert_notice(page,page.get_by_role('alert'))
+        page.get_by_role('button',name='Close model details',exact=True).click()
+        page.locator('.library-add-lora').first.click()
+        assert_notice(page,page.get_by_role('alert'))
+        page.evaluate('()=>{Storage.prototype.setItem=window.__gallerySetItem;}')
+        page.set_viewport_size({'width':1600,'height':1000})
+        page.locator('.library-card-main').first.click()
+
         expect(page.get_by_text('Fixture version description',exact=True)).to_be_visible()
         rect=page.get_by_role('dialog',name='Model details').bounding_box()
         assert rect['width']<=800 and rect['height']<=980
@@ -270,7 +298,7 @@ def verify(browser, url, shots):
         assert page.evaluate('__galleryCalls.filter(x=>x.c==="native_media_delete").length')==1
 
         assert not page.evaluate('__galleryCalls.some(x=>x.c==="native_models_scan"&&x.a?.refresh)')
-        result={'status':'PASS','kind':'Chromium; synthetic gallery and strict mocked IPC; no DEAS capture or real models','checks':['Library context-menu addition reaches retained Studio without navigation or scans','detail action buttons stay aligned during added toast','desktop gallery geometry','independent folder/card wheel scrolling in Library and Studio','folder visibility and Fetch options','collapsible Library and Studio folder trees','all model sort modes','compact declared-family badge without taller cards','non-blocking selected LoRA family labels','folder action icons beside All notes','manual Notes folders/prompts/seed and retained draft','confirmed single/bulk Media delete with mocked paths','model details popup','nested LoRA details and trigger words with Escape/backdrop isolation','three separate Notes panes and reordered fields at desktop widths','60-card bound','navigation reuses snapshot','trigger-word search','details','persisted notes and tags','grid/list switching','no implicit scan, metadata fetch, download or generation'],'artifacts':str(shots)}
+        result={'status':'PASS','kind':'Chromium; synthetic gallery and strict mocked IPC; no DEAS capture or real models','checks':['Library context-menu addition reaches retained Studio without navigation or scans','detail action buttons stay aligned during added toast','nullable native index metadata handoff','success and failure notices stay fully visible above containment and scrolled dialogs','desktop gallery geometry','independent folder/card wheel scrolling in Library and Studio','folder visibility and Fetch options','collapsible Library and Studio folder trees','all model sort modes','compact declared-family badge without taller cards','non-blocking selected LoRA family labels','folder action icons beside All notes','manual Notes folders/prompts/seed and retained draft','confirmed single/bulk Media delete with mocked paths','model details popup','nested LoRA details and trigger words with Escape/backdrop isolation','three separate Notes panes and reordered fields at desktop widths','60-card bound','navigation reuses snapshot','trigger-word search','details','persisted notes and tags','grid/list switching','no implicit scan, metadata fetch, download or generation'],'artifacts':str(shots)}
         (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(result,indent=2))
     finally:

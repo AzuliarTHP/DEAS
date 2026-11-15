@@ -11,7 +11,9 @@
   LoRAs from Library cards, details or the right-click menu, without changing tabs
   or opening a popup. A floating notice keeps action buttons aligned. Pending
   additions survive asynchronous Studio loading and Windows folder spelling
-  differences; retries preserve weights and storage failures report failure.
+  differences; retries preserve weights and storage failures report failure. Native
+  index null metadata fields are accepted and normalized. Both success/error
+  notices use the browser top layer to escape pane and dialog clipping.
   The larger selection dialog includes thumbnails and nested read-only details
   with cached trigger words. Outside clicks/Escape close only the active dialog.
 - Treat selected LoRA family labels as advisory in Studio, history and native

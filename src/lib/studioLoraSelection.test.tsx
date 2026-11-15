@@ -34,3 +34,11 @@ it('bounds pending additions without evicting previous selections',()=>{
  for(let i=0;i<128;i++)expect(requestStudioLora('/models',{...model,path:`/models/loras/${i}.pt`,name:`${i}.pt`})).toBe(true);
  expect(requestStudioLora('/models',model)).toBe(false);expect(takeStudioLoras('/models')).toHaveLength(128);
 });
+it('accepts nullable fields from the native indexed listing and retains real metadata errors',()=>{
+ const indexed=JSON.parse(JSON.stringify({...model,family:null,metadataError:null,detectedFamily:null,familyOverride:null,localPreview:null}));
+ expect(requestStudioLora('L:/Models',indexed)).toBe(true);
+ expect(takeStudioLoras('L:/Models')[0]).toMatchObject({name:model.name,path:model.path});
+ expect(requestStudioLora('L:/Models',{...indexed,family:'anima',metadataError:'invalid local sidecar'})).toBe(true);
+ expect(takeStudioLoras('L:/Models')[0].metadataError).toBe('invalid local sidecar');
+ expect(requestStudioLora('L:/Models',{...indexed,family:42})).toBe(false);
+});

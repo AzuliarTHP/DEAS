@@ -1,5 +1,28 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Cached LoRA metadata and notification clipping follow-up — 2026-11-16
+
+- Reproduced the Add failure with the actual indexed-listing shape: SnapshotDetails
+  serializes absent family/metadataError fields as null. The queue rejected that
+  shape while previous browser fixtures omitted those fields. The ingress now
+  accepts null optional fields and normalizes them before storing pending additions;
+  explicit metadata errors remain retained for native execution validation.
+- Shared alert CSS overrode the toast position, while Library container containment
+  could clip a fixed child. Notices now use the browser top layer and explicit
+  position/reset styles, with a body portal when browsing cards. Mocked Chromium
+  checks cover nullable cached payloads, Add through the context menu, both success
+  and storage-error notices, scrolled details and 1366/1920/960 desktop widths.
+  Action-button positions stay unchanged. Shared layout gate: 467 checks passed.
+- The new null-payload unit regression failed before the fix and passed afterward.
+  Production frontend build passed. Initial full run: 157 core passed / 1 skipped,
+  1,994 UI passed and two timing-sensitive Workbench assertions failed during the
+  concurrent release build. Both affected files passed in a separate rerun: 132
+  tests. A complete UI rerun after the release build passed all 1,996 tests in
+  108 files. Release build passed. Native orchestration and model execution policy
+  were unchanged.
+- No native app capture, installed-model scan, real provider request or generation
+  was performed. Changes contain source, synthetic fixtures and documentation only.
+
 ## Library-to-Studio LoRA handoff follow-up — 2026-11-16
 
 - Added regressions for pre-mount additions during delayed Studio inventory/draft

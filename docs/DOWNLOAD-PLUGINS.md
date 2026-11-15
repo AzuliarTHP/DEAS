@@ -120,7 +120,8 @@ workspace. Scrolling cards keeps the folder column in place.
 LoRA cards have a **+** action, also available as **Add to Studio LoRAs** in details
 and the right-click card menu (keyboard: Shift+F10).
 It adds a draft selection at weight 1 and briefly confirms the action with a floating
-notice that leaves buttons aligned. Storage failures show a failure notice. It preserves
+notice that leaves buttons aligned and stays visible above scrolled panes/dialogs.
+Cached optional null metadata fields are accepted. Storage failures show a failure notice. It preserves
 an existing weight and leaving the current page/popup in place. It neither changes
 the main model nor starts generation. Use the LoRAs button below Studio's model
 picker to manage selected weights and named sets. Click the dark backdrop outside
