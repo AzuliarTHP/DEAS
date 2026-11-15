@@ -1,4 +1,7 @@
 use super::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+const PROMPT: &str = "5f1c3c39-3a37-4c39-9d0d-2bb0e4d4f8a1";
 
 fn request() -> Value {
     json!({"name":"hero","description":"main cast","conceptType":"identity",
@@ -58,6 +61,226 @@ fn loads_only_the_vaes_the_selection_needs() {
     assert_eq!(
         compile(&r, "x").unwrap_err(),
         "Video references need the MiniMax H3 video VAE"
+    );
+}
+
+fn names(list: &[&str]) -> Vec<String> {
+    list.iter().map(|n| n.to_string()).collect()
+}
+
+/// What a real backend advertises: the H3 pair beside LTX2's VAEs and the taeh3 preview decoder.
+fn library() -> Vec<String> {
+    names(&[
+        "Minimax\\minimax_h3_video_vae_fp16.safetensors",
+        "Minimax\\minimax_h3_audio_vae_fp32.safetensors",
+        "LTX2/video_vae.safetensors",
+        "LTX2/audio_vae.safetensors",
+        "taeh3.safetensors",
+    ])
+}
+
+#[test]
+fn reads_the_advertised_vae_names() {
+    assert_eq!(
+        advertised_vaes(
+            &json!({"VAELoader":{"input":{"required":{"vae_name":[["a.safetensors","b/c.safetensors"]]}}}})
+        ),
+        names(&["a.safetensors", "b/c.safetensors"])
+    );
+    for not_a_list in [
+        json!({}),
+        json!({"VAELoader":{}}),
+        json!({"VAELoader":{"input":{"required":{"vae_name":["combo"]}}}}),
+    ] {
+        assert_eq!(advertised_vaes(&not_a_list), Vec::<String>::new());
+    }
+}
+
+/// Each lane defaults to its own MiniMax H3 file: never another family's VAE, never the `tae*` preview
+/// decoder that carries the same `h3` token, and never a file belonging to the other lane.
+#[test]
+fn each_lane_defaults_to_its_own_h3_vae() {
+    let catalog = library();
+    assert_eq!(
+        pick_h3_vae(&catalog, false).as_deref(),
+        Some("Minimax\\minimax_h3_video_vae_fp16.safetensors")
+    );
+    assert_eq!(
+        pick_h3_vae(&catalog, true).as_deref(),
+        Some("Minimax\\minimax_h3_audio_vae_fp32.safetensors")
+    );
+    assert_eq!(
+        pick_h3_vae(&names(&["Minimax/h3_audio_vae.safetensors"]), false),
+        None
+    );
+    assert_eq!(
+        pick_h3_vae(&names(&["Minimax/h3_video_vae.safetensors"]), true),
+        None
+    );
+    // Inside one lane a `video` name wins, then the shortest name, then A-Z.
+    assert_eq!(
+        pick_h3_vae(
+            &names(&["z/h3_vae.safetensors", "a/h3_video_vae.safetensors"]),
+            false
+        )
+        .as_deref(),
+        Some("a/h3_video_vae.safetensors")
+    );
+    assert_eq!(
+        pick_h3_vae(
+            &names(&["b/h3_video_vae.safetensors", "a/h3_video_vae_x.safetensors"]),
+            false
+        )
+        .as_deref(),
+        Some("b/h3_video_vae.safetensors")
+    );
+    assert_eq!(
+        pick_h3_vae(
+            &names(&["b/h3_video_vae.safetensors", "a/h3_video_vae.safetensors"]),
+            false
+        )
+        .as_deref(),
+        Some("a/h3_video_vae.safetensors")
+    );
+}
+
+#[test]
+fn nothing_resolves_without_an_h3_vae() {
+    for catalog in [
+        names(&["LTX2/video_vae.safetensors", "LTX2/audio_vae.safetensors"]),
+        names(&["taeh3.safetensors", "vae/Taeh3_Video.safetensors"]),
+        names(&["vae/tae_h3_video.safetensors"]),
+        vec![],
+    ] {
+        assert_eq!(pick_h3_vae(&catalog, false), None);
+        assert_eq!(pick_h3_vae(&catalog, true), None);
+    }
+}
+
+/// ComfyUI matches the combo value exactly and compile() reads a portable name, so the advertised form
+/// crosses unchanged unless it needs `/` separators.
+#[test]
+fn keeps_a_form_both_the_backend_and_compile_accept() {
+    assert_eq!(
+        loadable("Minimax/minimax_h3_video_vae_fp16.safetensors").as_deref(),
+        Some("Minimax/minimax_h3_video_vae_fp16.safetensors")
+    );
+    assert_eq!(
+        loadable(r"Minimax\minimax_h3_video_vae_fp16.safetensors").as_deref(),
+        Some("Minimax/minimax_h3_video_vae_fp16.safetensors")
+    );
+    assert_eq!(loadable(r"../h3\video_vae.safetensors"), None);
+}
+
+/// A backend whose VAELoader combo advertises `list`: it counts the library reads and keeps the queued prompt.
+async fn library_backend(
+    list: Vec<String>,
+) -> (
+    String,
+    Arc<Mutex<Value>>,
+    Arc<AtomicUsize>,
+    tokio::task::JoinHandle<()>,
+) {
+    let reads = Arc::new(AtomicUsize::new(0));
+    let posted = Arc::new(Mutex::new(Value::Null));
+    let (counted, saved) = (reads.clone(), posted.clone());
+    let combo = json!({"VAELoader":{"input":{"required":{"vae_name":[list]}}}});
+    let (base, task) = crate::jobs::tests::server(move |path, body| {
+        if path == "GET /comfy/object_info/VAELoader HTTP/1.1" {
+            counted.fetch_add(1, Ordering::SeqCst);
+            return (200, combo.to_string());
+        }
+        *saved.lock().unwrap() = body;
+        (200, json!({"prompt_id": PROMPT}).to_string())
+    })
+    .await;
+    (base, posted, reads, task)
+}
+
+fn queued_prompt(posted: &Arc<Mutex<Value>>) -> Value {
+    posted.lock().unwrap()["prompt"].clone()
+}
+
+/// Create RefMod needs no hand-picked VAE: the library's own H3 files fill the lanes left blank or empty.
+#[tokio::test]
+async fn submit_fills_blank_lanes_from_the_advertised_library() {
+    let (base, posted, reads, task) = library_backend(library()).await;
+    let mut r = request();
+    r.as_object_mut().unwrap().remove("vae");
+    r["audioVae"] = json!("");
+    let id = native_h3_refmod_submit(base, r).await.unwrap();
+    assert_eq!(id["promptId"], PROMPT);
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        1,
+        "one library read covers both lanes"
+    );
+    let graph = queued_prompt(&posted);
+    // The advertised names enter the graph in the portable form compile() and the loader accept.
+    assert_eq!(
+        graph["V"]["inputs"]["vae_name"],
+        "Minimax/minimax_h3_video_vae_fp16.safetensors"
+    );
+    assert_eq!(
+        graph["AV"]["inputs"]["vae_name"],
+        "Minimax/minimax_h3_audio_vae_fp32.safetensors"
+    );
+    task.abort();
+}
+
+/// A hand-picked VAE stays the request's own: with nothing missing the library is not even read.
+#[tokio::test]
+async fn an_explicit_vae_pair_wins_over_the_library_default() {
+    let (base, posted, reads, task) = library_backend(library()).await;
+    assert_eq!(
+        native_h3_refmod_submit(base, request()).await.unwrap()["promptId"],
+        PROMPT
+    );
+    assert_eq!(reads.load(Ordering::SeqCst), 0);
+    let graph = queued_prompt(&posted);
+    assert_eq!(
+        graph["V"]["inputs"]["vae_name"],
+        "MiniMaxH3/video_vae.safetensors"
+    );
+    assert_eq!(
+        graph["AV"]["inputs"]["vae_name"],
+        "MiniMaxH3/audio_vae.safetensors"
+    );
+    task.abort();
+}
+
+/// An unresolvable lane is left exactly as it was, so the refusal strings stay byte-identical.
+#[tokio::test]
+async fn an_unresolved_lane_keeps_the_existing_refusal() {
+    let (base, _posted, reads, task) =
+        library_backend(names(&["LTX2/video_vae.safetensors", "taeh3.safetensors"])).await;
+    let mut r = request();
+    r.as_object_mut().unwrap().remove("vae");
+    r["audioVae"] = json!("");
+    assert_eq!(
+        native_h3_refmod_submit(base, r.clone()).await.unwrap_err(),
+        "Video references need the MiniMax H3 video VAE"
+    );
+    assert_eq!(
+        reads.load(Ordering::SeqCst),
+        1,
+        "the library is read once for both lanes"
+    );
+    task.abort();
+    // A lost library read behaves the same, in either lane.
+    let dead = crate::validate_base_url("http://127.0.0.1:9").unwrap();
+    assert_eq!(fill_h3_vaes(&dead, r.clone()).await, r);
+    let untouched = fill_h3_vaes(&dead, r).await;
+    assert_eq!(
+        compile(&untouched, "x").unwrap_err(),
+        "Video references need the MiniMax H3 video VAE"
+    );
+    let mut audio = request();
+    audio["media"] = json!([{"type":"audio","file":"deas-inputs/v.wav","slot":0}]);
+    audio.as_object_mut().unwrap().remove("audioVae");
+    assert_eq!(
+        compile(&fill_h3_vaes(&dead, audio).await, "x").unwrap_err(),
+        "Audio references need the MiniMax H3 audio VAE"
     );
 }
 

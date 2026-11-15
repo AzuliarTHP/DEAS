@@ -31,6 +31,21 @@ fn prompt_id(id: &str) -> bool {
     id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
 }
 
+/// Which VAE lanes a selection needs, read the same way by `compile()` and by the default resolver: a
+/// picture or a video carrying picture content needs the video VAE, sound (its own file or a video's
+/// audio) needs the audio VAE.
+fn lane_flags(media: &[Value]) -> (bool, bool) {
+    let mode = |m: &Value| m["mediaMode"].as_str().unwrap_or("video").to_owned();
+    (
+        media
+            .iter()
+            .any(|m| m["type"] == "image" || (m["type"] == "video" && mode(m) != "audio")),
+        media
+            .iter()
+            .any(|m| m["type"] == "audio" || (m["type"] == "video" && mode(m) != "video")),
+    )
+}
+
 /// `request`: `{name?, description?, conceptType?, media:[H3 media item + description?], refmods:[name], vae?, audioVae?}`.
 pub(crate) fn compile(r: &Value, request_id: &str) -> Result<Value, String> {
     let o = r.as_object().ok_or("Invalid RefMod request")?;
@@ -88,13 +103,7 @@ pub(crate) fn compile(r: &Value, request_id: &str) -> Result<Value, String> {
         plain.push(item);
     }
     crate::jobs_video::validate_h3_media(&json!(plain), true, true)?;
-    let mode = |m: &Value| m["mediaMode"].as_str().unwrap_or("video").to_owned();
-    let visual = plain
-        .iter()
-        .any(|m| m["type"] == "image" || (m["type"] == "video" && mode(m) != "audio"));
-    let audio = plain
-        .iter()
-        .any(|m| m["type"] == "audio" || (m["type"] == "video" && mode(m) != "video"));
+    let (visual, audio) = lane_flags(&plain);
     let vae = |key: &str| o.get(key).and_then(Value::as_str).filter(|v| model_name(v));
     let mut inputs = json!({"request_id":request_id,"name":name,"description":description,"concept_type":concept});
     let mut graph = json!({});
@@ -157,10 +166,103 @@ fn submitted(base: &reqwest::Url, prompt_id: &str) -> Result<(String, Value), St
         .ok_or_else(|| "Unknown RefMod export".into())
 }
 
+/// The VAE names the backend advertises in its `VAELoader` combo.
+fn advertised_vaes(v: &Value) -> Vec<String> {
+    v["VAELoader"]["input"]["required"]["vae_name"][0]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Default H3 VAE for one lane out of the advertised names, so nobody has to name them by hand. Only
+/// MiniMax H3 VAEs qualify and lanes never cross: `LTX2/video_vae.safetensors` is another family, and
+/// `taeh3.safetensors` carries the same `h3` token while being a preview decoder. Inside a lane a
+/// `video` name wins, then the shortest name, then A-Z bytewise.
+fn pick_h3_vae(catalog: &[String], want_audio: bool) -> Option<String> {
+    catalog
+        .iter()
+        .filter_map(|name| {
+            let lower = name.to_lowercase();
+            let base = lower.rsplit(['/', '\\']).next().unwrap_or(lower.as_str());
+            if !lower.contains("h3") || lower.contains("taeh3") || base.starts_with("tae") {
+                return None;
+            }
+            (lower.contains("audio") == want_audio).then(|| {
+                (
+                    if lower.contains("video") { 0 } else { 1 },
+                    name.len(),
+                    name.as_str(),
+                )
+            })
+        })
+        .min()
+        .map(|(_, _, name)| name.to_owned())
+}
+
+/// The form the request must carry: ComfyUI matches a combo value exactly, while `compile()` reads a
+/// portable `/` name (see `comfy_model_name`), so a native `\` id crosses only after normalization and
+/// a name neither form accepts resolves to nothing.
+fn loadable(name: &str) -> Option<String> {
+    if model_name(name) {
+        return Some(name.to_owned());
+    }
+    let slash = name.replace('\\', "/");
+    model_name(&slash).then_some(slash)
+}
+
+/// Fills the lanes `compile()` would refuse on with the library's own H3 VAEs before it runs. An explicit
+/// choice always wins, and a fetch, shape or candidate gap leaves the request untouched so `compile()`
+/// reports its existing reason unchanged.
+async fn fill_h3_vaes(base: &reqwest::Url, mut request: Value) -> Value {
+    let (visual, audio) = request
+        .as_object()
+        .and_then(|o| o.get("media"))
+        .and_then(Value::as_array)
+        .map(|media| lane_flags(media))
+        .unwrap_or((false, false));
+    let mut catalog: Option<Vec<String>> = None;
+    for (key, want_audio, needed) in [("vae", false, visual), ("audioVae", true, audio)] {
+        if !needed
+            || request
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|v| !v.trim().is_empty())
+        {
+            continue;
+        }
+        if catalog.is_none() {
+            catalog = Some(
+                match request_json(base, "object_info/VAELoader", None).await {
+                    Ok((status, v)) if status.is_success() => advertised_vaes(&v),
+                    _ => Vec::new(),
+                },
+            );
+        }
+        let chosen = catalog
+            .as_ref()
+            .and_then(|list| pick_h3_vae(list, want_audio))
+            .and_then(|name| loadable(&name));
+        if let Some(name) = chosen {
+            log(&format!(
+                "INFO: RefMod {} VAE resolved from library: {name}",
+                if want_audio { "audio" } else { "video" }
+            ));
+            if let Some(o) = request.as_object_mut() {
+                o.insert(key.to_owned(), json!(name));
+            }
+        }
+    }
+    request
+}
+
 /// Queue the export; the prompt runs in the backend's normal queue.
 #[tauri::command]
 pub async fn native_h3_refmod_submit(base_url: String, request: Value) -> Result<Value, String> {
     let base = crate::validate_base_url(&base_url)?;
+    let request = fill_h3_vaes(&base, request).await;
     let graph = compile(&request, &uuid::Uuid::new_v4().to_string())?;
     let client_id = format!("deas-refmod-{}", uuid::Uuid::new_v4());
     let (status, v) = request_json(
