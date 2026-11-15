@@ -245,12 +245,12 @@ test('RefMods: read the library on demand, add, edit strength/description, inser
 });
 
 const createRefs=()=>[ref('a.png','image',{description:'face'}),ref('clip.mp4','video',{mediaMode:'video_audio',trimStart:1,trimEnd:4})];
-const createPanel=(opts:{vae?:string;audioVae?:string;vaes?:string[]}={})=>{
- const {vae='MiniMaxH3/video.safetensors',audioVae='MiniMaxH3/audio.safetensors',vaes=[]}=opts;
+const createPanel=(opts:{vae?:string;audioVae?:string;vaes?:string[];audioVaes?:string[]}={})=>{
+ const {vae='MiniMaxH3/video.safetensors',audioVae='MiniMaxH3/audio.safetensors',vaes=[],audioVaes=[]}=opts;
  vi.mocked(isTauri).mockReturnValue(true);
  const upload=vi.fn(async(path:string)=>`deas-inputs/up-${path.split('/').pop()}`);
  const library=vi.fn(async()=>[{name:'old',kinds:['video' as const],description:''},{name:'hero',kinds:['image' as const,'video' as const,'audio' as const],description:''}]);
- render(<I18nProvider><ReferencesPanel endpoint="http://127.0.0.1:7801" refs={createRefs()} onChange={vi.fn()} family="minimax-h3" seconds={5} label={()=>''} onAdd={vi.fn()} onInsert={vi.fn()} refmods={[{name:'old',strength:1,description:''}]} onRefmods={vi.fn()} library={library} refmodCreate={{vae,audioVae,vaes,upload}}/></I18nProvider>);
+ render(<I18nProvider><ReferencesPanel endpoint="http://127.0.0.1:7801" refs={createRefs()} onChange={vi.fn()} family="minimax-h3" seconds={5} label={()=>''} onAdd={vi.fn()} onInsert={vi.fn()} refmods={[{name:'old',strength:1,description:''}]} onRefmods={vi.fn()} library={library} refmodCreate={{vae,audioVae,vaes,audioVaes,upload}}/></I18nProvider>);
  fireEvent.click(screen.getByRole('button',{name:'Create RefMod…'}));
  return {upload,library};
 };
@@ -282,10 +282,10 @@ test('Create RefMod names a missing H3 VAE instead of submitting',()=>{
  expect(create.hasAttribute('disabled')).toBe(false); // the saved RefMod alone is already encoded
  expect(vi.mocked(invoke).mock.calls.some(c=>c[0]==='native_h3_refmod_submit')).toBe(false);
 });
-test('Create RefMod defaults both lanes to the library H3 VAEs when neither is picked',async()=>{
+test('Create RefMod defaults both lanes to the pipeline matching VAEs when neither is picked',async()=>{
  vi.mocked(invoke).mockImplementation(async c=>c==='native_h3_refmod_submit'?{promptId:'p1'}:c==='native_h3_refmod_status'?{state:'done',result:{name:'hero',members:3,counts:{image:1,video:1,audio:1},warnings:[]}}:undefined);
- // The library holds the H3 pair, LTX2's VAEs and the taeh3 preview decoder; only the H3 files may be chosen.
- createPanel({vae:'',audioVae:'',vaes:['LTX2/video_vae.safetensors','Minimax/minimax_h3_audio_vae_fp32.safetensors','taeh3.safetensors','Minimax/minimax_h3_video_vae_fp16.safetensors','LTX2/audio_vae.safetensors']});
+ // The Model files resolver puts the family's own file first in each slot's Matching set; taeh3 is not in either set.
+ createPanel({vae:'',audioVae:'',vaes:['Minimax/minimax_h3_video_vae_fp16.safetensors','LTX2/video_vae.safetensors'],audioVaes:['Minimax/minimax_h3_audio_vae_fp32.safetensors']});
  const create=screen.getByRole('button',{name:'Create'});
  expect(create.hasAttribute('disabled')).toBe(false);expect(create.title).toBe('');
  fireEvent.click(create);
