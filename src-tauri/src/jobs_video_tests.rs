@@ -2,6 +2,30 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn seven_nine_canvas_preserves_pipeline_specific_dimensions() {
+    for (base, node, width, height) in [
+        (ltx(), "EL", 896, 1152),
+        (wan(), "W", 896, 1168),
+        (h3(), "D", 896, 1152),
+    ] {
+        for (w, h) in [(width, height), (height, width)] {
+            let mut intent = base.clone();
+            intent["width"] = json!(w);
+            intent["height"] = json!(h);
+            let graph = compile(&intent).unwrap();
+            assert_eq!(graph[node]["inputs"]["width"], w);
+            assert_eq!(graph[node]["inputs"]["height"], h);
+        }
+    }
+    // Wan's /16 canvas must not be silently rounded to H3/LTX's /32 grid.
+    for mut intent in [h3(), ltx()] {
+        intent["width"] = json!(896);
+        intent["height"] = json!(1168);
+        assert!(compile(&intent).is_err());
+    }
+}
+
+#[test]
 fn latent_upscale_baseline_first_dependency_closure() {
     fn closure(
         g: &Value,

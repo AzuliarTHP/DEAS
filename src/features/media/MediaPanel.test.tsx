@@ -11,7 +11,7 @@ const controls=():MediaControlsProps=>({query:'portrait',onQuery:vi.fn(),sort:'s
 
 it('prepends the host toolbar, forwards library props and keeps controls controlled',()=>{
  const c=controls(),onSelect=vi.fn(),roots={input:'/input',output:'/output'},marks=new Map<string,string>(),actions=vi.fn(()=>[]);
- const {container}=render(<I18nProvider><MediaPanel selected={null} onSelect={onSelect} roots={roots} outputRevision={3} marks={marks} actions={actions} controls={c} toolbar={<button>Dock tabs</button>}/></I18nProvider>);
+ const {container,rerender}=render(<I18nProvider><MediaPanel selected={null} onSelect={onSelect} roots={roots} outputRevision={3} marks={marks} actions={actions} controls={c} toolbar={<button>Dock tabs</button>}/></I18nProvider>);
  const toolbar=container.querySelector('.media-toolbar')!;
  expect(toolbar.firstElementChild).toBe(screen.getByRole('button',{name:'Dock tabs'}));
  expect(vi.mocked(MediaLibrary).mock.calls.at(-1)![0]).toEqual({selected:null,onSelect,roots,outputRevision:3,marks,actions,filter:'portrait',sort:'size',view:'list',type:'image'});
@@ -19,6 +19,10 @@ it('prepends the host toolbar, forwards library props and keeps controls control
   fireEvent.change(container.querySelector(`[data-dock-${selector}]`)!,{target:{value}});
   expect(callback).toHaveBeenCalledWith(value);
  }
+ rerender(<I18nProvider><MediaPanel selected={null} onSelect={onSelect} roots={roots} outputRevision={4} marks={marks} actions={actions} controls={{...c,sort:'date'}}/></I18nProvider>);
+ expect(screen.getByRole('combobox',{name:'Sort'})).toHaveProperty('value','date');
+ expect(vi.mocked(MediaLibrary).mock.calls.at(-1)![0]).toMatchObject({outputRevision:4,sort:'date',marks,actions,onSelect});
+ expect(onSelect).not.toHaveBeenCalled();
 });
 
 it('omits media-only controls and date sort for model hosts',()=>{

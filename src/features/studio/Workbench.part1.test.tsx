@@ -240,9 +240,22 @@ test.each([['point',false],['point',true],['box',false],['target',false]] as con
  view.unmount();
 });
 
+test.each([undefined,0,4,31,32])('SAM blur shares the saved Inpaint preference with default four (%s)',async saved=>{
+ if(saved!==undefined)localStorage.setItem('deas.pref.studio.run.maskBlur',JSON.stringify(saved));
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null}]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',false));
+ dock('Post-Processing');fireEvent.click(document.querySelector('[data-post-card="sam"]')!);
+ const blur=document.querySelector<HTMLInputElement>('.wb-post [data-sam="maskBlur"]')!;
+ expect(blur.value).toBe(String(saved===undefined||saved===32?4:saved));
+ fireEvent.change(blur,{target:{value:'12'}});
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.maskBlur')!)).toBe(12);
+ expect(uploadMask).not.toHaveBeenCalled();expect(autoRefine).not.toHaveBeenCalled();expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
 test('SAM automatic refinement hands the exact submitted job to the native serial group chain',async()=>{
  const sam='SAM3/sam3.1_multiplex_fp16.safetensors';
- for(const [key,value] of Object.entries({samCheckpoint:sam,samTargets:'eyes, feet; hands',samEnabled:true,samDenoise:0.35,steps:23}))localStorage.setItem('deas.pref.studio.run.'+key,JSON.stringify(value));
+ for(const [key,value] of Object.entries({samCheckpoint:sam,samTargets:'eyes, feet; hands',samEnabled:true,samDenoise:0.35,maskBlur:8,steps:23}))localStorage.setItem('deas.pref.studio.run.'+key,JSON.stringify(value));
  vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,nodes:[...evidence.allowlist.nodes,'SAM3_Detect'],checkpoints:[...evidence.allowlist.checkpoints,sam]}});
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a',family:'sdxl',size:1,info:null}]);
  const job:JobStatus={id:'base-job',baseUrl:evidence.baseUrl,promptId:'prompt',state:'queued',outputs:[],error:null,generationReady:false};
@@ -252,7 +265,7 @@ test('SAM automatic refinement hands the exact submitted job to the native seria
  await waitFor(()=>expect(autoRefine).toHaveBeenCalledTimes(1));
  const [url,intent,settings,fence,sourceJob]=vi.mocked(autoRefine).mock.calls[0];
  expect(url).toBe(evidence.baseUrl);expect(intent).toEqual(vi.mocked(runWorkbenchJob).mock.calls[0][1]);
- expect(settings).toEqual({checkpoint:sam,targets:['eyes','feet','hands'],denoise:0.35,margin:32,threshold:0.5});
+ expect(settings).toEqual({checkpoint:sam,targets:['eyes','feet','hands'],denoise:0.35,margin:32,maskBlur:8,threshold:0.5});
  expect(fence).toBe(0);expect(sourceJob).toBe(job.id);expect(waitForWorkbenchJob).not.toHaveBeenCalled();
 });
 
@@ -282,7 +295,7 @@ test('dual encoder advice belongs to each effective filename, including automati
  vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,diffusionModels:['flux.safetensors'],nodes:[...evidence.allowlist.nodes,'UNETLoader','DualCLIPLoader','VAELoader']}});
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
  await waitFor(()=>expect(document.querySelector('[data-model-picker]')?.textContent).toContain('flux.safetensors'));
- expect(document.querySelector('[data-run-component="textEncoders"] [data-model-check]')?.getAttribute('data-model-check')).toBe('suitable');
+ expect(document.querySelector('[data-run-component="textEncoders"] [data-model-check]')).toBeNull();
  expect(document.querySelector('[data-run-component="textEncoders2"] [data-model-check]')?.getAttribute('data-model-check')).toBe('blocked');
  expect(document.querySelector('[data-run-component="textEncoders2"]')?.textContent).toContain('File integrity check failed');
  expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',true);
@@ -297,6 +310,46 @@ test.each(['integrity','conflict'] as const)('shared model helper keeps a saved 
  await waitFor(()=>expect(document.querySelector('[data-model-picker]')?.textContent).toContain(file.name));
  expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',true);
  expect(document.querySelector('[data-model-check="blocked"]')).not.toBeNull();
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
+test.each([undefined,1,2])('image model card uses image preferences and captures upscale factor (%s)',async saved=>{
+ if(saved!==undefined)localStorage.setItem('deas.pref.studio.run.upscale',JSON.stringify(saved));
+ const name='4x-UltraSharp.pth';
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a',size:1,info:null}]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,nodes:[...evidence.allowlist.nodes,'DEAS_ImagePostprocessGate'],upscaleModels:[name]}});
+ vi.mocked(runWorkbenchJob).mockResolvedValue(heldJob('image-model-card','failed'));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',false));
+ dock('Post-Processing');
+ const card=document.querySelector<HTMLButtonElement>('[data-post-card="model"]')!;
+ expect(card.disabled).toBe(false);fireEvent.click(card);
+ const picker=within(screen.getByRole('dialog')).getByRole('combobox',{name:'Upscale model'});
+ fireEvent.change(picker,{target:{value:name}});
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.upscaleModel')!)).toBe(name);
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.tve')??'{}').upscaleModel??'').toBe('');
+ expect(card.dataset.postState).toBe('active');
+ fireEvent.keyDown(document,{key:'Escape'});
+ fireEvent.click(screen.getByRole('button',{name:'Run'}));
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ const intent=vi.mocked(runWorkbenchJob).mock.lastCall![1] as import('../../lib/execution').DiagnosticImageIntentV1;
+ expect(intent.refine).toMatchObject({width:intent.width*(saved??2),height:intent.height*(saved??2),upscaleModel:name});
+ expect(intent).not.toHaveProperty('videoPost');
+ fireEvent.click(card);fireEvent.change(within(screen.getByRole('dialog')).getByRole('combobox',{name:'Upscale model'}),{target:{value:''}});
+ expect(intent.refine?.upscaleModel).toBe(name);
+ expect(card.dataset.postState).toBe('inactive');
+});
+
+test('image model card retains a missing saved choice and its enabled-pass blocker',async()=>{
+ localStorage.setItem('deas.pref.studio.run.post','true');
+ localStorage.setItem('deas.pref.studio.run.upscaleModel',JSON.stringify('missing.pth'));
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a',size:1,info:null}]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,nodes:[...evidence.allowlist.nodes,'DEAS_ImagePostprocessGate'],upscaleModels:[]}});
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-model-picker]')?.textContent).toContain('a.safetensors'));
+ dock('Post-Processing');fireEvent.click(document.querySelector('[data-post-card="model"]')!);
+ expect(within(screen.getByRole('dialog')).getByRole('combobox',{name:'Upscale model'})).toHaveProperty('value','missing.pth');
+ expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',true);
  expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
@@ -368,6 +421,7 @@ test.each([false,true])('H3 image edit ignores unsupported saved image post/upsc
  await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
  expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).toMatchObject({family:'minimax-h3',h3Edit:expect.any(Object)});
  expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).not.toHaveProperty('refine');
+ dock('Post-Processing');expect(document.querySelector('[data-post-card="model"]')).toHaveProperty('disabled',true);
  expect(localStorage.getItem('deas.pref.studio.run.post')).toBe('true');expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.upscaleModel')!)).toBe(upscaler);
 });
 

@@ -8,6 +8,12 @@ DEAS — Dark Engine AI Studio is maintained under the [darksidewalker GitHub pr
 
 ## Current runtime and development foundations
 
+The native Library gallery, horizontal categories, scoped Fetch, folder controls and detail popup take visual/interaction inspiration from
+[ComfyUI LoRA Manager by willmiao and contributors](https://github.com/willmiao/ComfyUI-Lora-Manager)
+(GPL-3.0). Its public README and interface screenshot were reviewed as design references;
+no upstream application code, model previews, service or custom nodes are bundled by
+this patch. The implementation uses DEAS's native model, download and metadata services.
+
 | Project | Role | Source / notices |
 | --- | --- | --- |
 | Tauri and Rust ecosystem | Native shell, IPC and native services | [Tauri](https://tauri.app/), [Rust](https://www.rust-lang.org/), exact crates in `src-tauri/Cargo.lock` |

@@ -570,6 +570,7 @@
   "studio.run.post.model": "Modèle d’agrandissement",
   "studio.run.post.group.latent": "Upscale latent",
   "studio.run.post.group.refine": "Affiner / Agrandir",
+  "studio.run.post.group.imageModelHint": "Choisir un modèle active Refine / Upscale pour les images. Utilise son facteur (2× par défaut) et son débruitage ; l’original est conservé. Les retouches MiniMax H3 et MOSS ne sont pas prises en charge.",
   "studio.run.post.group.modelHint": "S’applique aux images décodées avant l’encodage final ; l’encodage original est conservé à côté.",
   "studio.run.post.lanczos": "Aucun (Lanczos)",
   "studio.run.more": "Plus",

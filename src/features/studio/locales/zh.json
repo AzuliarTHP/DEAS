@@ -570,6 +570,7 @@
   "studio.run.post.model": "放大模型",
   "studio.run.post.group.latent": "潜空间放大",
   "studio.run.post.group.refine": "精修 / 放大",
+  "studio.run.post.group.imageModelHint": "选择模型会启用图像 Refine / Upscale，使用其缩放倍率（默认 2×）和降噪设置，并保留原图。不支持 MiniMax H3 图像编辑和 MOSS。",
   "studio.run.post.group.modelHint": "在最终编码前作用于解码后的帧；原始编码会一并保留。",
   "studio.run.post.lanczos": "无 (Lanczos)",
   "studio.run.more": "更多",

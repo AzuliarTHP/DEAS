@@ -1,6 +1,6 @@
 import {useI18n} from '../../i18n/I18nProvider';
 
-export interface Sam3Settings {checkpoint:string;targets:string;denoise:number;threshold:number;enabled:boolean}
+export interface Sam3Settings {checkpoint:string;targets:string;denoise:number;threshold:number;enabled:boolean;maskBlur:number}
 export const samTargets=(text:string)=>text.split(/[,;\n]/u).map(s=>s.trim()).filter(Boolean);
 /** One shared draft: editor selection and post-generation refinement use the same SAM checkpoint. */
 export function Sam3Controls({value,onChange,models,margin,onMargin,unavailable,refineUnavailable,status,busy,onRefine,canRefine}:{value:Sam3Settings;onChange:(value:Sam3Settings)=>void;models:readonly string[];margin:number;onMargin:(value:number)=>void;unavailable?:string;refineUnavailable?:string;status?:string;busy:boolean;onRefine?:()=>void;canRefine?:boolean}){
@@ -11,6 +11,7 @@ export function Sam3Controls({value,onChange,models,margin,onMargin,unavailable,
   <label className="wb-option"><span>{label('targets')}</span><input data-sam="targets" type="text" maxLength={2048} value={value.targets} placeholder={label('targetsPlaceholder')} onChange={e=>onChange({...value,targets:e.target.value})}/></label>
   {num('threshold',0)}{num('denoise',0.05)}
   <label className="wb-option"><span>{t('studio.run.maskGrow')}</span><input data-sam="margin" type="number" min={0} max={512} step={1} value={margin} title={t('studio.run.maskGrowHelp')} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>=0&&n<=512)onMargin(n);}}/></label>
+  <label className="wb-option"><span>{t('studio.run.maskBlur')}</span><input data-sam="maskBlur" type="number" min={0} max={31} step={1} value={value.maskBlur} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>=0&&n<=31)onChange({...value,maskBlur:n});}}/></label>
  </div>
  {unavailable&&<p role="status">{unavailable}</p>}
  {status&&<p role="status">{status}</p>}

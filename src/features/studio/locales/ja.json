@@ -570,6 +570,7 @@
   "studio.run.post.model": "アップスケールモデル",
   "studio.run.post.group.latent": "潜在アップスケール",
   "studio.run.post.group.refine": "リファイン / アップスケール",
+  "studio.run.post.group.imageModelHint": "モデルを選択すると画像の Refine / Upscale が有効になります。その倍率（既定は2倍）とノイズ除去設定を使用し、元画像を保持します。MiniMax H3 の画像編集と MOSS は非対応です。",
   "studio.run.post.group.modelHint": "最終エンコード前のデコード済みフレームに適用します。元のエンコードも保持されます。",
   "studio.run.post.lanczos": "なし (Lanczos)",
   "studio.run.more": "その他",

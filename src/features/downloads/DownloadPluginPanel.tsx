@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { SetStateAction } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { NeuralBlob } from '../../components/neural/NeuralBlob';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -6,7 +7,9 @@ import { filesPresent } from '../../lib/settings';
 import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloads, cancelDownloads, pickDownloadParent, planDownloads, readAuthStatus, readDownloadCatalog, readDownloadStatus, removeAuthToken, setAuthToken, startDownloads, comfyFolder, openTokenPage } from '../../lib/downloads';
 import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
 import { isString, oneOf, usePref } from '../../lib/preferences';
-import { fetchModelInfo, readModelScanStatus, scanModels, startModelScan } from '../../lib/models';
+import { fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
+import { loadInstalledListing, rememberInstalledListing } from './installedListing';
+import { InstalledGallery } from './InstalledGallery';
 import type { LocalModel, ModelScanScope, ModelScanStatus } from '../../lib/models';
 import './downloads.css';
 import {ModelAdvice} from '../../components/ModelAdvice';
@@ -91,47 +94,48 @@ const tabOf=(target:string)=>modelFolders.includes(target)?'models':target;
 /** Files already inside the ComfyUI models folder; CivitAI metadata is fetched per file on request and cached natively. */
 function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:string;locked:boolean;category:string;setCategory:(c:string)=>void;onCompanion:(s:ModelCompanionSuggestion)=>void}) {
  const {t}=useI18n();const io=useNativeRequest();
- const [models,setModels]=useState<LocalModel[]|null>(null);useModelMetadataUpdates(setModels);const [scanError,setScanError]=useState(false);const [selected,setSelected]=useState('');
- useEffect(()=>{if(!io.native)return;let alive=true;setModels(null);setScanError(false);setSelected('');scanModels(root).then(v=>{if(alive)setModels(v);},()=>{if(alive)setScanError(true);});return()=>{alive=false;};},[root,io.native]);
- const tabs=sortCategories([...new Set((models??[]).map(m=>tabOf(m.category)))]);
- const tab=tabs.includes(category)?category:tabs[0]??'';
- const shown=(models??[]).filter(m=>tabOf(m.category)===tab).sort((a,b)=>a.name.localeCompare(b.name));
- const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),v=>setModels(old=>old?.map(x=>x.path===v.path?v:x)??old));
+ const [models,setModelState]=useState<LocalModel[]|null>(null);
+ const setModels=useCallback((change:SetStateAction<LocalModel[]|null>)=>setModelState(old=>{const next=typeof change==='function'?change(old):change;if(next)rememberInstalledListing(root,next);return next;}),[root]);
+ useModelMetadataUpdates(setModels);const [scanError,setScanError]=useState(false);const [selected,setSelected]=useState('');
+ const [listingBusy,setListingBusy]=useState(false);const listingEpoch=useRef(0);
+ useEffect(()=>{if(!io.native)return;const epoch=++listingEpoch.current;setModels(null);setScanError(false);setSelected('');setListingBusy(true);loadInstalledListing(root).then(v=>{if(listingEpoch.current===epoch)setModels(v);},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});return()=>{listingEpoch.current++;};},[root,io.native,setModels]);
+ const refreshListing=()=>{const epoch=++listingEpoch.current;setScanError(false);setListingBusy(true);loadInstalledListing(root,true).then(v=>{if(listingEpoch.current===epoch){setModels(v);setSelected('');}},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});};
+ const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),v=>setModels(old=>old?.map(x=>x.path===v.path?{...v,addedAt:x.addedAt,localPreview:x.localPreview}:x)??old));
  const [scanScope,setScanScope]=useState<ModelScanScope>('all');
  const [scanStatus,setScanStatus]=useState<ModelScanStatus|null>(null);const [statusError,setStatusError]=useState(false);const scanEpoch=useRef(0);
  const scanning=scanStatus?.state==='running';
- useEffect(()=>{if(!io.native)return;let alive=true;let timer:ReturnType<typeof setTimeout>;let observed='';setScanStatus(null);
+ useEffect(()=>{if(!io.native)return;let alive=true;let timer:ReturnType<typeof setTimeout>;let seenJob='';setScanStatus(null);
   const poll=async()=>{const epoch=scanEpoch.current;try{const value=await readModelScanStatus();if(!alive)return;
    if(epoch===scanEpoch.current){setScanStatus(value);setStatusError(false);
-    const terminal=value.id&&value.state!=='running'?value.id:'';
-    if(terminal&&terminal!==observed){const models=await scanModels(root);if(alive)setModels(models);}
-    observed=terminal;
+    if(value.id&&value.root===root&&value.state!=='running'&&value.state!=='idle'&&seenJob!==value.id){seenJob=value.id;loadInstalledListing(root,false,true).then(models=>{if(alive)setModels(models);},()=>{if(alive)setScanError(true);});}
+
    }
   }catch{if(alive)setStatusError(true);}finally{if(alive)timer=setTimeout(()=>void poll(),1000);}};
   void poll();return()=>{alive=false;clearTimeout(timer);};
  },[root,io.native]);
  const startScan=()=>{scanEpoch.current++;void io.request(async()=>startModelScan(root,scanScope,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),value=>{scanEpoch.current++;setScanStatus(value);});};
+ const fetchBatch=(targets:LocalModel[],missingOnly:boolean)=>{scanEpoch.current++;void io.request(async()=>startModelScan(root,'all',(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured),{paths:targets.map(m=>m.path),missingOnly}),value=>{scanEpoch.current++;setScanStatus(value);});};
  const detail=(m:LocalModel)=>{const c=m.info?.civitai;const s=c?.settings;const settings=s?[s.sampler,s.scheduler,s.steps!==undefined&&t('downloads.installed.steps',{n:s.steps}),s.cfgScale!==undefined&&t('downloads.installed.cfg',{n:s.cfgScale}),s.size,s.clipSkip!==undefined&&t('downloads.installed.clipSkip',{n:s.clipSkip})].filter(Boolean).join(' · '):'';
   return <div className="download-picker"><ModelDeclaredBadge model={m}/><ModelAdvice check={checkModel(m)}/><ModelCompanionAdvice model={m} models={models??[]} locked={locked} onOpen={onCompanion}/><dl className="download-identity">
-   <dt>{t('downloads.installed.path')}</dt><dd>{m.path}</dd><dt>{t('downloads.size')}</dt><dd>{t('downloads.installed.sizeGib',{n:(m.size/1073741824).toFixed(2)})}</dd>{m.integrity&&<><dt>{t('downloads.installed.integrity')}</dt><dd>{t('downloads.installed.truncated')}</dd></>}<dt>{t('downloads.digest')}</dt><dd>{m.info?.sha256??t('downloads.installed.unhashed')}</dd>
+   {m.integrity&&<><dt>{t('downloads.installed.integrity')}</dt><dd>{t('downloads.installed.truncated')}</dd></>}
    {m.info&&<><dt>{t('downloads.installed.civitai')}</dt><dd>{c?[c.name,c.version,c.base].filter(Boolean).join(' · '):t('downloads.installed.none')}</dd></>}
-   {c&&c.trainedWords.length>0&&<><dt>{t('downloads.installed.words')}</dt><dd>{c.trainedWords.join(', ')}</dd></>}
    {settings&&<><dt>{t('downloads.installed.settings')}</dt><dd>{settings}</dd></>}
   </dl><p className="field-help">{t('downloads.installed.hashHelp')}</p>
   <button className="action-button" disabled={io.busy||locked||scanning||!scanStatus||statusError} onClick={()=>fetch(m)}>{t(m.info?'downloads.installed.refresh':'downloads.installed.fetch')}</button>
   {io.busy&&<p role="status"><span className="aio-spinner" aria-hidden="true"/> {t('downloads.pending')}</p>}{io.error&&<p role="alert">{t('downloads.installed.fetchError')}</p>}</div>;};
- return <>
-  {io.native&&!!models&&models.length>0&&<div className="download-source-row">
-   <label>{t('downloads.installed.scanScope')}<select data-scan-scope aria-label={t('downloads.installed.scanScope')} value={scanScope} disabled={locked||scanning||io.busy} onChange={e=>setScanScope(e.target.value as 'all'|'models'|'loras')}><option value="all">{t('downloads.installed.scopeAll')}</option><option value="models">{t('downloads.installed.scopeModels')}</option><option value="loras">{t('downloads.installed.scopeLoras')}</option></select></label>
-   <button className="action-button" type="button" data-scan-files disabled={locked||scanning||io.busy||!scanStatus||statusError} onClick={startScan}>{t('downloads.installed.scanAll')}</button>
-   <p className="field-help">{t('downloads.installed.scanAllHelp')}</p>
-  </div>}
-  {scanStatus?.id&&<p role="status">{scanning&&<span className="aio-spinner" aria-hidden="true"/>} {t(scanning?'downloads.installed.scanning':scanStatus.state==='failed'?'downloads.installed.scanFailed':'downloads.installed.scanDone')} {t('downloads.installed.scanProgress',{completed:scanStatus.completed,total:scanStatus.total,remaining:scanStatus.remaining,failed:scanStatus.failed})} {scanStatus.file}</p>}
-  {(statusError||(io.error&&!selected))&&<p role="alert">{t('downloads.installed.fetchError')}</p>}
-  {tabs.length>0&&<div className="download-categories" role="tablist" aria-label={t('downloads.category')}>{tabs.map(c=><button key={c} role="tab" type="button" aria-selected={tab===c} disabled={locked} onClick={()=>{setSelected('');setCategory(c);}}>{t(`downloads.folder.${c}`)}</button>)}</div>}
-  {models===null&&!scanError&&<p role="status">{t('downloads.pending')}</p>}{scanError&&<p role="alert">{t('downloads.installed.scanError')}</p>}{models&&!models.length&&<p className="field-help">{t('downloads.installed.empty',{root})}</p>}
-  <div className="download-cards">{shown.map(m=><Fragment key={m.path}><ModelMetadataTarget model={m}><button type="button" aria-label={m.name} aria-haspopup="menu" aria-keyshortcuts="Shift+F10" className="download-card" aria-pressed={selected===m.path} disabled={locked} onClick={()=>setSelected(v=>v===m.path?'':m.path)}><Preview src={m.info?.civitai?.preview} alt=""/>{m.info?.civitai?.nsfw&&<em className="download-auth download-nsfw-tag" title={t('downloads.nsfwHelp')}>{t('downloads.nsfwTag')}</em>}<span>{m.name}</span><ModelDeclaredBadge model={m}/><small>{modelCheckText(checkModel(m),t)}</small></button></ModelMetadataTarget>{selected===m.path&&detail(m)}</Fragment>)}</div>
- </>;
+ return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||io.busy||listingBusy||!scanStatus||statusError}
+  actions={<>
+   {io.native&&<button className="action-button library-refresh" type="button" disabled={locked||listingBusy||scanning||io.busy} onClick={refreshListing}><span aria-hidden="true">↻</span> {t('downloads.installed.refreshListing')}</button>}
+   {io.native&&!!models&&models.length>0&&<div className="library-scan-tools">
+    <label>{t('downloads.installed.scanScope')}<select data-scan-scope aria-label={t('downloads.installed.scanScope')} value={scanScope} disabled={locked||scanning||io.busy} onChange={e=>setScanScope(e.target.value as 'all'|'models'|'loras')}><option value="all">{t('downloads.installed.scopeAll')}</option><option value="models">{t('downloads.installed.scopeModels')}</option><option value="loras">{t('downloads.installed.scopeLoras')}</option></select></label>
+    <button className="action-button" type="button" data-scan-files title={t('downloads.installed.scanAllHelp')} disabled={locked||scanning||io.busy||!scanStatus||statusError} onClick={startScan}>{t('downloads.installed.scanAll')}</button>
+   </div>}
+  </>}
+  feedback={<>
+   {scanStatus?.id&&<p role="status">{scanning&&<span className="aio-spinner" aria-hidden="true"/>} {t(scanning?'downloads.installed.scanning':scanStatus.state==='failed'?'downloads.installed.scanFailed':'downloads.installed.scanDone')} {t('downloads.installed.scanProgress',{completed:scanStatus.completed,total:scanStatus.total,remaining:scanStatus.remaining,failed:scanStatus.failed})} {scanStatus.file}</p>}
+   {(statusError||(io.error&&!selected))&&<p role="alert">{t('downloads.installed.fetchError')}</p>}
+   {listingBusy&&!scanError&&<p role="status">{t('library.loading')}</p>}{scanError&&<p role="alert">{t('downloads.installed.scanError')}</p>}
+  </>}/>;
 }
 export interface DownloadPanelProps { installTarget?:string; modelsDir?:string; authRevision?:number; onStatus?:(status:DownloadStatus)=>void; embedded?:boolean; initialEntryId?:string; initialEntryIds?:string[]; initialCategory?:string; filenameFilter?:string|string[] }
 // Undated sources stay last; never infer publication dates from filenames or IDs.
@@ -255,14 +259,14 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
     {listing?.nextCursor&&<button className="action-button" disabled={io.busy||running} onClick={()=>browse(current,listing.nextCursor!)}>{t('downloads.next')}</button>}
     {listing&&<p className="field-help">{t('downloads.more')}</p>}{listing?.warnings.map((w,i)=><p key={i}>{w}</p>)}
  </div>;
- return <section className="feature-panel download-module" aria-label={t('downloads.title')}>
+ return <section className={`feature-panel download-module${view==='installed'?' is-installed':''}`} aria-label={t('downloads.title')}>
   {!embedded&&<NeuralBlob id="optional-downloads" label={t('downloads.title')} description={t('downloads.bubble')} selected={open} onSelect={()=>{if(locked)return;setOpened(v=>!v);if(!open&&!catalog)load();}}/>}
   {open&&<div className="download-controls" aria-busy={io.busy}>
    <div className="download-head">
     <div className="studio-tabs" role="tablist" aria-label={t('downloads.view')}>{views.map(v=><button key={v} role="tab" type="button" data-library-tab={v} aria-selected={view===v} disabled={locked||(v==='installed'&&!modelsRoot)} onClick={()=>selectView(v)}>{t(`downloads.view.${v}`)}</button>)}</div>
-    <button type="button" className="action-button download-start-all" disabled={!canStart} onClick={()=>{edit();startGroups(groups());}}>{t('downloads.startAll',{count:basket.length})}</button>
+    {view==='catalog'&&<button type="button" className="action-button download-start-all" disabled={!canStart} onClick={()=>{edit();startGroups(groups());}}>{t('downloads.startAll',{count:basket.length})}</button>}
    </div>
-   <p className="field-help">{t(io.native?'downloads.help':'downloads.browser')}</p>
+   {(view==='catalog'||!io.native)&&<p className="field-help">{t(io.native?'downloads.help':'downloads.browser')}</p>}
    {catalog&&<>
     {view==='installed'&&<InstalledModels root={modelsRoot} locked={locked} category={category} setCategory={setCategory} onCompanion={s=>{sourceEdit();setView('catalog');setSource('');setSearch(s.patterns[0]??'');setBase('');setEntryId('');setCategory(s.target);setFolder(s.target);}}/>}
     {view==='catalog'&&<>

@@ -145,6 +145,39 @@ it.each([true,false,undefined])('handles relocation starred=%s including legacy 
  act(()=>{window.dispatchEvent(new CustomEvent('deas-media-relocated',{detail:{oldPath:'/out/a.png',path:'/out/next.png',...(starred===undefined?{}:{starred})}}));});
  expect(screen.getByRole('button').getAttribute('aria-pressed')).toBe(String(starred??true));
 });
+it('refreshes temporary native generation admission, keeping running jobs protected until completion',async()=>{
+ vi.useFakeTimers();
+ let running=true;
+ invoke.mockImplementation(async(command:string)=>command==='native_media_star_status'?{starred:false,unavailable:running?'Wait for native generation to finish before moving media':null}:{oldPath:'/out/a.png',path:'/out/starred/a.png'});
+ const view=render(<I18nProvider><StarMediaButton item={{name:'a.png',path:'/out/a.png',src:'asset:a',media:'image'}}/></I18nProvider>);
+ try{
+  await act(async()=>{});
+  const button=screen.getByRole('button',{name:'Star a.png'});
+  expect(button.hasAttribute('disabled')).toBe(true);
+  await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+  fireEvent.click(button);
+  expect(button.hasAttribute('disabled')).toBe(true);
+  expect(invoke.mock.calls.every(([command])=>command==='native_media_star_status')).toBe(true);
+  running=false;
+  await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+  expect(button.hasAttribute('disabled')).toBe(false);
+  await act(async()=>{fireEvent.click(button);});
+  expect(invoke).toHaveBeenCalledWith('native_media_star',{path:'/out/a.png'});
+  const calls=invoke.mock.calls.length;
+  await act(async()=>{await vi.advanceTimersByTimeAsync(3000);});
+  expect(invoke).toHaveBeenCalledTimes(calls);
+ }finally{view.unmount();vi.useRealTimers();}
+});
+it('cancels temporary admission retries on unmount',async()=>{
+ vi.useFakeTimers();
+ invoke.mockResolvedValue({starred:false,unavailable:'Wait for native generation to finish before moving media'});
+ const view=render(<I18nProvider><StarMediaButton item={{name:'a.png',path:'/out/a.png',src:'asset:a',media:'image'}}/></I18nProvider>);
+ try{
+  await act(async()=>{});view.unmount();
+  await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});
+  expect(invoke).toHaveBeenCalledTimes(1);
+ }finally{vi.useRealTimers();}
+});
 it('explains an unmanaged origin rather than offering a fake favourite',async()=>{
  invoke.mockResolvedValue({starred:false,unavailable:'External/unmanaged media cannot be moved'});
  render(<I18nProvider><StarMediaButton item={{name:'a.mp4',path:'/external/a.mp4',src:'asset:a',media:'video'}}/></I18nProvider>);

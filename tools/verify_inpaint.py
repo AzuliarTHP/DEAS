@@ -156,7 +156,7 @@ with sync_playwright() as p:
     result = pixels(page, [[256, 160], [300, 160], [220, 124]])
     assert (result['width'], result['height']) == (1024, 640)
     assert result['opaque'] and result['values'] == [[255,255,255,255],[0,0,0,255],[255,255,255,255]], result
-    assert intent['maskBlur'] == 4 and 'inpaintCrop' not in intent
+    assert 'maskBlur' not in intent and 'inpaintCrop' not in intent
     page.get_by_role('checkbox', name='Inpaint only masked', exact=True).check()
     page.get_by_role('spinbutton', name='Mask Shrink Grow (px)', exact=True).fill('32')
     page.get_by_role('spinbutton', name='Mask Blur (px)', exact=True).fill('8')

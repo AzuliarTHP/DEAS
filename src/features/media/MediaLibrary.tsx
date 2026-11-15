@@ -15,6 +15,7 @@ const underRoot=(path:string,root?:string)=>!!root&&(normalizedPath(path)===norm
 // Session caches: same-folder refreshes paint instantly; thumbnails skip the IPC round trip.
 const listings=new Map<string,MediaListing>();
 const thumbs=new Map<string,string>();
+const thumbKey=(entry:MediaEntry)=>`${entry.path}\0${entry.size}\0${entry.modified}`;
 /** First frame only: an animated <img> tile keeps WebKitGTK's decoder threads busy and the window repainting for as long as it is shown. */
 function Still({src}:{src:string}){
  const ref=useRef<HTMLCanvasElement>(null);
@@ -25,19 +26,19 @@ function Still({src}:{src:string}){
  *  Video tile: the first frame as a cached FFmpeg still (no <video> per tile); the ▶ glyph stays when extraction fails. Tiles only mount while visible. */
 function Thumb({entry}:{entry:MediaEntry}){
  const video=entry.media==='video';
- const key=`${entry.path}\0${entry.size}\0${entry.modified}`;
+ const key=thumbKey(entry);
  const [src,setSrc]=useState(()=>thumbs.get(key)??'');
  useEffect(()=>{
   if(thumbs.has(key)){setSrc(thumbs.get(key)!);return;}
   let alive=true;
   const still=video?invoke<string>('native_media_reference_thumbnail',{path:entry.path,seconds:0}).then(p=>typeof p==='string'?convertFileSrc(p):'',()=>'')
-   :invoke<string>('native_media_thumbnail',{path:entry.path}).then(p=>typeof p==='string'?p:entry.path,()=>entry.path).then(convertFileSrc);
+   :invoke<string>('native_media_thumbnail',{path:entry.path}).then(p=>typeof p==='string'?p:entry.path,()=>entry.path).then(p=>convertFileSrc(p)+(p===entry.path?`?v=${entry.size}-${entry.modified}`:''));
   void still.then(s=>{thumbs.set(key,s);if(alive)setSrc(s);});
   return()=>{alive=false;};
  },[key]); // eslint-disable-line react-hooks/exhaustive-deps
  if(video)return src?<span className="media-video-still"><img src={src} alt="" loading="lazy" decoding="async"/><span className="media-video-badge" aria-hidden="true">▶</span></span>:<span className="media-glyph" aria-hidden="true">▶</span>;
  if(!src)return <span className="media-glyph" aria-hidden="true"/>;
- return src===convertFileSrc(entry.path)&&/\.(webp|gif|apng)$/i.test(entry.name)?<Still src={src}/>:<img src={src} alt="" loading="lazy" decoding="async"/>;
+ return src.startsWith(convertFileSrc(entry.path)+'?')&&/\.(webp|gif|apng)$/i.test(entry.name)?<Still src={src}/>:<img src={src} alt="" loading="lazy" decoding="async"/>;
 }
 /** First-frame still of a local video by path (queue rows); `fallback` while loading or when FFmpeg cannot read it. */
 export function VideoStill({path,fallback}:{path:string;fallback:React.ReactNode}){
@@ -101,22 +102,31 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
  const onMenu=(item:MediaItem|null)=>(e:React.MouseEvent)=>{const extra=item?actions?.(item)??[]:[];if(!item||(!(native&&item.path)&&!extra.length))return;e.preventDefault();setMenu({x:e.clientX,y:e.clientY,item,actions:extra});};
  const reveal=(path:string)=>{setMenu(null);invoke('native_media_reveal',{path}).catch(e=>setError(String(e)));};
  const version=useRef(0);
+ const pendingOpen=useRef<{path:string;levels:number;picked:boolean}|null>(null);
+ const lastOutputRevision=useRef(outputRevision);
  const [depth,setDepth]=usePref('media.depth',3,isDepth);
  const rawRoot=roots.output?roots.output.replace(/[\\/]+$/,'')+'/raw':undefined;
  const starredRoot=roots.output?roots.output.replace(/[\\/]+$/,'')+'/starred':undefined;
  const open=async(path:string,levels=depth,picked=false)=>{
   const v=++version.current;
+  pendingOpen.current={path,levels,picked};
   // Cached refreshes may paint immediately, but navigation commits only after a successful listing.
   const key=`${path}\0${levels}`;const cached=listing?.path===path?listings.get(key):undefined;if(cached){setListing(cached);setError('');}
-  try{const next=await listMedia(path,levels);listings.set(key,next);if(v===version.current){setListing(next);setError('');setDirectories(d=>({...d,[next.path]:next}));setFolderErrors(errors=>({...errors,[next.path]:''}));setTreeRoot(root=>underRoot(next.path,roots.output)?treeAnchor(roots.output!):underRoot(next.path,roots.input)?treeAnchor(roots.input!):!picked&&underRoot(next.path,root)?root:next.path);setExpanded(paths=>new Set([...paths,next.path]));}}
-  catch(e){listings.delete(key);if(v===version.current){setError(String(e));if(cached)setListing(l=>l===cached?null:l);}} // a stale cached view must not outlive a folder that failed to list
+  try{const next=await listMedia(path,levels);if(v===version.current){listings.set(key,next);setListing(next);setError('');setDirectories(d=>({...d,[next.path]:next}));setFolderErrors(errors=>({...errors,[next.path]:''}));setTreeRoot(root=>underRoot(next.path,roots.output)?treeAnchor(roots.output!):underRoot(next.path,roots.input)?treeAnchor(roots.input!):!picked&&underRoot(next.path,root)?root:next.path);setExpanded(paths=>new Set([...paths,next.path]));}}
+  catch(e){if(v===version.current){listings.delete(key);setError(String(e));if(cached)setListing(l=>l===cached?null:l);}} // a stale cached view must not outlive a folder that failed to list
+  finally{if(v===version.current)pendingOpen.current=null;}
  };
  // The output folder is the natural start once an environment is known; before that, home.
  useEffect(()=>{if(native)void open(rawRoot??roots.input??'');return()=>{version.current++;};},[native,roots.output,roots.input]);
  const inOutput=!!listing&&underRoot(listing.path,roots.output);
  const inStarred=!!listing&&underRoot(listing.path,starredRoot);
  const canStar=(item:MediaItem)=>native&&!!item.path&&underRoot(item.path,roots.output)&&!underRoot(item.path,roots.input);
- useEffect(()=>{if(outputRevision&&inOutput&&listing)void open(listing.path);},[outputRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{
+  if(lastOutputRevision.current===outputRevision)return;
+  lastOutputRevision.current=outputRevision;
+  const target=pendingOpen.current??(listing?{path:listing.path,levels:depth,picked:false}:null);
+  if(target&&underRoot(target.path,roots.output))void open(target.path,target.levels,target.picked);
+ },[outputRevision]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{
   const moved=(event:Event)=>{const move=(event as CustomEvent<MediaRelocation>).detail;listings.clear();thumbs.clear();setDirectories({});setDropped(items=>items.map(item=>relocatedMediaItem(item,move)));if(listing)void open(listing.path);};
   window.addEventListener('deas-media-relocated',moved);return()=>window.removeEventListener('deas-media-relocated',moved);
@@ -246,7 +256,7 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
    <div className="media-files">
   {dropped.length>0&&<ul className="media-list" aria-label={t('media.dropped')}>{dropped.filter(i=>type==='all'||i.media===type).map((item,i)=><li key={`${item.src}-${i}`} data-mark={mark(item.path)}><button type="button" data-media={item.media} aria-current={selected?.src===item.src} draggable onDragStart={e=>dragItem(e.dataTransfer,item)} onContextMenu={onMenu(item)} onClick={()=>onSelect(item)}>{thumb(item.media,item.src)}<span className="media-name">{item.name}</span></button>{badge(item.path)}{canStar(item)&&<StarMediaButton item={item}/>}</li>)}</ul>}
   {error&&<p className="media-error" role="alert">{error}</p>}
-  {listing&&<Tiles folder={listing.path} layout={view} className="media-list" aria-label={t('media.entries')} items={visible} render={entry=><li key={entry.path} data-mark={mark(entry.path)}><button type="button" data-kind={entry.kind} data-media={entry.media??undefined} aria-current={selected?.path===entry.path} title={entry.name} draggable onDragStart={e=>{const item=itemFromEntry(entry);if(item)dragItem(e.dataTransfer,item);}} onContextMenu={onMenu(itemFromEntry(entry))} onClick={()=>choose(entry)}>{native&&(entry.media==='image'||entry.media==='video')?<Thumb entry={entry}/>:thumb(entry.media,null)}<span className="media-name">{entry.name}{entry.symlink&&<span className="media-symlink" aria-label={t('media.symlink')}> ⤳</span>}</span></button>{badge(entry.path)}{canStar(itemFromEntry(entry)!)&&<StarMediaButton key={`${entry.path}:${outputRevision}`} item={itemFromEntry(entry)!}/>}</li>}/>}
+  {listing&&<Tiles folder={listing.path} layout={view} className="media-list" aria-label={t('media.entries')} items={visible} render={entry=><li key={entry.path} data-mark={mark(entry.path)}><button type="button" data-kind={entry.kind} data-media={entry.media??undefined} aria-current={selected?.path===entry.path} title={entry.name} draggable onDragStart={e=>{const item=itemFromEntry(entry);if(item)dragItem(e.dataTransfer,item);}} onContextMenu={onMenu(itemFromEntry(entry))} onClick={()=>choose(entry)}>{native&&(entry.media==='image'||entry.media==='video')?<Thumb key={thumbKey(entry)} entry={entry}/>:thumb(entry.media,null)}<span className="media-name">{entry.name}{entry.symlink&&<span className="media-symlink" aria-label={t('media.symlink')}> ⤳</span>}</span></button>{badge(entry.path)}{canStar(itemFromEntry(entry)!)&&<StarMediaButton key={`${entry.path}:${outputRevision}`} item={itemFromEntry(entry)!}/>}</li>}/>}
   {menu&&<div className="media-menu" role="menu" aria-label={menu.item.name} style={{left:Math.min(menu.x,window.innerWidth-200),top:Math.min(menu.y,window.innerHeight-48*(1+menu.actions.length))}}>
    {menu.actions.map((a,i)=><button key={a.label} type="button" role="menuitem" autoFocus={i===0} disabled={!!a.blocked} title={a.blocked?undefined:a.hint} onClick={()=>{setMenu(null);a.onClick();}}>{a.label}{a.blocked&&<small>{a.blocked}</small>}</button>)}
    {native&&menu.item.path&&<button type="button" role="menuitem" autoFocus={!menu.actions.length} onClick={()=>reveal(menu.item.path!)}>{t('media.reveal')}</button>}</div>}

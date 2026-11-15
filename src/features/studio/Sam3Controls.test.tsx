@@ -3,7 +3,7 @@ import {afterEach,expect,test,vi} from 'vitest';
 import {I18nProvider} from '../../i18n/I18nProvider';
 import {Sam3Controls,samTargets} from './Sam3Controls';
 afterEach(cleanup);
-const value={checkpoint:'sam3.1.safetensors',targets:'eyes, feet; hands',denoise:0.25,threshold:0.5,enabled:false};
+const value={checkpoint:'sam3.1.safetensors',targets:'eyes, feet; hands',denoise:0.25,threshold:0.5,enabled:false,maskBlur:8};
 test('target groups retain order and plural matches stay in their group',()=>{
  expect(samTargets(' eyes, feet; hands\nred shoes,, ')).toEqual(['eyes','feet','hands','red shoes']);
 });
@@ -14,6 +14,11 @@ test('SAM settings never execute until an explicit action and missing SAM does n
  const denoise=view.container.querySelector('[data-sam="denoise"]')!;
  fireEvent.change(denoise,{target:{value:'0.4'}});expect(onChange).toHaveBeenLastCalledWith({...value,denoise:0.4});
  expect(view.container.querySelector('[data-sam="mask"]')).toBeNull();
+ const blur=screen.getByRole('spinbutton',{name:'Mask Blur (px)'});
+ expect(blur).toHaveProperty('value','8');
+ fireEvent.change(blur,{target:{value:'12'}});expect(onChange).toHaveBeenLastCalledWith({...value,maskBlur:12});
+ for(const invalid of ['-1','32','1.5']){onChange.mockClear();fireEvent.change(blur,{target:{value:invalid}});expect(onChange).not.toHaveBeenCalled();}
+ expect(onRefine).not.toHaveBeenCalled();
  expect(view.container.querySelector('small')).toBeNull();
  const row=view.container.querySelector('.wb-sam-actions')!;expect(row.firstElementChild!.querySelector('[data-sam="enabled"]')).not.toBeNull();expect(row.lastElementChild!.getAttribute('data-sam')).toBe('refine');
  view.rerender(<I18nProvider><Sam3Controls value={{...value,targets:''}} onChange={onChange} models={[]} margin={32} onMargin={vi.fn()} unavailable="Missing SAM checkpoint" busy={false} onRefine={onRefine} canRefine/></I18nProvider>);

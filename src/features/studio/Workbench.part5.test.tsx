@@ -1529,6 +1529,29 @@ test('Export without metadata saves a clean copy from the queue menu and preview
  expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
+test.each(['settled','pending'] as const)('model changes clear %s export feedback and preview selection without removing queue history',async state=>{
+ vi.mocked(scanModels).mockResolvedValue([...imageModels,{...imageModels[0],name:'b.safetensors',path:'/m/b'}]);
+ const job=navJobs()[2];
+ vi.mocked(readCurrentWorkbench).mockResolvedValue(collection([job]));
+ let finish!:(value:unknown)=>void;
+ vi.mocked(invoke).mockImplementation(async command=>command==='native_media_export_clean'?(state==='settled'?{path:'/save/old.png',size:3}:new Promise(resolve=>{finish=resolve;})):command==='native_media_star_status'?{starred:false,unavailable:null}:{entries:[],truncated:false});
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-job-id="last"]')).not.toBeNull());
+ await waitFor(()=>expect(document.querySelector('[data-model-picker] option[value="b.safetensors"]')).not.toBeNull());
+ fireEvent.contextMenu(document.querySelector('[data-job-id="last"] .wb-queue-select')!);
+ fireEvent.click(screen.getByRole('menuitem',{name:'Export without metadata…'}));
+ if(state==='settled')await screen.findByText('Saved a copy without metadata: /save/old.png');
+ else await waitFor(()=>expect(finish).toBeDefined());
+ fireEvent.change(document.querySelector('[data-model-picker]')!,{target:{value:'b.safetensors'}});
+ if(state==='pending')await act(async()=>finish({path:'/save/old.png',size:3}));
+ expect(document.querySelector('.wb-more-feedback')).toBeNull();
+ expect(document.querySelector('.wb-job-line')).toBeNull();
+ expect(document.querySelector('[data-job-id="last"] [data-state="succeeded"]')).not.toBeNull();
+ fireEvent.click(document.querySelector('[data-job-id="last"] .wb-queue-select')!);
+ expect(document.querySelector('.wb-job-line')?.textContent).toContain('Succeeded');
+ expect(runWorkbenchJob).not.toHaveBeenCalled();expect(stopWorkbench).not.toHaveBeenCalled();
+});
+
 test('Post-Processing category cards show ordered status/counts, guard incompatible remembered settings, and open accessible overlays without side effects',async()=>{
  localStorage.setItem('deas.pref.studio.run.derope',JSON.stringify({enabled:true,mode:'full',distilled:true,keepBackground:true,lora:'',preset:'balanced',inject:0.7}));
  localStorage.setItem('deas.pref.studio.run.tve',JSON.stringify({...defaultTve,loop:true,denoise:true,upscaleModel:'4x-UltraSharp.pth'}));
@@ -1548,7 +1571,7 @@ test('Post-Processing category cards show ordered status/counts, guard incompati
  const cards=()=>Array.from(document.querySelectorAll<HTMLButtonElement>('[data-post-card]'));
  expect(cards().map(c=>c.dataset.postCard)).toEqual(['audio','latent','regenerate','face-analysis','sam','refine','model','derope','tve']);
  // Audio/video categories stay unavailable on image pipelines, with 0 active functions.
- for(const id of ['audio','latent','regenerate','face-analysis','model','derope','tve']){
+ for(const id of ['audio','latent','regenerate','face-analysis','derope','tve']){
   const card=document.querySelector<HTMLButtonElement>(`[data-post-card="${id}"]`)!;
   expect(card.dataset.postState).toBe('unavailable');
   expect(card.dataset.postCount).toBe('0');

@@ -81,10 +81,13 @@ with sync_playwright() as p:
     # New layers preserve the initial mask and black mask background is transparent.
     masks=page.evaluate('''()=>[...document.querySelectorAll('.sie-rail canvas')].map(c=>c.width)''')
     assert len(masks)>=4,masks
+    expect(page.locator('.wb-post [data-sam="maskBlur"]')).to_have_value('0')
+    page.locator('.wb-post [data-sam="maskBlur"]').fill('8')
+    expect(page.locator('.wb-side input[data-num="maskBlur"]')).to_have_value('8')
     page.locator('[data-sam="refine"]').click()
     page.wait_for_function('window.__refines.length===1')
     refine=page.evaluate('window.__refines[0]')
-    assert refine['settings']=={'checkpoint':'SAM3/sam3.1_multiplex_fp16.safetensors','targets':[],'denoise':0.25,'margin':32,'threshold':0.5},refine['settings']
+    assert refine['settings']=={'checkpoint':'SAM3/sam3.1_multiplex_fp16.safetensors','targets':[],'denoise':0.25,'margin':32,'maskBlur':8,'threshold':0.5},refine['settings']
     assert [m['name'] for m in refine['masks']]==['eyes','feet','hands']
     assert all(m['png'][:8]==[137,80,78,71,13,10,26,10] for m in refine['masks'])
     # Move the floating settings aside to expose the image without closing them.
