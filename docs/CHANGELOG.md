@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.36 BETA (unreleased)
+
+- **Adjustable H3 Hi-Res Regenerate strengths.** Post-Processing exposes a separate refiner-LoRA strength (0–2, default 1) and the same saved upscale-refinement strength (0–1) and 2D sharpness tier (1–6) as Latent upscale. Editing either card updates the other immediately; LoRA strength stays independent. Hi-Res uses the native rounded tail of its published three-step sigma preset, not a new schedule: 1 retains all three steps, 0 skips diffusion; very small positive values can also round to zero steps. The shared authoring default remains 0.2, which retains one Hi-Res preset step. Old intents without tuning keep the original full preset, and history restores both explicit values and legacy defaults. Changed Hi-Res denoise/tier settings require node pack 0.5.55; unsupported backends block Run with upgrade guidance rather than ignoring controls. Six locales, global search, Run Plan and strict native validation are included. No stage is enabled automatically.
+
 ## 0.2.35 BETA
 
 - **Big model libraries no longer vanish silently.** Library listing and *Scan Files* walk up to 100,000 files (previously the list stopped at 5,000 without a trace, so file #5001+ silently never got a sidecar). Only the webview payload is cut, at 25,000 — and that says so in central Logs. Listing is ~3× faster: files are described in parallel (2,000 files on the reference machine: 1.98 s → 0.66 s), and *Scan Files* now processes four files at a time (hash + CivitAI lookup); on spinning or SATA drives the drive itself stays the limit.

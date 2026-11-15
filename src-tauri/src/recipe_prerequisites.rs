@@ -208,6 +208,23 @@ fn h3_latent_sharpness_ready(nodes: &Value) -> bool {
     spec[0] == "INT" && spec[1]["min"] == 1 && spec[1]["max"] == 6
 }
 
+/// Node pack >= 0.5.55: independent Hi-Res refinement denoise and 2D upscaler sharpness.
+fn h3_regenerate_tuning_ready(nodes: &Value) -> bool {
+    let optional = &nodes["DaSiWaH3HiResRegenerate"]["input"]["optional"];
+    [
+        ("denoise", "FLOAT", 0.0, 1.0),
+        ("upscale_sharpness", "INT", 1.0, 6.0),
+    ]
+    .iter()
+    .all(|(field, kind, min, max)| {
+        let spec = &optional[*field];
+        spec.as_array().is_some_and(|s| s.len() == 2)
+            && spec[0] == *kind
+            && spec[1]["min"].as_f64() == Some(*min)
+            && spec[1]["max"].as_f64() == Some(*max)
+    })
+}
+
 fn image_postprocess_ready(nodes: &Value) -> bool {
     let metadata = nodes.get("DaSiWa_MetadataImageSaver").is_some()
         && nodes.get("DaSiWa_MetadataConfig").is_some();
@@ -422,6 +439,7 @@ fn parse(base: &reqwest::Url, nodes: &Value) -> Result<Value, String> {
             "deropeKeepBackground":derope_keep_background_ready(nodes),
             "h3LatentSharpness":h3_latent_sharpness_ready(nodes),
             "h3RegenerateOriginal":!options(nodes, "DaSiWaH3HiResRegenerate", "target", |s| s == "Original").is_empty(),
+            "h3RegenerateTuning":h3_regenerate_tuning_ready(nodes),
             "visionModels":combo(nodes, "CLIPVisionLoader", "clip_name")?,
             "attention":options(nodes, "ModelAttentionBackend", "attention", option),
             "sage":options(nodes, "PathchSageAttentionKJ", "sage_attention", option),
@@ -732,6 +750,74 @@ mod tests {
         assert!(ready(&info));
         info["DaSiWaH3TiledUpscale"]["input"]["optional"]["upscale_sharpness"][1]["max"] = json!(4);
         assert!(!ready(&info));
+    }
+
+    #[test]
+    fn h3_regenerate_tuning_requires_both_optional_numeric_input_schemas() {
+        let base = crate::validate_base_url("http://127.0.0.1:8188").unwrap();
+        let mut info = nodes();
+        let tuning =
+            |info: &Value| parse(&base, info).unwrap()["allowlist"]["h3RegenerateTuning"].clone();
+        assert_eq!(tuning(&info), false);
+        // DaSiWa node pack 0.5.55: nodes/nodes_minimax_h3_regenerate.py::INPUT_TYPES.
+        let schema = json!({"input":{"optional":{
+            "denoise":["FLOAT",{"default":1.0,"min":0.0,"max":1.0,"step":0.01}],
+            "upscale_sharpness":["INT",{"default":1,"min":1,"max":6,"step":1}]
+        }}});
+        info["DaSiWaH3HiResRegenerate"] = schema.clone();
+        assert_eq!(tuning(&info), true);
+        for field in ["denoise", "upscale_sharpness"] {
+            for bad in [
+                Value::Null,
+                json!({"0":"FLOAT","1":{"min":0,"max":1}}),
+                json!([]),
+                json!(["FLOAT"]),
+                json!(["INT"]),
+                json!(["FLOAT", null]),
+                json!(["INT",{"min":1,"max":6},{}]),
+                json!(["STRING",{"min":0,"max":1}]),
+            ] {
+                info["DaSiWaH3HiResRegenerate"] = schema.clone();
+                info["DaSiWaH3HiResRegenerate"]["input"]["optional"][field] = bad.clone();
+                assert_eq!(tuning(&info), false, "{field}: {bad}");
+            }
+            for (bound, valid) in [
+                ("min", if field == "denoise" { 0 } else { 1 }),
+                ("max", if field == "denoise" { 1 } else { 6 }),
+            ] {
+                for bad in [json!("1"), json!(true), Value::Null, json!(valid + 1)] {
+                    info["DaSiWaH3HiResRegenerate"] = schema.clone();
+                    info["DaSiWaH3HiResRegenerate"]["input"]["optional"][field][1][bound] =
+                        bad.clone();
+                    assert_eq!(tuning(&info), false, "{field}.{bound}: {bad}");
+                }
+            }
+            info["DaSiWaH3HiResRegenerate"] = schema.clone();
+            info["DaSiWaH3HiResRegenerate"]["input"]["optional"][field][0] =
+                json!(if field == "denoise" { "INT" } else { "FLOAT" });
+            assert_eq!(tuning(&info), false, "wrong type: {field}");
+            info["DaSiWaH3HiResRegenerate"] = schema.clone();
+            let spec = info["DaSiWaH3HiResRegenerate"]["input"]["optional"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field)
+                .unwrap();
+            assert_eq!(tuning(&info), false, "missing: {field}");
+            info["DaSiWaH3HiResRegenerate"]["input"]["required"][field] = spec;
+            assert_eq!(
+                tuning(&info),
+                false,
+                "required instead of optional: {field}"
+            );
+        }
+        for malformed in [json!({}), json!({"input":{"optional":[]}})] {
+            info["DaSiWaH3HiResRegenerate"] = malformed;
+            assert_eq!(tuning(&info), false);
+        }
+        info["DaSiWaH3HiResRegenerate"] = schema;
+        info["DaSiWaH3HiResRegenerate"]["input"]["optional"]["denoise"][1]["min"] = json!(0);
+        info["DaSiWaH3HiResRegenerate"]["input"]["optional"]["denoise"][1]["max"] = json!(1);
+        assert_eq!(tuning(&info), true);
     }
 
     #[test]
@@ -1335,7 +1421,7 @@ mod tests {
                 "allowlist":{
                     "nodes":["CheckpointLoaderSimple","CLIPTextEncode","EmptyLatentImage","KSampler","VAEDecode","SaveImage","LoraLoader","CLIPVisionLoader","CLIPVisionEncode","unCLIPConditioning"],
                     "checkpoints":["sd/model.safetensors"], "loras":["style/detail.safetensors"], "images":[], "videos":[], "samplers":["euler","dpmpp_2m"], "schedulers":["normal","karras"],
-                    "diffusionModels":[], "ggufDiffusionModels":[], "ggufTextEncoders":[], "ggufClipTypes":[], "ggufDualTextEncoders":[], "ggufDualClipTypes":[], "textEncoders":[], "dualTextEncoders":[], "dualClipTypes":[], "clipTypes":[], "vaes":[], "visionModels":["clip-vit.safetensors"], "attention":[], "sage":[], "compile":[], "upscaleModels":[], "latentUpscaleModels":[], "h3LatentUpscaleModels":[], "frameInterpolationModels":[], "rtxUpscaleModes":[], "audioEncoders":[], "videoPreviews":{}, "deropeKeepBackground":false, "h3LatentSharpness":false, "h3RegenerateOriginal":false
+                    "diffusionModels":[], "ggufDiffusionModels":[], "ggufTextEncoders":[], "ggufClipTypes":[], "ggufDualTextEncoders":[], "ggufDualClipTypes":[], "textEncoders":[], "dualTextEncoders":[], "dualClipTypes":[], "clipTypes":[], "vaes":[], "visionModels":["clip-vit.safetensors"], "attention":[], "sage":[], "compile":[], "upscaleModels":[], "latentUpscaleModels":[], "h3LatentUpscaleModels":[], "frameInterpolationModels":[], "rtxUpscaleModes":[], "audioEncoders":[], "videoPreviews":{}, "deropeKeepBackground":false, "h3LatentSharpness":false, "h3RegenerateOriginal":false, "h3RegenerateTuning":false
                 }, "missingNodes":[], "generationReady":false
             })
         );

@@ -82,8 +82,8 @@ export const h3LatentChanged=(a:H3LatentAdvanced|undefined):H3LatentAdvanced|und
 export interface H3LatentUpscale { model:string; scale:number; steps:number; denoise:number; advanced?:H3LatentAdvanced; regenerate?:never }
 export type H3RegenerateTarget='1080P'|'2K'|'4K'|'Original';
 export const h3RegenerateTargets:readonly H3RegenerateTarget[]=['1080P','2K','4K','Original'];
-/** `DaSiWaH3HiResRegenerate` (H3 video only): its pinned recipe replaces scale/steps/denoise/advanced. */
-export interface H3RegenerateUpscale { model:string; regenerate:{lora:string;target:H3RegenerateTarget;spatialTiling?:boolean;model?:string}; scale?:never; steps?:never; denoise?:never; advanced?:never }
+/** Hi-Res preset with independent LoRA strength and optional shared refinement/2D-tier controls; absent tuning retains the full preset. */
+export interface H3RegenerateUpscale { model:string; regenerate:{lora:string;target:H3RegenerateTarget;strength?:number;denoise?:number;sharpness?:number;spatialTiling?:boolean;model?:string}; scale?:never; steps?:never; denoise?:never; advanced?:never }
 export interface LtxLatentUpscale { model:string; scale:2; regenerate?:never }
 /** Matches Python round, not JavaScript's half-up rounding. */
 const roundHalfEven=(x:number)=>{const lo=Math.floor(x);return x-lo===0.5?(lo%2===0?lo:lo+1):Math.round(x);};

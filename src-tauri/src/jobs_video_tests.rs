@@ -2914,6 +2914,73 @@ fn regenerate_intent() -> Value {
 }
 
 #[test]
+fn h3_regenerate_strength_changes_only_the_refine_lora_input() {
+    for target in REGENERATE_TARGETS {
+        for own_model in [false, true] {
+            let mut i = regenerate_intent();
+            i["latentUpscale"]["regenerate"]["target"] = json!(target);
+            if target == "Original" {
+                i["latentUpscale"]["model"] = json!("interpolation");
+            }
+            if own_model {
+                i["latentUpscale"]["regenerate"]["model"] =
+                    json!("MiniMaxH3/minimax_h3_fl2va_pruned_bf16.safetensors");
+            }
+            let baseline = compile(&i).unwrap();
+            for strength in [
+                json!(0),
+                json!(0.0),
+                json!(0.65),
+                json!(1.35),
+                json!(2.0),
+                json!(2),
+            ] {
+                i["latentUpscale"]["regenerate"]["strength"] = strength.clone();
+                let mut expected = baseline.clone();
+                expected["U"]["inputs"]["strength"] = strength;
+                assert_eq!(
+                    compile(&i).unwrap(),
+                    expected,
+                    "{target} own_model={own_model}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn h3_regenerate_omitted_strength_keeps_the_default_graph() {
+    for target in REGENERATE_TARGETS {
+        let mut i = regenerate_intent();
+        i["latentUpscale"]["regenerate"]["target"] = json!(target);
+        if target == "Original" {
+            i["latentUpscale"]["model"] = json!("interpolation");
+        }
+        let legacy = compile(&i).unwrap();
+        assert_eq!(legacy["U"]["inputs"]["strength"], json!(1.0));
+        i["latentUpscale"]["regenerate"]["strength"] = json!(1.0);
+        assert_eq!(compile(&i).unwrap(), legacy, "{target}");
+    }
+}
+
+#[test]
+fn h3_regenerate_forwards_shared_tuning_only_when_present() {
+    let mut i = regenerate_intent();
+    let baseline = compile(&i).unwrap();
+    assert!(baseline["U"]["inputs"].get("denoise").is_none() && baseline["U"]["inputs"].get("upscale_sharpness").is_none());
+    i["latentUpscale"]["regenerate"]["denoise"] = json!(0.35);
+    i["latentUpscale"]["regenerate"]["sharpness"] = json!(4);
+    let g = compile(&i).unwrap();
+    assert_eq!(g["U"]["inputs"]["denoise"], json!(0.35));
+    assert_eq!(g["U"]["inputs"]["upscale_sharpness"], json!(4));
+    for (key, value) in [("denoise", json!(-0.01)), ("denoise", json!(1.01)), ("denoise", json!("0.5")), ("sharpness", json!(0)), ("sharpness", json!(7)), ("sharpness", json!(2.5)), ("sharpness", json!("4"))] {
+        let mut b = i.clone();
+        b["latentUpscale"]["regenerate"][key] = value.clone();
+        assert!(compile(&b).unwrap_err().contains("Invalid latentUpscale"), "{key}:{value}");
+    }
+}
+
+#[test]
 fn h3_regenerate_original_preserves_canvas_without_learned_upscaler() {
     let mut i = regenerate_intent();
     i["height"] = json!(992);
@@ -3055,7 +3122,15 @@ fn h3_regenerate_rejects_mixed_or_invalid_settings() {
         ("lora", json!("regen.ckpt")),
         ("model", json!("MiniMaxH3/model.gguf")),
         ("spatialTiling", json!("yes")),
-        ("strength", json!(0.5)),
+        ("strength", Value::Null),
+        ("strength", json!("0.5")),
+        ("strength", json!(false)),
+        ("strength", json!(true)),
+        ("strength", json!([])),
+        ("strength", json!({})),
+        ("strength", json!(-0.000001)),
+        ("strength", json!(2.000001)),
+        ("unknown", json!(0.5)),
     ] {
         let mut i = regenerate_intent();
         i["latentUpscale"]["regenerate"][key] = value;
