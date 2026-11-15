@@ -70,7 +70,7 @@ const H3_INPUT_SCALING: [&str; 7] = [
     "Long side with divisible crop",
 ];
 /// Every class the three graphs can emit; prepare() checks each against object_info.
-pub(crate) const VIDEO_NODES: [&str; 40] = [
+pub(crate) const VIDEO_NODES: [&str; 41] = [
     "ModelPreviewOverrideKJ",
     "DaSiWaH3TiledUpscale",
     "DaSiWaH3HiResRegenerate",
@@ -107,6 +107,7 @@ pub(crate) const VIDEO_NODES: [&str; 40] = [
     "MiniMaxH3Director",
     "MiniMaxH3DirectorGuide",
     "HyperFlowGGUFLoader",
+    "HyperFlowLoader",
     "HyperFlowSigmas",
     "MiniMaxH3SigmaShift",
     "MiniMaxChunkFeedForward",
@@ -1201,16 +1202,8 @@ pub(crate) fn validate(i: &Value) -> Result<&str, String> {
             return Err("MODEL_FORMAT_UNSUPPORTED: GGUF VAE is unsupported".into());
         }
     }
-    if family == "minimax-h3-hyperflow"
-        && !crate::jobs::is_gguf(i["model"].as_str().unwrap_or_default())
-    {
-        // The hub's INT8 convrot HyperFlow partition ships as diffusers shards for the Python
-        // runtime; ComfyUI only ever sees the GGUF checkpoints.
-        return Err(
-            "MODEL_FORMAT_UNSUPPORTED: HyperFlow Flash checkpoints load in ComfyUI as GGUF only"
-                .into(),
-        );
-    }
+    // HyperFlow safetensors (INT8 convrot singles, bf16 conversion) are accepted:
+    // unet_loader routes them to the pack's HyperFlowLoader.
     // GGUF ref2va supports images only; mixed references require upstream's Python runtime.
     if family == "minimax-h3-hyperflow"
         && i["h3"]["media"]
@@ -2109,10 +2102,14 @@ fn strs<'a>(v: &[&'a Value]) -> Vec<&'a str> {
 }
 
 /// GGUF files load through the family's declared GGUF node (HyperFlow GGUFs need their own
-/// loader; they carry no `general.architecture`), which takes no weight_dtype.
+/// loader; they carry no `general.architecture`), which takes no weight_dtype; families with a
+/// dedicated safetensors loader (HyperFlow) get theirs the same way.
 pub(crate) fn unet_loader(family: &str, name: &Value) -> Value {
+    let vr = crate::model_families::video_recipe(family);
     if crate::jobs::is_gguf(name.as_str().unwrap_or_default()) {
-        json!({"class_type":crate::model_families::video_recipe(family).gguf_loader,"inputs":{"unet_name":name}})
+        json!({"class_type":vr.gguf_loader,"inputs":{"unet_name":name}})
+    } else if vr.safetensors_loader != "UNETLoader" {
+        json!({"class_type":vr.safetensors_loader,"inputs":{"unet_name":name}})
     } else {
         json!({"class_type":"UNETLoader","inputs":{"unet_name":name,"weight_dtype":"default"}})
     }

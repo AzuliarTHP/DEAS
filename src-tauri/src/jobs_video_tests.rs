@@ -1321,7 +1321,13 @@ fn hyperflow_flash_uses_its_own_loader_and_saved_schedule() {
     assert!(compile(&b).unwrap_err().contains("runs euler only"));
     let mut safetensors = i.clone();
     safetensors["model"] = json!("MiniMaxH3/hyperflow_int8_convrot.safetensors");
-    assert!(compile(&safetensors).unwrap_err().contains("GGUF only"));
+    let graph = compile(&safetensors).unwrap();
+    assert_eq!(graph["1"]["class_type"], "HyperFlowLoader");
+    assert!(graph["1"]["inputs"].get("weight_dtype").is_none());
+    assert_eq!(graph["Z"]["class_type"], "HyperFlowSigmas");
+    let required = requirements(&safetensors);
+    assert!(required.iter().any(|(key, names)| *key == "diffusionModels"
+        && names.contains(&"MiniMaxH3/hyperflow_int8_convrot.safetensors")));
     let required = requirements(&i);
     assert!(required
         .iter()

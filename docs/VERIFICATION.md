@@ -1,5 +1,29 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## PR #33 integration with current upstream — 2026-11-16
+
+- Combined the expanded Library/Studio changes with upstream main
+  `454a1f083b8e9ab0a2b614470e1f9607ab2c7da3`. Preserved
+  upstream HyperFlow loader/pin, media CSP, release notes and provenance changes.
+- `npm test`: 157 core passed / 1 skipped; all 1,988 UI tests passed in 107 files.
+  Production frontend build and rustfmt check passed. Native library rerun passed
+  904 tests / 69 ignored. Clippy passed with warnings denied except the existing
+  Rust 1.100 `chunks_exact_to_as_chunks` category; upstream resolved the prior
+  H3 `collapsible_if` diagnostic.
+- The first parallel native run hit the existing workbench global-log-count
+  assertion (3 records instead of 2). Its isolated rerun and the complete native
+  suite both passed; no unrelated logging code was changed to hide this race.
+- Shared Chromium viewport gate passed 467 checks; the dedicated synthetic gallery,
+  nested LoRA dialogs, compact controls and Notes fixture also passed. Windows
+  output-publication fixtures passed all 13 tests, and developer script-path tests
+  passed all four with UTF-8 enabled.
+- Forge-data updater tests could not complete on this Windows environment because
+  their required zstd CLI is absent. These updater files were not changed by this
+  PR. Linux/WebKitGTK and native WebView interaction remain separate acceptance;
+  no real model scan, provider fetch, user-media deletion or generation was run.
+- Publication includes source, tests and documentation only. Runtime caches,
+  executables, media/models, credentials and personal notes/sets are excluded.
+
 ## Local advisory LoRA families and compact controls — 2026-11-16
 
 - Final `npm test` passed 157 core tests / 1 skipped and all 1,988 UI tests across
@@ -161,6 +185,24 @@ Maintainer acceptance remains for Linux/WebKit, actual native WebView interactio
 external-drive behavior, real-library refresh time and very large View all memory
 use. Browsing snapshots remain advisory; execution validates selected files live.
 
+## Release 0.2.36 BETA (published)
+
+Published 2026-11-15 at source commit `1b553790bb3aced0176adfb63021658a881a7a7e` (source tree `eefdb1de87207b755e7d655c95961297f54da5fe`), tag `v0.2.36` (gitea + github). GitHub Actions Verify/Release workflows are paused, so this is the disclosed local unsigned fallback build (rustc 1.97.0, node v26.13.1, CachyOS host): Linux binary via `build-linux.sh --release`, Windows exe via the script's `cargo xwin build --release --target x86_64-pc-windows-msvc` step (`LNK4099` missing-CRT-PDB linker warning only). NSIS/deb/AppImage not produced (no Windows bundler / patchelf on the host) — the four-asset set is the release. The Linux binary's direct glibc floor is 2.39 (CachyOS build host); `ldd` reports zero "not found"; both binaries embed the current frontend chunk `index-CJZp4Nhw.js`.
+
+Gates on this exact tree: `npm run typecheck` clean; `npm test` 1946/1947 with one adjudicated load flake (`Workbench.h3Continuity.ref2v.test.tsx` IPC fixture timed out in the full run, 6/6 green re-run in isolation; file untouched by the release batch, different mechanism than the change); `cargo fmt --check` clean (after `style(lint)` commit `214090c` fixing sibling rustfmt drift + clippy 1.97 `collapsible_if`); `cargo clippy --locked --release --lib --bins -- -D warnings` clean; `cargo test --locked -- --test-threads=1` 998+3+1 passed, 0 failed; `cargo xwin check --locked --target x86_64-pc-windows-msvc --all-targets` clean; `cargo xwin clippy ... --all-targets -- -D warnings` clean.
+
+Windows CSP preview fix (#34) proven natively on SCARYMACHINE (Edge/WebView2 engine): the KJ companion's fragmented MP4 (`frag_keyframe+empty_moov+default_base_moof`, libx264 ultrafast/zerolatency, 120f@8fps/512px) fails `MEDIA_ERR_SRC_NOT_SUPPORTED` (code 4) under the old `media-src` CSP and loads clean (`readyState 4`, duration 15s, no error) under the fixed CSP. Cross-compiled `deas.exe` is not Windows-runtime-accepted; the reporter's first 0.2.36 launch is the acceptance test.
+
+Asset SHA-256 (fresh `sha256sum` over the re-downloaded GitHub release set, verified with `sha256sum -c SHA256SUMS`):
+
+```
+1171239e17d2ce93f02a3377b7ec37f88897f5c95ff7e5c9ff3e874a997f01eb  deas-linux-amd64
+0987d793a3db7de0c542847753e529a1204760b13e6f6e7b12c2b46513335630  deas.exe
+3f4360b323793ed1d5d21662ef982344f82fdc8949930080975dc760bc54303b  BUILD-MANIFEST.json
+0ad1f84ce5f8af31e89ee0719cf648055b65b66efd49637e5d7ce230689d7aa9  SHA256SUMS
+```
+
+Canonical assets staged at `artifacts/releases/v0.2.36/`; loose launcher `artifacts/deas-linux-amd64` is the same build run's binary (hash-identical, `1171239e17d2ce93…`).
 
 ## H3 Join continuation: native Linux owned backend, audio seams and RAM reclaim — 2026-11-15
 

@@ -89,7 +89,7 @@ import type {BeginnerPage} from '../beginner/Experience';
 import { NativeVideo, nativeVideo } from './NativeVideo';
 import { TemporalPreview } from './TemporalPreview';
 /** Data-only family plugin (also read natively for header detection): loader, runnable pipelines, encoder/VAE file patterns, starting settings. */
-interface Family extends ComponentFamily { id:string; name:string; multiple?:number; temporalLatent?:boolean; imagePrompting?:'revision'|'qwen-image-2.1'|'krea-2'|'moss-image'|'minimax-h3'; loader:string; pipelines:string[]; clipType?:string; /** Two-encoder families (Flux.1, SD3): slot 2 is picked by its filename pattern. */ clip?:{loader:'single'|'dual';encoders?:string[]}; textEncoders?:string[]; textProjections?:string[]; vaes?:string[]; audioVaes?:string[]; defaults?:{width:number;height:number;steps:number;cfg:number;sampler:string;scheduler:string}; sigmas?:number[]; loraFamily?:string; /** Video families: native fps/seconds, fixed fps (H3 is 24), Wan's high→low file-name pair. */ video?:VideoRoles&{fps:number;seconds:number;fixedFps?:boolean;lowModel?:[string,string]}; /** Per-variant recipe points (HyperFlow Flash). */ ggufLoader?:string; videoSigmaNode?:string; fixedSampler?:string; stepChoices?:number[]; defaultsNote?:string }
+interface Family extends ComponentFamily { id:string; name:string; multiple?:number; temporalLatent?:boolean; imagePrompting?:'revision'|'qwen-image-2.1'|'krea-2'|'moss-image'|'minimax-h3'; loader:string; pipelines:string[]; clipType?:string; /** Two-encoder families (Flux.1, SD3): slot 2 is picked by its filename pattern. */ clip?:{loader:'single'|'dual';encoders?:string[]}; textEncoders?:string[]; textProjections?:string[]; vaes?:string[]; audioVaes?:string[]; defaults?:{width:number;height:number;steps:number;cfg:number;sampler:string;scheduler:string}; sigmas?:number[]; loraFamily?:string; /** Video families: native fps/seconds, fixed fps (H3 is 24), Wan's high→low file-name pair. */ video?:VideoRoles&{fps:number;seconds:number;fixedFps?:boolean;lowModel?:[string,string]}; /** Per-variant recipe points (HyperFlow Flash). */ ggufLoader?:string; safetensorsLoader?:string; videoSigmaNode?:string; fixedSampler?:string; stepChoices?:number[]; defaultsNote?:string }
 /** Remembered video controls; family rows read only their own keys. */
 interface VideoPref { seconds:number; fps:number; passes:1|2|3; upscaler:string; shiftHigh:number; shiftLow:number; refinerStep:number; shiftVideo:number; shiftAudio:number; audioVae:string; textProjection:string }
 interface LatentPref {enabled:boolean;model:string;scale:number;steps:number;denoise:number;advanced?:H3LatentAdvanced}
@@ -462,8 +462,6 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  if(f.loader==='diffusion'&&m.category==='checkpoints'&&!aceMusicProfile(f.id))return 'studio.run.family.diffusionFolder';
  if(f.loader==='checkpoint'&&m.category!=='checkpoints')return 'studio.run.family.checkpointFolder';
  if(!f.pipelines.includes(p))return 'studio.run.pipe.noRecipe';
- // HyperFlow Flash loads in ComfyUI through the GGUF pack node only; the INT8 convrot partition is Python-runtime.
- if(f.id==='minimax-h3-hyperflow'&&!isGguf(m.name))return 'modelMeta.format';
  // Missing companions block Run, not model selection: users must be able to open their pickers.
  if(videoPipelines.includes(p)&&f.video?.lowModel&&!lowOf(m,f))return 'studio.run.family.noEncoder';
  return '';
@@ -719,7 +717,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    const encoders=quantizedEncoder?(dual?choices.ggufDualTextEncoders:choices.ggufTextEncoders):choices.textEncoders;
    const types=quantizedEncoder?(dual?choices.ggufDualClipTypes:choices.ggufClipTypes):choices.clipTypes;
    for(const name of [checkpoint,lowModel].filter(Boolean)){
-    const node=isGguf(name)?(family?.ggufLoader??'UnetLoaderGGUF'):'UNETLoader';
+    const node=isGguf(name)?(family?.ggufLoader??'UnetLoaderGGUF'):(family?.safetensorsLoader??'UNETLoader');
     if(!choices.nodes.includes(node))unavailable.push(node);
     if(family?.videoSigmaNode&&!choices.nodes.includes(family.videoSigmaNode))unavailable.push(family.videoSigmaNode);
     if(!(isGguf(name)?choices.ggufDiffusionModels:choices.diffusionModels)?.includes(name))unavailable.push(name);
@@ -730,7 +728,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    if(family?.clipType&&!types?.includes(family.clipType))unavailable.push(`${loader}: ${family.clipType}`);
   }
  }
- const selectedModelCheck=checkModel(model??savedModel,{family:family?.id,...(choices&&model?{available:model.category==='checkpoints'?choices.checkpoints:isGguf(model.name)?choices.ggufDiffusionModels??[]:choices.diffusionModels??[],loaders:choices.nodes,requiredLoaders:[model.category==='checkpoints'?'CheckpointLoaderSimple':isGguf(model.name)?family?.ggufLoader??'UnetLoaderGGUF':'UNETLoader']}: {})});
+ const selectedModelCheck=checkModel(model??savedModel,{family:family?.id,...(choices&&model?{available:model.category==='checkpoints'?choices.checkpoints:isGguf(model.name)?choices.ggufDiffusionModels??[]:choices.diffusionModels??[],loaders:choices.nodes,requiredLoaders:[model.category==='checkpoints'?'CheckpointLoaderSimple':isGguf(model.name)?family?.ggufLoader??'UnetLoaderGGUF':family?.safetensorsLoader??'UNETLoader']}: {})});
  const companionChecks=split?[
   {name:textEncoder,slot:'textEncoders' as const,categories:['text_encoders','clip']},
   ...(dualClip?[{name:textEncoder2,slot:'textEncoders' as const,categories:['text_encoders','clip']}]:[]),

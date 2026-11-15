@@ -71,6 +71,9 @@ struct Family {
     /// GGUF loader node a variant needs instead of `UnetLoaderGGUF` (HyperFlow GGUFs carry no `general.architecture`).
     #[serde(default, rename = "ggufLoader")]
     gguf_loader: Option<String>,
+    /// Safetensors loader node a variant needs instead of `UNETLoader` (HyperFlow safetensors carry the two-time tensors the stock loader ignores).
+    #[serde(default, rename = "safetensorsLoader")]
+    safetensors_loader: Option<String>,
     /// Sigma node a video recipe emits instead of the sigma-shift + `BasicScheduler` chain.
     #[serde(default, rename = "videoSigmaNode")]
     video_sigma_node: Option<String>,
@@ -141,6 +144,7 @@ fn recipe_of(f: &'static Family) -> ImageRecipe {
 /// the sampler the distilled checkpoint must run with and its allowed step counts.
 pub(crate) struct VideoRecipe {
     pub(crate) gguf_loader: &'static str,
+    pub(crate) safetensors_loader: &'static str,
     pub(crate) sigma_node: Option<&'static str>,
     pub(crate) fixed_sampler: Option<&'static str>,
     pub(crate) step_choices: &'static [u64],
@@ -152,6 +156,9 @@ pub(crate) fn video_recipe(id: &str) -> VideoRecipe {
         gguf_loader: family
             .and_then(|f| f.gguf_loader.as_deref())
             .unwrap_or("UnetLoaderGGUF"),
+        safetensors_loader: family
+            .and_then(|f| f.safetensors_loader.as_deref())
+            .unwrap_or("UNETLoader"),
         sigma_node: family.and_then(|f| f.video_sigma_node.as_deref()),
         fixed_sampler: family.and_then(|f| f.fixed_sampler.as_deref()),
         step_choices: family.map(|f| f.step_choices.as_slice()).unwrap_or(&[]),
@@ -1517,6 +1524,7 @@ mod tests {
     fn hyperflow_video_recipe_points_and_image_guard() {
         let vr = video_recipe("minimax-h3-hyperflow");
         assert_eq!(vr.gguf_loader, "HyperFlowGGUFLoader");
+        assert_eq!(vr.safetensors_loader, "HyperFlowLoader");
         assert_eq!(vr.sigma_node, Some("HyperFlowSigmas"));
         assert_eq!(vr.fixed_sampler, Some("euler"));
         assert_eq!(vr.step_choices, [4, 6, 8]);
