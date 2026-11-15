@@ -1,4 +1,6 @@
 {
+  "studio.run.cont.join.smoothAudioSeams": "Audioübergänge glätten",
+  "studio.run.cont.join.smoothAudioSeamsHint": "5 ms Aus-/Einblenden nur an internen Schnittstellen; keine Überlappung oder Daueränderung. Erfordert DaSiWa-Paket 0.5.53 oder neuer.",
   "modelCheck.status.suitable": "Für diesen Kontext geeignet",
   "modelCheck.status.blocked": "Gesperrt",
   "modelCheck.status.unknown": "Kompatibilität unbekannt",

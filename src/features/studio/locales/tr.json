@@ -1,4 +1,6 @@
 {
+  "studio.run.cont.join.smoothAudioSeams": "Ses birleşimlerini yumuşat",
+  "studio.run.cont.join.smoothAudioSeamsHint": "Yalnızca iç sınırlarda 5 ms ses azaltma/artırma; örtüşme veya süre değişikliği yok. DaSiWa paketi 0.5.53 veya üzerini gerektirir.",
   "modelCheck.status.suitable": "Bu bağlam için uygun",
   "modelCheck.status.blocked": "Engellendi",
   "modelCheck.status.unknown": "Uyumluluk bilinmiyor",

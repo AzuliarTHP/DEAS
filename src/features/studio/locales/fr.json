@@ -1,4 +1,6 @@
 {
+  "studio.run.cont.join.smoothAudioSeams": "Lisser les raccords audio",
+  "studio.run.cont.join.smoothAudioSeamsHint": "Fondu de sortie/entrée de 5 ms aux raccords internes uniquement ; sans chevauchement ni changement de durée. Nécessite le pack DaSiWa 0.5.53 ou ultérieur.",
   "modelCheck.status.suitable": "Adapté à ce contexte",
   "modelCheck.status.blocked": "Bloqué",
   "modelCheck.status.unknown": "Compatibilité inconnue",

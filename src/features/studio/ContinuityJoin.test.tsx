@@ -66,7 +66,7 @@ test('copy option rides the preflight body and the intent; failing preflight kee
   const { container } = mount();
   await settled();
   fireEvent.click([...container.querySelectorAll('[data-cont-join-chain]')][1]);
-  const copy = screen.getByRole('checkbox') as HTMLInputElement;
+  const copy = container.querySelector('[data-cont-join-copy]') as HTMLInputElement;
   fireEvent.click(copy);
   let preflightBody = '';
   globalThis.fetch = vi.fn(async (_u: unknown, init: { body: string }) => { preflightBody = init.body; return { json: async () => ({ ok: false, issues: ['Incomplete export coverage; select the missing prefix/segments.'] }) }; }) as never;
@@ -126,6 +126,60 @@ test('files mode: a blocked pick reports without adding a row', async () => {
   await settled();
   expect(uploadVideoPostSource).not.toHaveBeenCalled();
   expect(screen.getByRole('alert').textContent).toContain('blocking issues');
+});
+
+test.each(['segments', 'files'] as const)('audio smoothing is default OFF, preflight-gated and final-join-only in %s mode', async mode => {
+  const view = mode === 'files' ? await transitionFiles(2) : mount();
+  await settled();
+  if (mode === 'segments') fireEvent.click(view.container.querySelector('[data-cont-join-chain="c2"]')!);
+  const smooth = screen.getByRole('checkbox', {name:'Smooth audio seams'}) as HTMLInputElement;
+  expect(smooth.checked).toBe(false);
+  expect(smooth.name).toBe('smoothAudioSeams');
+  expect(smooth.matches('[data-cont-join-smooth-audio]')).toBe(true);
+  fireEvent.click(screen.getByRole('button', {name:'Check preflight'})); await settled();
+  expect(JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string).audio_policy).toBe('preserve');
+  fireEvent.click(smooth);
+  expect(view.container.querySelector('[data-cont-join-preflight-result]')).toBeNull();
+  expect(screen.getByRole('button', {name:'Join now'})).toHaveProperty('disabled',true);
+  fireEvent.click(screen.getByRole('button', {name:'Check preflight'})); await settled();
+  expect(JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string).audio_policy).toBe('smooth-seams');
+  fireEvent.click(screen.getByRole('button', {name:'Join now'})); await settled(); await settled();
+  const calls = vi.mocked(runWorkbenchJob).mock.calls;
+  expect(calls.at(-1)![1]).toMatchObject({recipeId:'h3-join',h3:{join:{smoothAudioSeams:true}}});
+  for (const call of calls.slice(0,-1)) {
+    expect(call[1].recipeId).toBe('video-generation');
+    expect(JSON.stringify(call[1])).not.toContain('smoothAudioSeams');
+  }
+  expect(view.container.querySelector('[data-cont-join-result]')).not.toBeNull();
+  fireEvent.click(smooth);
+  expect(view.container.querySelector('[data-cont-join-result]')).toBeNull();
+  expect(view.container.querySelector('[data-cont-join-preflight-result]')).toBeNull();
+});
+
+test('smoothing toggle invalidates in-flight preflight; older packs fail closed with their issue visible', async () => {
+  const view = mount(); await settled();
+  fireEvent.click(view.container.querySelector('[data-cont-join-chain="c2"]')!);
+  let reply!:(value:Response)=>void;
+  vi.mocked(fetch).mockImplementationOnce(()=>new Promise(resolve=>{reply=resolve;}));
+  fireEvent.click(screen.getByRole('button',{name:'Check preflight'}));
+  fireEvent.click(screen.getByRole('checkbox',{name:'Smooth audio seams'}));
+  await act(async()=>reply({json:async()=>({ok:true,seconds:10,mode:'copy'})} as Response));
+  expect(view.container.querySelector('[data-cont-join-preflight-result]')).toBeNull();
+  vi.mocked(fetch).mockResolvedValueOnce({json:async()=>({ok:false,issues:['Unsupported audio policy: smooth-seams']})} as Response);
+  fireEvent.click(screen.getByRole('button',{name:'Check preflight'})); await settled();
+  expect(screen.getByRole('alert').textContent).toContain('Unsupported audio policy: smooth-seams');
+  expect(screen.getByRole('button',{name:'Join now'})).toHaveProperty('disabled',true);
+  expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
+test('search reveals smoothing without opting in and running locks it', async () => {
+  const view = mount(); await settled();
+  act(()=>{expect(revealTarget('[data-cont-join-smooth-audio]').state).toBe('revealed');});
+  const smooth = screen.getByRole('checkbox',{name:'Smooth audio seams'});
+  expect(smooth).toHaveProperty('checked',false);
+  expect(document.activeElement).toBe(smooth);
+  view.unmount(); mount(true); await settled();
+  expect(screen.getByRole('checkbox',{name:'Smooth audio seams'})).toHaveProperty('disabled',true);
 });
 
 const h3Draft = () => ({recipeId:'video-generation',version:1,family:'minimax-h3',positivePrompt:'captured',negativePrompt:'negative',model:'H3.safetensors',textEncoder:'clip',vae:'vae',seed:42,width:768,height:512,frames:124,frameRate:24,steps:12,cfg:3,sampler:'euler',scheduler:'simple',outputPrefix:'test',output:{},h3:{mode:'T2VA',audioVae:'av',shiftVideo:3,shiftAudio:2,references:[]}} as unknown as VideoIntentV1);

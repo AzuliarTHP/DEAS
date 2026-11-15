@@ -111,8 +111,8 @@ export const isVideoIntent=(i:{recipeId:string}):i is VideoIntentV1=>i.recipeId=
 /** Director parity Join clips: model-free DaSiWaH3ClipAssemble prompt (native `jobs_video::join`); trims are seconds. */
 export interface H3Transition { files:readonly {filename:string;trimStart?:number|null;trimEnd?:number|null}[];contextFrames:number;transitionFrames:number;prompt?:string }
 export type H3JoinIntentV1={readonly recipeId:'h3-join';readonly version:1;readonly h3:{readonly join:
- |{readonly kind:'segments';readonly session:string;readonly chain:readonly string[];readonly copyVideo?:boolean;readonly filenamePrefix?:string}
- |{readonly kind:'files';readonly files:readonly {readonly filename:string;readonly trimStart?:number|null;readonly trimEnd?:number|null}[];readonly copyVideo?:boolean;readonly filenamePrefix?:string}}};
+ |{readonly kind:'segments';readonly session:string;readonly chain:readonly string[];readonly copyVideo?:boolean;readonly smoothAudioSeams?:boolean;readonly filenamePrefix?:string}
+ |{readonly kind:'files';readonly files:readonly {readonly filename:string;readonly trimStart?:number|null;readonly trimEnd?:number|null}[];readonly copyVideo?:boolean;readonly smoothAudioSeams?:boolean;readonly filenamePrefix?:string}}};
 export const isH3JoinIntent=(i:{recipeId:string}):i is H3JoinIntentV1=>i.recipeId==='h3-join';
 /** TVE tab: enhance an uploaded source video with the same chain (native `compile_enhance`); the source stays the baseline. */
 export interface VideoEnhanceIntentV1 { readonly audioEnhance?:AudioEnhanceIntent; readonly recipeId:'video-enhance'; readonly version:1; readonly sourceVideo:string; readonly frameRate:number; readonly seed:number; readonly videoPost:VideoPost; readonly output?:Omit<VideoOutput,'imageFormat'|'imageCompression'>; readonly outputPrefix?:string }

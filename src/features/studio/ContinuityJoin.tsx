@@ -24,6 +24,8 @@ export function ContinuityJoin({ endpoint, session, running, disabled, captureTr
   const [failed, setFailed] = useState(false);
   const [chain, setChain] = useState<string[] | null>(null);
   const [copy, setCopy] = useState(false);
+  const [smoothAudioSeams, setSmoothAudioSeams] = useState(false);
+  const preflightRequest = useRef(0);
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -106,14 +108,15 @@ export function ContinuityJoin({ endpoint, session, running, disabled, captureTr
   const ready = mode === 'segments' ? !!chain : files.length > 0;
   const runPreflight = async () => {
     const id = request.current;
+    const preflightId = ++preflightRequest.current;
     setPreflight(null); setError(null);
     try {
-      const reply = await fetch(`${endpoint}/df_h3_continuity/assembly/preflight`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, rows: rows(), repair_transitions: false, audio_policy: 'preserve', copy_video: copy }) });
+      const reply = await fetch(`${endpoint}/df_h3_continuity/assembly/preflight`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: 1, rows: rows(), repair_transitions: false, audio_policy: smoothAudioSeams ? 'smooth-seams' : 'preserve', copy_video: copy }) });
       const value = await reply.json();
-      if (request.current !== id) return;
+      if (request.current !== id || preflightRequest.current !== preflightId) return;
       if (value.ok !== true) logNotice('preflight-blocked');
       setPreflight({ ok: value.ok === true, issues: Array.isArray(value.issues) ? value.issues.map(String) : [], seconds: Number(value.seconds), mode: String(value.mode ?? '') });
-    } catch { if (request.current === id) { logNotice('preflight-failed'); setError(t('studio.run.cont.join.preflightFailed')); } }
+    } catch { if (request.current === id && preflightRequest.current === preflightId) { logNotice('preflight-failed'); setError(t('studio.run.cont.join.preflightFailed')); } }
   };
   const run = async () => {
     if (!endpoint || !ready || sequence.current || (useTransitions && (!validTransition || files.length < 2))) return;
@@ -181,7 +184,7 @@ export function ContinuityJoin({ endpoint, session, running, disabled, captureTr
         ? { kind:'segments' as const, session, chain:chain!, ...(copy?{copyVideo:true}:{}) }
         : { kind:'files' as const, files:draft?assembled:selected, ...(copy?{copyVideo:true}:{}) };
       setProgress(t('studio.run.cont.join.run'));
-      const done = await submit({recipeId:'h3-join',version:1,h3:{join}});
+      const done = await submit({recipeId:'h3-join',version:1,h3:{join:{...join,...(smoothAudioSeams?{smoothAudioSeams:true}:{})}}});
       setResult(done.outputs[0]?.filename ?? done.id);
     } catch (e) { if(e instanceof Error && 'jobState' in e && e.jobState==='cancelled' && 'jobId' in e && e.jobId===owned.job?.id) notice='cancelled'; if (!owned.cancellationFailed) logNotice(owned.cancelled ? 'cancelled' : notice, owned.job); setError(owned.cancellationFailed ? t('studio.run.cont.join.cancelFailed') : owned.cancelled ? t('studio.run.cont.join.cancelled') : `${t('studio.run.cont.join.failed')}: ${e instanceof Error ? e.message : String(e)}`); }
     finally { if (sequence.current === owned) { sequence.current = null; setBusy(false); setProgress(''); } }
@@ -223,6 +226,8 @@ export function ContinuityJoin({ endpoint, session, running, disabled, captureTr
       </fieldset>
     </fieldset>}
     <label className="wb-option-row"><input type="checkbox" data-cont-join-copy checked={copy} disabled={locked} onChange={e => { setCopy(e.target.checked); setPreflight(null); }} />{t('studio.run.cont.join.copyVideo')}</label>
+    <label className="wb-option-row"><input type="checkbox" name="smoothAudioSeams" data-cont-join-smooth-audio checked={smoothAudioSeams} disabled={locked} onChange={e => { setSmoothAudioSeams(e.target.checked); preflightRequest.current++; setPreflight(null); setResult(null); }} />{t('studio.run.cont.join.smoothAudioSeams')}</label>
+    <p className="media-help">{t('studio.run.cont.join.smoothAudioSeamsHint')}</p>
     <button type="button" className="wb-dock-action" data-cont-join-preflight disabled={locked || !ready} onClick={() => void runPreflight()}>{t('studio.run.cont.join.preflight')}</button>
     {preflight && <p data-cont-join-preflight-result role={preflight.ok ? 'status' : 'alert'}>{preflight.ok
       ? `${preflight.mode} · ${preflight.seconds.toFixed(1)} s`

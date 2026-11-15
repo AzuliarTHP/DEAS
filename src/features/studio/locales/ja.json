@@ -1,4 +1,6 @@
 {
+  "studio.run.cont.join.smoothAudioSeams": "音声の継ぎ目を滑らかにする",
+  "studio.run.cont.join.smoothAudioSeamsHint": "内部の境界のみで5 msのフェードアウト／イン。重なりや長さの変更はありません。DaSiWaパック0.5.53以降が必要です。",
   "modelCheck.status.suitable": "この用途に適合",
   "modelCheck.status.blocked": "使用不可",
   "modelCheck.status.unknown": "互換性不明",
