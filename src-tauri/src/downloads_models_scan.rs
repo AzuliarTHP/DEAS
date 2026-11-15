@@ -18,6 +18,52 @@ impl ScanScope {
     }
 }
 
+#[derive(Default)]
+struct FetchSelection {
+    paths: Option<Vec<String>>,
+    missing_only: bool,
+    index_directory: Option<PathBuf>,
+}
+
+fn selected_paths(
+    root: &Path,
+    paths: Vec<String>,
+    missing_only: bool,
+) -> Result<Vec<String>, String> {
+    if paths.len() > MAX_LISTING {
+        return Err("Too many files in Fetch selection".into());
+    }
+    let (root, _) = resolve_directory(root)?;
+    let mut seen = std::collections::HashSet::new();
+    let mut selected = vec![];
+    for path in paths {
+        if path.len() > 32768
+            || path.chars().any(char::is_control)
+            || !Path::new(&path).is_absolute()
+            || !is_model(Path::new(&path))
+        {
+            return Err("Invalid Fetch model path".into());
+        }
+        let source = Source::open(Path::new(&path))?;
+        let resolved = source.dir.path.join(&source.name);
+        if !resolved.starts_with(&root) {
+            return Err("Fetch file is outside the models folder".into());
+        }
+        model_category(Path::new(&path))?;
+        if !seen.insert(resolved) {
+            continue;
+        }
+        if missing_only
+            && read_info(Path::new(&path))
+                .is_some_and(|info| info.civitai.is_some_and(|c| c.preview.is_some()))
+        {
+            continue;
+        }
+        selected.push(path);
+    }
+    Ok(selected)
+}
+
 #[derive(Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelScanStatus {
@@ -67,12 +113,24 @@ impl ModelScanEngine {
         Ok(status.clone())
     }
 
+    #[cfg(test)]
     fn start(
         &self,
         root: String,
         scope: ScanScope,
         provider: Provider,
         header: Option<HeaderValue>,
+    ) -> Result<ModelScanStatus, String> {
+        self.start_selected(root, scope, provider, header, FetchSelection::default())
+    }
+
+    fn start_selected(
+        &self,
+        root: String,
+        scope: ScanScope,
+        provider: Provider,
+        header: Option<HeaderValue>,
+        selection: FetchSelection,
     ) -> Result<ModelScanStatus, String> {
         if !Path::new(&root).is_absolute()
             || root.len() > 32768
@@ -83,7 +141,8 @@ impl ModelScanEngine {
         let initial = self.reserve(root.clone())?;
         report(&initial, "INFO", "started");
         let worker = self.clone();
-        let task = tokio::spawn(async move { worker.run(root, scope, provider, header).await });
+        let task =
+            tokio::spawn(async move { worker.run(root, scope, provider, header, selection).await });
         let owner = self.clone();
         tokio::spawn(async move {
             let outcome = task.await;
@@ -119,11 +178,26 @@ impl ModelScanEngine {
         scope: ScanScope,
         provider: Provider,
         header: Option<HeaderValue>,
+        selection: FetchSelection,
     ) -> Result<(), String> {
-        let models = tokio::task::spawn_blocking(move || scan(Path::new(&root)))
-            .await
-            .map_err(|_| "Model listing task failed")??;
-        let models: Vec<_> = models.into_iter().filter(|m| scope.includes(m)).collect();
+        let directory = selection.index_directory;
+        let paths = tokio::task::spawn_blocking(move || {
+            if let Some(paths) = selection.paths {
+                selected_paths(Path::new(&root), paths, selection.missing_only)
+            } else {
+                scan(Path::new(&root)).map(|models| {
+                    models
+                        .into_iter()
+                        .filter(|m| scope.includes(m))
+                        .map(|m| m.path)
+                        .collect()
+                })
+            }
+        })
+        .await
+        .map_err(|_| "Model listing task failed")??;
+        let models = paths;
+        let mut updated = vec![];
         let status = self.update(|s| s.total = models.len());
         report(&status, "INFO", "listed");
         // shortcut: fixed 4 concurrent files (SHA-NI + one CivitAI lookup each); raise only
@@ -133,13 +207,15 @@ impl ModelScanEngine {
         for model in models {
             while tasks.len() >= POOL {
                 if let Some(result) = tasks.join_next().await {
-                    self.finish(result);
+                    if let Some(path) = self.finish(result) {
+                        updated.push(path);
+                    }
                 }
             }
             let provider = provider.clone();
             let header = header.clone();
-            let path = model.path.clone();
-            let status = self.update(|s| s.file = Some(model.path));
+            let path = model.clone();
+            let status = self.update(|s| s.file = Some(model));
             report(&status, "INFO", "processing");
             // Each fetch carries its own file handle and provider request; nothing is shared.
             tasks.spawn(async move {
@@ -148,21 +224,34 @@ impl ModelScanEngine {
             });
         }
         while let Some(result) = tasks.join_next().await {
-            self.finish(result);
+            if let Some(path) = self.finish(result) {
+                updated.push(path);
+            }
+        }
+        if let Some(directory) = directory {
+            let result =
+                tokio::task::spawn_blocking(move || index::update_many(&directory, &updated)).await;
+            if !matches!(result, Ok(Ok(()))) {
+                report(
+                    &self.status(),
+                    "WARN",
+                    "index update failed; explicit Refresh can recover metadata",
+                );
+            }
         }
         Ok(())
     }
 
     /// One join: names the finished file itself (the shared `file` field follows spawn order)
     /// and a task panic counts as that file's failure; counters stay the existing ones.
-    fn finish(&self, result: Result<(String, bool), tokio::task::JoinError>) {
+    fn finish(&self, result: Result<(String, bool), tokio::task::JoinError>) -> Option<PathBuf> {
         let (path, failed) = match result {
             Ok(pair) => pair,
             Err(_) => (String::new(), true),
         };
         let status = self.update(|s| {
             if !path.is_empty() {
-                s.file = Some(path);
+                s.file = Some(path.clone());
             }
             s.completed += 1;
             s.failed += usize::from(failed);
@@ -177,6 +266,7 @@ impl ModelScanEngine {
                 "processed"
             },
         );
+        (!failed && !path.is_empty()).then(|| PathBuf::from(path))
     }
 }
 
@@ -200,13 +290,17 @@ pub fn native_model_scan_status(scans: tauri::State<'_, ModelScanEngine>) -> Mod
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Preserve flat IPC fields; AppHandle and states are injected by Tauri.
 pub async fn native_model_scan_start(
+    app: tauri::AppHandle,
     scans: tauri::State<'_, ModelScanEngine>,
     engine: tauri::State<'_, DownloadEngine>,
     auth: tauri::State<'_, AuthState>,
     root: String,
     scope: ScanScope,
     authenticated: bool,
+    paths: Option<Vec<String>>,
+    missing_only: Option<bool>,
 ) -> Result<ModelScanStatus, String> {
     let result = (|| {
         if engine.status()?.state == "running" {
@@ -220,7 +314,17 @@ pub async fn native_model_scan_start(
             .ok_or("No CivitAI provider in catalog")?
             .clone();
         let header = credential(&auth, &provider, authenticated)?;
-        scans.start(root, scope, provider, header)
+        scans.start_selected(
+            root,
+            scope,
+            provider,
+            header,
+            FetchSelection {
+                paths,
+                missing_only: missing_only.unwrap_or(false),
+                index_directory: Some(index::directory(&app)?),
+            },
+        )
     })();
     if result.is_err() {
         report(
@@ -235,6 +339,53 @@ pub async fn native_model_scan_start(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fetch_selection_is_bounded_deduplicated_root_bound_and_skips_complete_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        let folder = root.join("loras");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("a.pt");
+        std::fs::write(&path, b"fixture").unwrap();
+        let file = path.to_string_lossy().into_owned();
+        assert_eq!(
+            selected_paths(&root, vec![file.clone(), file.clone()], false).unwrap(),
+            vec![file.clone()]
+        );
+        assert_eq!(
+            selected_paths(&root, vec![file.clone()], true)
+                .unwrap()
+                .len(),
+            1
+        );
+        let source = Source::open(&path).unwrap();
+        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.jpg"})).unwrap()) };
+        publish_info(&source, &None, &info, || {}).unwrap();
+        assert!(selected_paths(&root, vec![file.clone()], true)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            selected_paths(&root, vec![file.clone()], false)
+                .unwrap()
+                .len(),
+            1
+        );
+        std::fs::write(&path, b"changed fixture").unwrap();
+        assert_eq!(
+            selected_paths(&root, vec![file.clone()], true)
+                .unwrap()
+                .len(),
+            1
+        );
+        let outside = dir.path().join("outside.pt");
+        std::fs::write(&outside, b"fixture").unwrap();
+        assert!(
+            selected_paths(&root, vec![outside.to_string_lossy().into_owned()], false).is_err()
+        );
+        assert!(selected_paths(&root, vec!["relative.pt".into()], false).is_err());
+        assert!(selected_paths(&root, vec![file; MAX_LISTING + 1], false).is_err());
+    }
 
     #[test]
     fn background_scan_scopes_keep_non_loras_in_models() {

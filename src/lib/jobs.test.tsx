@@ -11,7 +11,7 @@ const intent: DiagnosticImageIntentV1 = {
 };
 test('auto-refine forwards explicit consent, immutable settings, target order and the admission fence',async()=>{
  vi.mocked(isTauri).mockReturnValue(true);vi.mocked(invoke).mockResolvedValue({job:null,skipped:2});
- const settings={checkpoint:'SAM3/sam3.1.safetensors',targets:['eyes','feet','hands'],denoise:0.3,margin:32,threshold:0.5};
+ const settings={checkpoint:'SAM3/sam3.1.safetensors',targets:['eyes','feet','hands'],denoise:0.3,margin:32,maskBlur:8,threshold:0.5};
  expect(await autoRefine('http://127.0.0.1:9',intent,settings,7,'source-job')).toEqual({job:null,skipped:2});
  expect(invoke).toHaveBeenCalledWith('native_auto_refine',{baseUrl:'http://127.0.0.1:9',intent,settings,confirmed:true,admissionEpoch:7,sourceJobId:'source-job',masks:[]});
  vi.mocked(invoke).mockResolvedValue({state:'running'});await expect(autoRefine('http://127.0.0.1:9',intent,settings,7)).rejects.toThrow('Invalid native auto-refine result');

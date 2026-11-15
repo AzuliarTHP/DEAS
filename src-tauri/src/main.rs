@@ -226,6 +226,7 @@ fn main() {
             deas::native_install_update,
             deas::native_torch_update_check,
             deas::native_logs_beginner_error,
+            deas::native_logs_library_error,
             deas::native_logs,
             deas::native_logs_export,
             deas::native_logs_continuity_join_notice,

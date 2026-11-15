@@ -570,6 +570,7 @@
   "studio.run.post.model": "Upscale model",
   "studio.run.post.group.latent": "Latent upscale",
   "studio.run.post.group.refine": "Refine / Upscale",
+  "studio.run.post.group.imageModelHint": "Selecting a model enables image Refine / Upscale. Uses its scale (default 2×) and denoise settings; the original is kept. MiniMax H3 image edits and MOSS are not supported.",
   "studio.run.post.group.modelHint": "Runs on the decoded frames before the final encode; the original encode is kept alongside.",
   "studio.run.post.lanczos": "None (Lanczos)",
   "studio.run.more": "More",

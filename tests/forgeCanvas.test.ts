@@ -39,6 +39,10 @@ test('Auto preserves the effective source canvas and ratios show the shared buck
   assert.deepEqual(resolveForgeCanvas('16:9', square, context), { choice: '16:9', canvas: { width: 1344, height: 768 } });
   assert.deepEqual(resolveForgeCanvas('2:3 Portrait', square, context), { choice: '2:3', canvas: { width: 832, height: 1216 } });
   assert.deepEqual(resolveForgeCanvas('3:2', square, { ...context, grid: 64 }), { choice: '3:2', canvas: { width: 1216, height: 832 } });
+  for (const [grid, width, height] of [[8, 904, 1160], [16, 896, 1168], [32, 896, 1152], [64, 896, 1152]]) {
+    assert.deepEqual(resolveForgeCanvas('7:9', square, { ...context, grid }), { choice: '7:9', canvas: { width, height } });
+    assert.deepEqual(resolveForgeCanvas('9:7', square, { ...context, grid }), { choice: '9:7', canvas: { width: height, height: width } });
+  }
   assert.deepEqual(resolveForgeCanvas('custom', { width: 3, height: 2 }, context), { choice: 'custom', canvas: { width: 1248, height: 832 } });
   // Exact fixed dimensions remain legal when the family's bucket grid is only preferred.
   const exact = { width: 1000, height: 1000 };

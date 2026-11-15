@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.37 BETA (unreleased)
+
+- **SAM Auto Refine uses Mask Blur.** The SAM panel shares Inpaint's saved 0–31 Mask Blur value (default 4; explicit saved 0 remains off). Automatic, manual-source and imported-mask passes send it to the existing native sampling/composite blur chain, with context padding expanded by the blur radius. Legacy settings without the field keep zero blur; invalid values and explicit-mask geometry are rejected before uploads. This corrects mask feathering, not a proven fix for KREA2 detail loss.
+- **Switching model architecture no longer gets blocked by a hidden LoRA.** Installed adapters from another architecture remain saved but inactive and are omitted from the submitted intent. Missing adapters still block, compatible adapters remain active, and native validation still rejects actually applied incompatible LoRAs.
+
+- **Image upscalers in Post-Processing.** The Upscale model card now exposes the existing learned image upscaler for supported image pipelines, separately from video settings. Selecting an image upscaler enables the existing Refine / Upscale pass; choosing Lanczos removes the learned upscaler without disabling refinement. The image upscale factor defaults to 2× for fresh/reset settings, preserving explicit saved 1× and history ratios. H3 image and MOSS retain their existing unsupported-state validation.
+
+- **References media sorting and refresh.** Selecting Date in the References overlay no longer falls back to Name when the Models/LoRA dock is active. A generation finishing during folder loading now refreshes the pending Output folder without redirecting Input navigation; superseded listing responses cannot overwrite its cache. Changed-file thumbnails reload from their size/modified identity instead of retaining old pixels. Reference selection, trims and editor state remain intact.
+
+- **7:9 and 9:7 canvas presets.** Studio, Beginner and Prompt Forge share the new ratios. Each pipeline retains its own area convention, model grid and rounding; the displayed canvas remains the submitted size. Matching node-pack presets are available in 0.5.56.
+- **Queue stars recover after generation.** A temporary native-generation refusal no longer stays cached for the lifetime of a result tile; availability is checked again until native admission clears. Active-generation and ownership checks remain enforced.
+- **No stale result/export status after changing models.** Switching pipeline/model drafts clears the selected preview, not the queue or history. Metadata-free export feedback clears with its context, and a late dialog response cannot restore the old message.
+
+- **Quieter model settings.** Generic “Suitable for this context” and unknown-compatibility hints are omitted when they contain no actionable reason. Structural conflicts, missing components and file-format safety warnings remain visible; execution validation is unchanged.
+
 ## 0.2.36 BETA
 
 - **Enhanced video preview plays on Windows.** On Windows the preview clip reaches the webview as a `data:` URL, but the app CSP did not allow `data:` in `media-src`, so every clip was blocked at load (`MEDIA_ERR_SRC_NOT_SUPPORTED`) and the preview stayed at the static per-step image; the Linux native player bypasses the webview and was unaffected. `data:` is now allowed for media only (in-page bytes, no network reference; `img-src` already carried the same grant). Reproduced headlessly: identical fragmented MP4 plays without the restriction, fails with code 4 under it.

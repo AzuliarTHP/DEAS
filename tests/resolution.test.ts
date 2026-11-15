@@ -25,6 +25,16 @@ test('Director ratios, added ultrawide/portrait ratios and every resolution snap
  assert.equal(validCanvas({width:8192,height:8192}),false);
  assert.equal(validCanvas({width:1023,height:1024}),false);
 });
+test('7:9 and 9:7 use area-exact sizing on each pipeline grid, not a shared bucket',()=>{
+ for(const aspect of ['7:9','9:7']){
+  assert.ok((aspects as readonly string[]).includes(aspect));
+  for(const [grid,w,h] of [[8,904,1160],[16,896,1168],[32,896,1152],[64,896,1152]]){
+   const expected=aspect==='7:9'?{width:w,height:h}:{width:h,height:w};
+   assert.deepEqual(canvasSize(aspect,'1024p',wide,1,square,square,undefined,grid),expected,`${aspect} /${grid}`);
+   assert.deepEqual(canvasSize('custom','custom',aspect==='7:9'?{width:7,height:9}:{width:9,height:7},1,square,square,undefined,grid),expected);
+  }
+ }
+});
 test('input scaling resolves concrete resize/crop/pad and actual downstream dimensions',()=>{
  assert.deepEqual(scaleInput('off',wide,square),{size:{width:1920,height:1072}});
  assert.deepEqual(scaleInput('off',wide,square,8),{size:{width:1920,height:1080}});

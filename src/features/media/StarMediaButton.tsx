@@ -16,10 +16,14 @@ export function StarMediaButton({item,onMoved}:{item:MediaItem;onMoved?:(item:Me
   return()=>{scope.current=null;};
  },[item.path]);
  useEffect(()=>{
-  let alive=true;setStatus(null);setError('');
+  let alive=true;let retry:ReturnType<typeof setTimeout>|undefined;setStatus(null);setError('');
   if(!isTauri()||!item.path){setStatus({starred:false,unavailable:t('media.star.external')});return;}
-  invoke<{starred:boolean;unavailable:string|null}>('native_media_star_status',{path:item.path}).then(s=>{if(!alive)return;if(typeof s?.starred!=='boolean'||!(s.unavailable===null||typeof s.unavailable==='string'))throw new Error('Invalid native star availability');setStatus(s);}).catch(e=>{if(!alive)return;void invoke('native_media_star_notice').catch(()=>{});setStatus({starred:false,unavailable:String(e)});});
-  return()=>{alive=false;};
+  const refresh=()=>invoke<{starred:boolean;unavailable:string|null}>('native_media_star_status',{path:item.path}).then(s=>{if(!alive)return;if(typeof s?.starred!=='boolean'||!(s.unavailable===null||typeof s.unavailable==='string'))throw new Error('Invalid native star availability');setStatus(s);
+   // shortcut: native admission has no reason code; use one if the status contract gains it.
+   if(s.unavailable==='Wait for native generation to finish before moving media')retry=setTimeout(()=>void refresh(),1000);
+  }).catch(e=>{if(!alive)return;void invoke('native_media_star_notice').catch(()=>{});setStatus({starred:false,unavailable:String(e)});});
+  void refresh();
+  return()=>{alive=false;clearTimeout(retry);};
  },[item.path,t]);
  useEffect(()=>{
   const moved=(event:Event)=>{const move=(event as CustomEvent<MediaRelocation>).detail;if(move.oldPath===item.path){setStatus({starred:move.starred??true,unavailable:null});onMoved?.(relocatedMediaItem(item,move));}};

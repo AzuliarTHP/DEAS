@@ -570,6 +570,7 @@
   "studio.run.post.model": "Büyütme modeli",
   "studio.run.post.group.latent": "Latent büyütme",
   "studio.run.post.group.refine": "İyileştir / Büyüt",
+  "studio.run.post.group.imageModelHint": "Model seçimi görüntü Refine / Upscale işlemini etkinleştirir. Ölçeğini (varsayılan 2×) ve gürültü giderme ayarlarını kullanır; orijinal korunur. MiniMax H3 görüntü düzenleme ve MOSS desteklenmez.",
   "studio.run.post.group.modelHint": "Son kodlamadan önce kodu çözülmüş karelerde çalışır; orijinal kodlama yanında saklanır.",
   "studio.run.post.lanczos": "Yok (Lanczos)",
   "studio.run.more": "Daha",

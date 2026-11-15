@@ -9,6 +9,8 @@ pub struct AutoRefineSettings {
     pub targets: Vec<String>,
     pub denoise: f64,
     pub margin: u32,
+    #[serde(default)]
+    pub mask_blur: u32,
     pub threshold: f64,
 }
 
@@ -28,6 +30,7 @@ impl AutoRefineSettings {
             || !self.threshold.is_finite()
             || !(0.0..=1.0).contains(&self.threshold)
             || self.margin > 8192
+            || self.mask_blur > 31
             || self.targets.len() + masks.len() > 20
             || self.targets.is_empty() && masks.is_empty()
             || self.targets.iter().any(|s| !valid_label(s))
@@ -153,6 +156,22 @@ fn crop_target(width: u32, height: u32, area: u64, grid: u64) -> Result<(u64, u6
     Ok((w, h))
 }
 
+fn refine_crop(
+    mask: &Pixels,
+    settings: &AutoRefineSettings,
+    area: u64,
+    grid: u64,
+) -> Result<Option<Value>, String> {
+    let Some((x, y, width, height)) = mask_bounds(mask, settings.margin + settings.mask_blur)
+    else {
+        return Ok(None);
+    };
+    let (tw, th) = crop_target(width, height, area, grid)?;
+    Ok(Some(
+        json!({"x":x,"y":y,"width":width,"height":height,"targetWidth":tw,"targetHeight":th}),
+    ))
+}
+
 fn model_canvas(intent: &Value) -> (u64, u64) {
     let families: Vec<Value> =
         serde_json::from_str(include_str!("../../src/families/builtin.json"))
@@ -185,9 +204,10 @@ fn pass_intent(
     mask: &str,
     size: (u32, u32),
     crop: Value,
-    denoise: f64,
+    settings: &AutoRefineSettings,
     chained: bool,
 ) -> Result<Value, String> {
+    let denoise = settings.denoise;
     let mut intent = base.clone();
     let object = intent
         .as_object_mut()
@@ -213,6 +233,9 @@ fn pass_intent(
     object.insert("height".into(), json!(size.1));
     object.insert("denoise".into(), json!(denoise));
     object.insert("inpaintCrop".into(), crop);
+    if settings.mask_blur > 0 {
+        object.insert("maskBlur".into(), json!(settings.mask_blur));
+    }
     // shortcut: chained passes are read back for the next pass, so only PNG survives that
     // transport; the final executed pass keeps the requested export format. If the last tasks
     // all skip, the final product stays PNG.
@@ -368,6 +391,7 @@ impl Jobs {
         epoch: u64,
     ) -> Result<Value, String> {
         let _operation = Operation(self.clone());
+        settings.validate(&masks)?;
         let series = uuid::Uuid::new_v4();
         let started = std::time::Instant::now();
         let passes = masks.len() + settings.targets.len();
@@ -404,6 +428,9 @@ impl Jobs {
             return Err("Auto Refine requires an image generation intent".into());
         }
         let size = (current.width, current.height);
+        if settings.mask_blur >= size.0.min(size.1) {
+            return Err("Auto Refine mask blur must be smaller than the source edges".into());
+        }
         if manual && source_size(&intent) != Some((u64::from(size.0), u64::from(size.1))) {
             return Err("Auto Refine input dimensions do not match the verified source".into());
         }
@@ -440,6 +467,7 @@ impl Jobs {
             if (pixels.width, pixels.height) != size {
                 return Err("Auto Refine mask dimensions do not match the verified source".into());
             }
+            refine_crop(&pixels, &settings, area, grid)?;
         }
         let tasks: Vec<Option<RefineMask>> = {
             let mut tasks: Vec<Option<RefineMask>> = masks.into_iter().map(Some).collect();
@@ -477,7 +505,7 @@ impl Jobs {
                 pixel[1] = pixel[0];
                 pixel[2] = pixel[0];
             }
-            let Some((x, y, width, height)) = mask_bounds(&mask, settings.margin) else {
+            let Some(crop) = refine_crop(&mask, &settings, area, grid)? else {
                 skipped += 1;
                 log(
                     "empty-mask-skip",
@@ -486,7 +514,7 @@ impl Jobs {
                 );
                 return Ok(false);
             };
-            let (tw, th) = crop_target(width, height, area, grid)?;
+            let (x, y, width, height, tw, th) = (&crop["x"], &crop["y"], &crop["width"], &crop["height"], &crop["targetWidth"], &crop["targetHeight"]);
             crate::logs::push(crate::logs::Source::Deas, &format!("INFO: origin=auto-refine stage=crop series={series} pass={pass_index}/{passes} mask_source={mask_source} x={x} y={y} width={width} height={height} target_width={tw} target_height={th}"));
             self.refine_fence(epoch)?;
             let mask = native_mask_upload(base_url.clone(), encode_png(&mask)?).await?;
@@ -495,8 +523,8 @@ impl Jobs {
                 &source,
                 &mask,
                 size,
-                json!({"x":x,"y":y,"width":width,"height":height,"targetWidth":tw,"targetHeight":th}),
-                settings.denoise,
+                crop,
+                &settings,
                 index + 1 < tasks.len(),
             )?;
             let (held, job) = self.refine_run(&engine, &base_url, pass, epoch, &context, &mut pass_job).await?;
@@ -673,6 +701,17 @@ pub async fn native_auto_refine(
 mod tests {
     use super::*;
 
+    fn settings(mask_blur: u32) -> AutoRefineSettings {
+        AutoRefineSettings {
+            checkpoint: "sam.safetensors".into(),
+            targets: vec!["hands".into()],
+            denoise: 0.25,
+            margin: 0,
+            mask_blur,
+            threshold: 0.5,
+        }
+    }
+
     #[tokio::test]
     async fn auto_refine_wait_failure_keeps_series_pass_and_job() {
         let intent = super::super::tests::intent();
@@ -820,6 +859,7 @@ mod tests {
                         targets: vec![],
                         denoise: 0.25,
                         margin: 0,
+                        mask_blur: 0,
                         threshold: 0.5,
                     },
                     None,
@@ -874,6 +914,7 @@ mod tests {
                     targets: vec!["private-target".into()],
                     denoise: 0.25,
                     margin: 32,
+                    mask_blur: 0,
                     threshold: 0.5,
                 },
                 None,
@@ -919,6 +960,7 @@ mod tests {
             targets: vec!["face".into(), "hands".into()],
             denoise: 0.25,
             margin: 32,
+            mask_blur: 0,
             threshold: 0.5,
         };
         let jobs = Jobs::default();
@@ -995,6 +1037,7 @@ mod tests {
                     targets: vec!["face".into()],
                     denoise: 0.25,
                     margin: 32,
+                    mask_blur: 0,
                     threshold: 0.5,
                 },
                 Some(source),
@@ -1016,6 +1059,190 @@ mod tests {
             assert_eq!(automatic["job"]["intent"][key], intent[key]);
         }
         println!("auto-refine held-source branch: {}", automatic);
+    }
+
+    #[test]
+    fn auto_refine_blur_reaches_sampling_and_composite_graph() {
+        let mut base = super::super::tests::intent();
+        base["maskBlur"] = json!(31);
+        let mask = "deas-masks/00000000-0000-0000-0000-000000000001.png";
+        let pass = pass_intent(
+            &base,
+            mask,
+            mask,
+            (512, 512),
+            json!({"x":40,"y":40,"width":40,"height":40,"targetWidth":512,"targetHeight":512}),
+            &settings(8),
+            false,
+        )
+        .unwrap();
+        let graph = compile(&pass).unwrap();
+        assert_eq!(
+            graph["MB"]["inputs"],
+            json!({"image":["MI",0],"blur_radius":8,"sigma":1})
+        );
+        assert_eq!(graph["MC"]["inputs"]["mask"], json!(["BM", 0]));
+        assert_eq!(graph["CI"]["inputs"]["mask"], json!(["MC", 0]));
+        assert_eq!(graph["X"]["inputs"]["mask"], json!(["NM", 0]));
+        assert_eq!(graph["Y"]["inputs"]["mask"], json!(["MC", 0]));
+    }
+
+    #[test]
+    fn auto_refine_blur_padding_zero_and_legacy_settings() {
+        let legacy = json!({"checkpoint":"sam.safetensors","targets":["hands"],"denoise":0.25,"margin":0,"threshold":0.5});
+        let absent: AutoRefineSettings = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(absent.mask_blur, 0);
+        let mut mask = Pixels {
+            width: 128,
+            height: 128,
+            rgb: vec![0; 128 * 128 * 3],
+        };
+        mask.rgb[(40 * 128 + 50) * 3] = 255;
+        let zero = refine_crop(&mask, &absent, 512 * 512, 8).unwrap().unwrap();
+        assert_eq!(
+            zero,
+            refine_crop(&mask, &settings(0), 512 * 512, 8)
+                .unwrap()
+                .unwrap()
+        );
+        assert_eq!(zero["x"], 50);
+        assert_eq!(zero["width"], 1);
+        let padded = refine_crop(
+            &mask,
+            &AutoRefineSettings {
+                margin: 3,
+                ..settings(8)
+            },
+            512 * 512,
+            8,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            (
+                padded["x"].clone(),
+                padded["y"].clone(),
+                padded["width"].clone(),
+                padded["height"].clone()
+            ),
+            (json!(39), json!(29), json!(23), json!(23))
+        );
+        let input = "deas-masks/00000000-0000-0000-0000-000000000001.png";
+        let mut base = super::super::tests::intent();
+        base["maskBlur"] = json!(31); // The source's old blur must not leak into this pass.
+        let a = pass_intent(
+            &base,
+            input,
+            input,
+            (128, 128),
+            zero.clone(),
+            &absent,
+            false,
+        )
+        .unwrap();
+        let b = pass_intent(&base, input, input, (128, 128), zero, &settings(0), false).unwrap();
+        assert_eq!(compile(&a).unwrap(), compile(&b).unwrap());
+        assert!(a.get("maskBlur").is_none());
+        for invalid in [json!(-1), json!(1.5), json!(32), json!(null), json!("8")] {
+            let mut value = legacy.clone();
+            value["maskBlur"] = invalid;
+            assert!(serde_json::from_value::<AutoRefineSettings>(value)
+                .map_or(true, |s| s.validate(&[]).is_err()));
+        }
+        let mut value = legacy;
+        value["maskBlur"] = json!(31);
+        serde_json::from_value::<AutoRefineSettings>(value)
+            .unwrap()
+            .validate(&[])
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn auto_refine_invalid_blur_and_geometry_reject_before_uploads() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for case in ["range", "source-edge", "crop-target", "mask-size"] {
+            let (width, height) = if case == "crop-target" {
+                (8192, 64)
+            } else if case == "source-edge" {
+                (8, 8)
+            } else {
+                (64, 64)
+            };
+            let source = Pixels {
+                width,
+                height,
+                rgb: vec![0; width as usize * height as usize * 3],
+            };
+            let png = encode_png(&source).unwrap();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                if case != "range" {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = [0; 4096];
+                    let n = socket.read(&mut request).await.unwrap();
+                    assert!(String::from_utf8_lossy(&request[..n]).starts_with("GET /view?"));
+                    socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",png.len()).as_bytes()).await.unwrap();
+                    socket.write_all(&png).await.unwrap();
+                }
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(100), listener.accept())
+                        .await
+                        .is_err(),
+                    "{case}: unexpected upload or submission"
+                );
+            });
+            let mut intent = super::super::tests::intent();
+            intent["width"] = json!(width);
+            intent["height"] = json!(height);
+            intent["inputImage"] = json!("deas-inputs/00000000-0000-0000-0000-000000000001.png");
+            let mut settings = settings(if case == "range" {
+                32
+            } else if case == "source-edge" {
+                8
+            } else {
+                0
+            });
+            let masks = if case == "crop-target" || case == "mask-size" {
+                settings.targets.clear();
+                let mut mask = Pixels {
+                    width,
+                    height: if case == "mask-size" { 1 } else { height },
+                    rgb: vec![0; width as usize * height as usize * 3],
+                };
+                mask.rgb[..width as usize * 3].fill(255);
+                mask.rgb
+                    .truncate(mask.width as usize * mask.height as usize * 3);
+                vec![RefineMask {
+                    name: "paint".into(),
+                    png: encode_png(&mask).unwrap(),
+                }]
+            } else {
+                vec![]
+            };
+            let result = Jobs::default()
+                .refine_execute(
+                    crate::install::Engine::default(),
+                    base,
+                    intent,
+                    settings,
+                    None,
+                    masks,
+                    0,
+                )
+                .await;
+            let error = result.unwrap_err();
+            assert!(
+                error.contains(match case {
+                    "range" => "settings",
+                    "source-edge" => "source edges",
+                    "crop-target" => "crop target",
+                    _ => "mask dimensions",
+                }),
+                "{case}: {error}"
+            );
+            server.await.unwrap();
+        }
     }
 
     #[test]
@@ -1054,7 +1281,7 @@ mod tests {
             mask,
             (512, 512),
             json!({"x":0,"y":0,"width":256,"height":256,"targetWidth":1024,"targetHeight":1024}),
-            0.25,
+            &settings(0),
             true,
         )
         .unwrap();
@@ -1132,11 +1359,27 @@ mod tests {
         let crop2 =
             json!({"x":200,"y":500,"width":80,"height":100,"targetWidth":512,"targetHeight":512});
         base["imageFormat"] = json!("webp");
-        let first =
-            pass_intent(&base, mask1, mask1, (512, 768), crop1.clone(), 0.25, true).unwrap();
+        let first = pass_intent(
+            &base,
+            mask1,
+            mask1,
+            (512, 768),
+            crop1.clone(),
+            &settings(0),
+            true,
+        )
+        .unwrap();
         assert_eq!(first["imageFormat"], "png");
-        let second =
-            pass_intent(&base, mask2, mask2, (512, 768), crop2.clone(), 0.25, false).unwrap();
+        let second = pass_intent(
+            &base,
+            mask2,
+            mask2,
+            (512, 768),
+            crop2.clone(),
+            &settings(0),
+            false,
+        )
+        .unwrap();
         assert_eq!(second["imageFormat"], "webp");
         assert_eq!(first["inpaintCrop"], crop1);
         assert_eq!(second["inpaintCrop"], crop2);
@@ -1159,7 +1402,19 @@ mod tests {
         assert!(first.get("inputLayers").is_none());
         base["sigmas"] = json!([10.0, 8.0, 5.0, 2.0, 0.0]);
         base["steps"] = json!(4);
-        let fixed = pass_intent(&base, mask1, mask1, (512, 768), crop1, 0.5, false).unwrap();
+        let fixed = pass_intent(
+            &base,
+            mask1,
+            mask1,
+            (512, 768),
+            crop1,
+            &AutoRefineSettings {
+                denoise: 0.5,
+                ..settings(0)
+            },
+            false,
+        )
+        .unwrap();
         assert_eq!(fixed["sigmas"], json!([5.0, 2.0, 0.0]));
         assert_eq!(fixed["steps"], 2);
         let graph = compile(&first).unwrap();
@@ -1180,6 +1435,7 @@ mod tests {
             targets: vec![],
             denoise: 0.25,
             margin: 32,
+            mask_blur: 0,
             threshold: 0.5,
         };
         settings

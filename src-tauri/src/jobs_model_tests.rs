@@ -20,12 +20,9 @@ fn model_file(root: &Path, category: &str, name: &str) -> PathBuf {
 
 async fn declaration(root: &Path, category: &str, name: &str) -> PathBuf {
     let path = model_file(root, category, name);
-    crate::downloads::models::native_model_family_write(
-        path.to_str().unwrap().into(),
-        Some("sdxl".into()),
-    )
-    .await
-    .unwrap();
+    crate::downloads::models::family_operation(path.to_str().unwrap().into(), Some("sdxl".into()))
+        .await
+        .unwrap();
     path
 }
 
@@ -357,6 +354,31 @@ async fn local_declaration_preparation_rechecks_scanned_model_and_lora_without_p
 }
 
 #[tokio::test]
+async fn incompatible_applied_lora_still_rejects_before_submission() {
+    let (base, task, posts) = backend().await;
+    let root = tempfile::tempdir().unwrap();
+    let model = declaration(root.path(), "checkpoints", "sd/model.safetensors").await;
+    declaration(root.path(), "loras", "style/a.safetensors").await;
+    crate::downloads::models::family_operation(model.to_str().unwrap().into(), Some("sd15".into()))
+        .await
+        .unwrap();
+    let mut draft = intent();
+    draft["family"] = json!("sd15");
+    Jobs::default()
+        .prepare_with_models(base.clone(), draft.clone(), vec![root.path().into()])
+        .await
+        .unwrap();
+    draft["loras"] = json!([{"name":"style/a.safetensors","strength":1}]);
+    let error = Jobs::default()
+        .prepare_with_models(base, draft, vec![root.path().into()])
+        .await
+        .unwrap_err();
+    assert!(error.contains("MODEL_FAMILY_MISMATCH"), "{error}");
+    assert_eq!(posts.load(Ordering::SeqCst), 0);
+    task.abort();
+}
+
+#[tokio::test]
 async fn local_declaration_valid_and_undeclared_preparation_submit_normally() {
     let (base, task, posts) = backend().await;
     for declared in [false, true] {
@@ -519,7 +541,7 @@ async fn gguf_sidecar_split_preparation_checks_real_loader_catalog_fields() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         // Advisory-family fixture only, not a loadable quantized model.
         std::fs::write(&path, b"unknown architecture fixture").unwrap();
-        crate::downloads::models::native_model_family_write(
+        crate::downloads::models::family_operation(
             path.to_str().unwrap().into(),
             Some("anima".into()),
         )
@@ -559,12 +581,9 @@ async fn gguf_sidecar_split_preparation_checks_real_loader_catalog_fields() {
         }
         assert!(jobs.lock().unwrap().job.is_none());
         task.abort();
-        let reset = crate::downloads::models::native_model_family_write(
-            path.to_str().unwrap().into(),
-            None,
-        )
-        .await
-        .unwrap();
+        let reset = crate::downloads::models::family_operation(path.to_str().unwrap().into(), None)
+            .await
+            .unwrap();
         assert!(reset.family_override.is_none());
         assert!(reset.family.is_none());
     }

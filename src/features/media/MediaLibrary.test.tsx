@@ -449,7 +449,7 @@ describe('media library plugin — IPC fixtures, not real filesystem access',()=
   expect(screen.getAllByRole('button',{name:/\.(png|webp)$/}).filter(b=>b.hasAttribute('data-media')).map(b=>b.textContent)).toEqual(['new.png','old.png','clip.webp']);
   // Tiles show the native cached thumbnail; without one the original file is the fallback.
   await waitFor(()=>expect(screen.getByRole('button',{name:'new.png'}).querySelector('img')?.getAttribute('src')).toBe('asset://localhost//cache/thumbs/abc.png'));
-  await waitFor(()=>expect(screen.getByRole('button',{name:'old.png'}).querySelector('img')?.getAttribute('src')).toBe('asset://localhost//home/u/old.png'));
+  await waitFor(()=>expect(screen.getByRole('button',{name:'old.png'}).querySelector('img')?.getAttribute('src')).toBe('asset://localhost//home/u/old.png?v=1-10'));
   // A possibly animated original is painted once as a still frame, never shown as a live <img>.
   await waitFor(()=>expect(screen.getByRole('button',{name:'clip.webp'}).querySelector('canvas[data-still]')).toBeTruthy());
   expect(screen.getByRole('button',{name:'clip.webp'}).querySelector('img')).toBeNull();
@@ -476,6 +476,74 @@ describe('media library plugin — IPC fixtures, not real filesystem access',()=
   fireEvent.click(screen.getByRole('button',{name:'Parent folder'}));await screen.findByRole('button',{name:'u',current:'location'});
   expect(lists().at(-1)).toEqual({path:'/home/u',depth:3});
   expect((screen.getByRole('button',{name:'Parent folder'}) as HTMLButtonElement).disabled).toBe(true);
+ });
+ it('refreshes a pending first output listing when generation finishes, without selecting anything',async()=>{
+  vi.mocked(isTauri).mockReturnValue(true);
+  const output='/pending-generation/out',path=output+'/raw';
+  let release!:(value:unknown)=>void,calls=0;
+  const old={path,parent:output,entries:[{...entry('old.png','file','image'),path:path+'/old.png'}],truncated:false};
+  mockMediaInvoke(async(c,a)=>c==='native_media_list'?((a as {path:string}).path===path?(++calls===1?new Promise(resolve=>{release=resolve;}):{...old,entries:[...old.entries,{...entry('new.png','file','image',false,2),path:path+'/new.png'}]}):rootListing(output)):'/cache/pending.png');
+  const onSelect=vi.fn(),props={selected:null,onSelect,roots:{output}};
+  const ui=render(<I18nProvider><MediaLibrary {...props}/></I18nProvider>);
+  await waitFor(()=>expect(calls).toBe(1));
+  ui.rerender(<I18nProvider><MediaLibrary {...props} outputRevision={1}/></I18nProvider>);
+  await act(async()=>release(old));
+  await screen.findByRole('button',{name:'new.png'});
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(calls).toBe(2);
+ });
+ it('never lets a superseded output response replace the refresh cache',async()=>{
+  vi.mocked(isTauri).mockReturnValue(true);
+  const output='/revision-cache/out',path=output+'/raw';let release!:(v:unknown)=>void,calls=0;
+  const listing=(name:string)=>({path,parent:output,entries:[{...entry(name,'file','image'),path:path+'/'+name}],truncated:false});
+  mockMediaInvoke(async(c,a)=>c==='native_media_list'?((a as {path:string}).path===path?(++calls===1?new Promise(r=>{release=r;}):calls===2?listing('fresh.png'):new Promise(()=>{})):rootListing(output)):'/cache/revision.png');
+  const props={selected:null,onSelect:vi.fn(),roots:{output}};
+  const ui=render(<I18nProvider><MediaLibrary {...props}/></I18nProvider>);
+  ui.rerender(<I18nProvider><MediaLibrary {...props} outputRevision={1}/></I18nProvider>);
+  await screen.findByRole('button',{name:'fresh.png'});
+  await act(async()=>release(listing('stale.png')));
+  ui.rerender(<I18nProvider><MediaLibrary {...props} outputRevision={2}/></I18nProvider>);
+  expect(screen.queryByRole('button',{name:'stale.png'})).toBeNull();
+  expect(screen.getByRole('button',{name:'fresh.png'})).toBeTruthy();
+ });
+ it('does not leave a pending Input navigation to refresh the previously displayed output',async()=>{
+  vi.mocked(isTauri).mockReturnValue(true);
+  const output='/revision-navigation/out',input='/revision-navigation/input';let release!:(v:unknown)=>void;
+  mockMediaInvoke(async(c,a)=>c==='native_media_list'?((a as {path:string}).path===input?new Promise(r=>{release=r;}):rootListing((a as {path:string}).path)):'/cache/navigation.png');
+  const props={selected:null,onSelect:vi.fn(),roots:{input,output}};
+  const ui=render(<I18nProvider><MediaLibrary {...props}/></I18nProvider>);
+  await screen.findByRole('button',{name:'raw',current:'location'});
+  fireEvent.click(rootButton('Input'));
+  const before=lists().length;
+  ui.rerender(<I18nProvider><MediaLibrary {...props} outputRevision={1}/></I18nProvider>);
+  expect(lists()).toHaveLength(before);
+  await act(async()=>release({path:input,parent:null,entries:[],truncated:false}));
+  expect(screen.getByRole('button',{name:'Input',current:'location'})).toBeTruthy();
+ });
+ it.each(['native','fallback','animated'] as const)('invalidates an overwritten original thumbnail URL (%s) and hides the old frame while loading',async mode=>{
+  vi.mocked(isTauri).mockReturnValue(true);
+  const output='/overwrite-'+mode+'/out',path=output+'/raw',name=mode==='animated'?'same.webp':'same.png';
+  let modified=1,release!:(value:string)=>void;
+  mockMediaInvoke(async(c,a)=>{
+   if(c==='native_media_thumbnail'){if(mode!=='native')throw Error('No thumbnail');if(modified===2)return new Promise(resolve=>{release=resolve;});return path+'/'+name;}
+   const p=(a as {path:string}).path;return p===path?{path,parent:output,entries:[{...entry(name,'file','image',false,modified),path:path+'/'+name}],truncated:false}:rootListing(output);
+  });
+  const props={selected:{name,path:path+'/'+name,media:'image' as const,src:'asset://selected'},onSelect:vi.fn(),roots:{output}};
+  const ui=render(<I18nProvider><MediaLibrary {...props}/></I18nProvider>);
+  const tile=await screen.findByRole('button',{name});
+  if(mode==='animated')await waitFor(()=>expect(tile.querySelector('canvas')).not.toBeNull());
+  else await waitFor(()=>expect(tile.querySelector('img')).not.toBeNull());
+  const before=tile.querySelector('img')?.getAttribute('src');
+  const canvas=tile.querySelector('canvas');
+  modified=2;ui.rerender(<I18nProvider><MediaLibrary {...props} outputRevision={1}/></I18nProvider>);
+  if(mode==='native'){
+   await waitFor(()=>expect(release).toBeTypeOf('function'));
+   expect(tile.querySelector('img')).toBeNull();
+   await act(async()=>release(path+'/'+name));
+  }
+  if(mode==='animated')await waitFor(()=>expect(tile.querySelector('canvas')).not.toBe(canvas));
+  else await waitFor(()=>expect(tile.querySelector('img')?.getAttribute('src')).not.toBe(before));
+  expect(tile.getAttribute('aria-current')).toBe('true');expect(props.onSelect).not.toHaveBeenCalled();
  });
  it('filters by name and sorts files by newest, name or size with folders kept in the navigator',async()=>{
   vi.mocked(isTauri).mockReturnValue(true);

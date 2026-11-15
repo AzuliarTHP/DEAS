@@ -21,13 +21,26 @@ test('IPC fixture: with an environment the models folder is scanned on mount ins
  expect(checkRecipePrerequisites).toHaveBeenCalledTimes(1); // only the sampler/scheduler lists, never the model list
 });
 
+test('folder eye toggles hide Studio descendants without changing the active model or scanning',async()=>{
+ const a={category:'checkpoints',name:'group/nested/a.pt',path:'/m/checkpoints/group/nested/a.pt',size:1,info:null};
+ vi.mocked(scanModels).mockResolvedValue([a,{...a,name:'other/b.pt',path:'/m/checkpoints/other/b.pt'}]);
+ render(<I18nProvider><Workbench endpoint="" roots={{models:'/m'}}/></I18nProvider>);dock('Models');
+ await screen.findByRole('button',{name:a.name});const active=(screen.getByRole('combobox',{name:'Checkpoint'}) as HTMLSelectElement).value;
+ fireEvent.click(screen.getByRole('button',{name:'Expand group'}));fireEvent.click(screen.getByRole('button',{name:'Hide group folder'}));
+ expect(screen.queryByRole('button',{name:a.name})).toBeNull();expect(screen.getByRole('button',{name:'Show nested folder'})).toHaveProperty('disabled',true);
+ expect((screen.getByRole('combobox',{name:'Checkpoint'}) as HTMLSelectElement).value).toBe(active);
+ dock('LoRAs');dock('Models');expect(screen.queryByRole('button',{name:a.name})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Show group folder'}));expect(screen.getByRole('button',{name:a.name})).toBeTruthy();
+ expect(scanModels).toHaveBeenCalledTimes(1);expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
 test('Windows model tree filtering and short names preserve the exact selected identifier',async()=>{
  const name='sdxl\\anime\\My Model.safetensors';
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name,path:'C:\\models\\'+name,size:1,info:null}]);
  render(<I18nProvider><Workbench endpoint="http://127.0.0.1:7801" roots={{models:'C:\\models'}}/></I18nProvider>);
  dock('Models');
- const tree=await screen.findByRole('navigation',{name:'Folders'});
- fireEvent.click(within(tree).getByRole('button',{name:'anime'}));
+ const tree=await screen.findByRole('navigation',{name:'Model folders'});
+ fireEvent.click(within(tree).getByRole('button',{name:'Expand sdxl'}));fireEvent.click(within(tree).getByRole('treeitem',{name:'anime'}));
  const tile=screen.getByRole('button',{name});
  expect(tile.querySelector('.wb-tile-name')!.textContent).toBe('My Model');
  fireEvent.click(tile);
@@ -39,14 +52,14 @@ test('model and LoRA docks get a subfolder tree from the scanned names that filt
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'sdxl/base.safetensors',path:'/m/checkpoints/sdxl/base.safetensors',size:1,info:null},{category:'checkpoints',name:'sd15/old.safetensors',path:'/m/checkpoints/sd15/old.safetensors',size:1,info:null},{category:'checkpoints',name:'sdxl/anime/pony.safetensors',path:'/m/checkpoints/sdxl/anime/pony.safetensors',size:1,info:null},{category:'loras',name:'grain.safetensors',path:'/m/loras/grain.safetensors',size:1,info:null}]);
  render(<I18nProvider><Workbench endpoint="http://127.0.0.1:7801" roots={{models:'/m'}}/></I18nProvider>);
  dock('Models');
- const tree=await screen.findByRole('navigation',{name:'Folders'});
- fireEvent.click(within(tree).getByRole('button',{name:'anime'}));
+ const tree=await screen.findByRole('navigation',{name:'Model folders'});
+ fireEvent.click(within(tree).getByRole('button',{name:'Expand sdxl'}));fireEvent.click(within(tree).getByRole('treeitem',{name:'anime'}));
  expect(screen.getByRole('button',{name:'sdxl/anime/pony.safetensors'})).toBeTruthy();expect(screen.queryByRole('button',{name:'sdxl/base.safetensors'})).toBeNull();
- fireEvent.click(within(tree).getByRole('button',{name:'sdxl'}));
+ fireEvent.click(within(tree).getByRole('treeitem',{name:'sdxl'}));
  expect(screen.getByRole('button',{name:'sdxl/base.safetensors'})).toBeTruthy();expect(screen.queryByRole('button',{name:'sd15/old.safetensors'})).toBeNull();
- dock('LoRAs');expect(screen.queryByRole('navigation',{name:'Folders'})).toBeNull();expect(screen.getByRole('button',{name:'grain.safetensors'})).toBeTruthy(); // no subfolders, no tree, unfiltered
- dock('Models');expect(within(screen.getByRole('navigation',{name:'Folders'})).getByRole('button',{name:'sdxl'}).getAttribute('aria-current')).toBe('location');
- fireEvent.click(within(screen.getByRole('navigation',{name:'Folders'})).getByRole('button',{name:'Models'}));
+ dock('LoRAs');expect(screen.getByRole('navigation',{name:'Model folders'})).toBeTruthy();expect(screen.getByRole('button',{name:'grain.safetensors'})).toBeTruthy(); // root-only tree remains available and the list is unfiltered
+ dock('Models');expect(within(screen.getByRole('navigation',{name:'Model folders'})).getByRole('treeitem',{name:'sdxl'}).getAttribute('aria-current')).toBe('location');
+ fireEvent.click(within(screen.getByRole('navigation',{name:'Model folders'})).getByRole('treeitem',{name:'Models'}));
  expect(screen.getByRole('button',{name:'sd15/old.safetensors'})).toBeTruthy();
  // Tiles print the short name; the full path stays the accessible name. The view choice is remembered.
  expect(screen.getByRole('button',{name:'sd15/old.safetensors'}).querySelector('.wb-tile-name')!.textContent).toBe('old');
@@ -576,6 +589,40 @@ test('IPC fixture: families gate models and LoRAs, picking applies the family de
  fireEvent.click(screen.getByRole('button',{name:'Run'}));
  await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalled());
  expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({checkpoint:'k2.safetensors',sampler:'res_multistep',scheduler:'simple',loras:[{name:'k-style.safetensors',strength:1}],diffusion:{textEncoder:'qwen3vl_4b.safetensors',clipType:'krea2',vae:'Q/qwen_image_vae.safetensors'}});
+});
+
+test('switching model architecture leaves hidden LoRAs inactive without losing their saved selection',async()=>{
+ const m=(name:string,family:string,category='checkpoints')=>({category,name,family,path:'/m/'+name,size:1,info:null});
+ const lora={name:'xl-style.safetensors',strength:1};
+ localStorage.setItem('deas.pref.studio.run.checkpoint',JSON.stringify('xl.safetensors'));
+ vi.mocked(scanModels).mockResolvedValue([m('xl.safetensors','sdxl'),m('xl-next.safetensors','sdxl'),m('sd15.safetensors','sd15'),m(lora.name,'sdxl','loras')]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,checkpoints:['xl.safetensors','xl-next.safetensors','sd15.safetensors']}});
+ vi.mocked(runWorkbenchJob).mockResolvedValue({...heldJob('switched','failed'),error:'fixture'});
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ dock('Models');fireEvent.click(await screen.findByRole('button',{name:'xl.safetensors'}));
+ dock('LoRAs');fireEvent.click(screen.getByRole('button',{name:lora.name}));
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!)).toEqual([lora]);
+ dock('Models');fireEvent.click(screen.getByRole('button',{name:'sd15.safetensors'}));
+ dock('LoRAs');expect(screen.queryByRole('button',{name:lora.name})).toBeNull();
+ const run=screen.getByRole('button',{name:'Run'});expect(run).toHaveProperty('disabled',false);
+ fireEvent.click(run);await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({checkpoint:'sd15.safetensors'});
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1].loras??[]).toEqual([]);
+ dock('Models');fireEvent.click(screen.getByRole('button',{name:'xl-next.safetensors'}));
+ dock('LoRAs');expect(screen.getByRole('button',{name:lora.name}).getAttribute('aria-pressed')).toBe('true');
+ fireEvent.click(run);await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(2));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[1][1]).toMatchObject({checkpoint:'xl-next.safetensors',loras:[lora]});
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!)).toEqual([lora]);
+});
+
+test('a genuinely missing selected LoRA still blocks Run',async()=>{
+ localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify([{name:'missing.safetensors',strength:1}]));
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null}]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-model-picker]')?.textContent).toContain('a.safetensors'));
+ expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',true);
+ expect(screen.getByRole('alert').textContent).toContain('LoRA: missing.safetensors');
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
 test('IPC fixture: a Turbo family locks steps and scheduler to its saved schedule, submits the sigmas and keeps the base family LoRAs',async()=>{

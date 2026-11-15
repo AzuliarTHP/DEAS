@@ -1,0 +1,41 @@
+import { collection, dock, h3VideoFiles, heldJob, referenceModels, evidence } from './Workbench.testHarness';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import { Workbench } from './Workbench';
+import { I18nProvider } from '../../i18n/I18nProvider';
+import { scanModels } from '../../lib/models';
+import { pollWorkbench, readCurrentWorkbench } from '../../lib/jobs';
+
+test.each(['image','video'] as const)('References Date sort and generated images update while the Models dock is active (%s)',async kind=>{
+ let generated=false;
+ const running=heldJob('generation','running',evidence.baseUrl);
+ vi.mocked(readCurrentWorkbench).mockResolvedValue(collection([running]));
+ vi.mocked(pollWorkbench).mockImplementation(async()=>collection([{...running,state:generated?'succeeded':'running'}]));
+ vi.mocked(scanModels).mockResolvedValue(kind==='image'?referenceModels():h3VideoFiles());
+ if(kind==='video')localStorage.setItem('deas.pref.studio.run.pipeline','"t2v"');
+ localStorage.setItem('deas.pref.studio.dock.sort','"name"');
+ vi.mocked(invoke).mockImplementation(async(command,args)=>{
+  if(command==='native_media_thumbnail')return '/cache/sort.png';
+  if(command==='native_media_star_status')return {starred:false,unavailable:'Fixture'};
+  const path=(args as {path?:string})?.path??'/output/raw';
+  return {path,parent:null,truncated:false,entries:[{name:'a.png',path:'/output/raw/a.png',media:'image',kind:'file',size:1,modified:1},{name:'z.png',path:'/output/raw/z.png',media:'image',kind:'file',size:2,modified:2},...(generated?[{name:'new.png',path:'/output/raw/new.png',media:'image',kind:'file',size:3,modified:3}]:[])]};
+ });
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m',output:'/output',input:'/input'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-open-references]')).not.toBeNull());
+ dock('Models');
+ fireEvent.click(document.querySelector('[data-open-references]')!);
+ const dialog=screen.getByRole('dialog',{name:'References'}),picker=within(dialog);
+ await picker.findByRole('button',{name:'a.png'});
+ const names=()=>within(picker.getByRole('list',{name:'Folder contents'})).getAllByRole('button').filter(b=>b.hasAttribute('data-media')).map(b=>b.title);
+ expect(names()).toEqual(['a.png','z.png']);
+ fireEvent.change(picker.getByRole('combobox',{name:'Sort'}),{target:{value:'date'}});
+ expect(picker.getByRole('combobox',{name:'Sort'})).toHaveProperty('value','date');
+ expect(names()).toEqual(['z.png','a.png']);
+ fireEvent.change(picker.getByRole('combobox',{name:'Sort'}),{target:{value:'size'}});
+ expect(names()).toEqual(['z.png','a.png']);
+ generated=true;
+ await picker.findByRole('button',{name:'new.png'}, {timeout:3000});
+ expect(names()).toEqual(['new.png','z.png','a.png']);
+ expect(picker.getByRole('combobox',{name:'Sort'})).toHaveProperty('value','size');
+});

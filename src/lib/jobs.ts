@@ -77,7 +77,7 @@ export function runWorkbenchJob(baseUrl: string, intent: WorkbenchIntent | H3Joi
   pendingWorkbenchRuns.set(admissionEpoch, (pendingWorkbenchRuns.get(admissionEpoch) ?? 0) + 1);
   return native<JobStatus>('native_workbench_run', { baseUrl, intent, confirmed: true, admissionEpoch }).finally(() => { const left = (pendingWorkbenchRuns.get(admissionEpoch) ?? 1) - 1; if (left) pendingWorkbenchRuns.set(admissionEpoch, left); else pendingWorkbenchRuns.delete(admissionEpoch); });
 }
-export interface AutoRefineSettings {checkpoint:string;targets:string[];denoise:number;margin:number;threshold:number}
+export interface AutoRefineSettings {checkpoint:string;targets:string[];denoise:number;margin:number;maskBlur:number;threshold:number}
 export interface RefineMask {name:string;png:number[]}
 export interface AutoRefineResult {job:JobStatus|null;skipped:number}
 /** Native owns all serial passes and the Stop fence, even if this IPC waiter disappears. */

@@ -1334,7 +1334,7 @@ test('defaults reset confirms, uses family defaults and leaves jobs, libraries a
  expect(localStorage.getItem('deas.pref.studio.run.checkpoint')).toBe('"base.safetensors"');
  expect(localStorage.getItem('deas.pref.studio.run.options')).toBe(JSON.stringify(defaultOptions));
  for(const key of ['post','post.tiled','wildcardEnabled'])expect(localStorage.getItem('deas.pref.studio.run.'+key)).toBe('false');
- expect(localStorage.getItem('deas.pref.studio.run.loras')).toBe('[]');expect(localStorage.getItem('deas.pref.studio.run.upscale')).toBe('1');
+ expect(localStorage.getItem('deas.pref.studio.run.loras')).toBe('[]');expect(localStorage.getItem('deas.pref.studio.run.upscale')).toBe('2');
  expect(localStorage.getItem('deas.pref.studio.dock.height')).toBe('250');expect(localStorage.getItem('library.sentinel')).toBe('keep');
  expect(runWorkbenchJob).not.toHaveBeenCalled();
  expect((screen.getByRole('spinbutton',{name:'Steps'}) as HTMLInputElement).value).toBe('28');

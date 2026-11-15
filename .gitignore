@@ -16,3 +16,6 @@ __pycache__/
 /.hermes/
 tsconfig.tsbuildinfo
 .tools/
+
+# Synthetic browser verification artifacts and local PR notes.
+/output/

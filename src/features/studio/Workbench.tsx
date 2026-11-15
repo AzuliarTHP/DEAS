@@ -1,3 +1,5 @@
+import { ModelAutoLoad, ModelViewAllControl } from '../../components/ModelAutoLoad';
+import { modelFolderHidden, validHiddenModelFolders, type HiddenModelFolders } from '../../lib/modelFolders';
 import { BeginnerLoras,isBeginnerLoraDraft,type BeginnerLoraDraft,type BeginnerLora } from '../beginner/BeginnerLoras';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { backendErrorText } from '../../lib/backendErrors';
@@ -24,6 +26,9 @@ import { videoRoles, videoRoleBlock, videoRolePipeline, type VideoRole, type Vid
 import { defaultPlan, isContinuityPlan, nextStep, resolveClip, continuitySource, type ContinuityPlan } from '../../lib/continuity';
 import { checkRecipePrerequisites } from '../../lib/recipePrerequisites';
 import { scanModels, type LocalModel } from '../../lib/models';
+import { ModelFolderTree } from '../../components/ModelFolderTree';
+import { ModelSortControl } from '../../components/ModelSortControl';
+import { isModelSort, sortModels, useModelUsage, recordModelUse, modelUsageKey } from '../../lib/modelBrowsing';
 import { ModelMetadataTarget, ModelDeclaredBadge, useModelMetadataUpdates } from '../../components/models/ModelMetadataEditor';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { componentFiles, componentFilesNamed, defaultComponentOverrides, isComponentOverrides, type ComponentFamily, type ComponentSlot } from '../../lib/modelComponents';
@@ -201,6 +206,8 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [promptHidden,setPromptHidden]=usePref('beginner.layout.promptHidden',false,isBoolean);
  const [bodyWidth,setBodyWidth]=useState(1000);
  const [sortPref,setSort]=usePref('studio.dock.sort','date',oneOf('date','name','size'));
+ const [viewAllModels,setViewAllModels]=usePref('studio.dock.viewAllModels',false,(v):v is boolean=>typeof v==='boolean');
+ const [modelSort,setModelSort]=usePref('studio.dock.modelSort','name',isModelSort);const modelUsage=useModelUsage();const [shuffleSeed,setShuffleSeed]=useState(()=>Math.floor(Math.random()*2147483647));
  const [dockView,setDockView]=usePref<MediaView>('studio.dock.view','tiles',oneOf(...mediaViews));
  const [dockType,setDockType]=usePref<MediaType>('studio.dock.type','all',oneOf(...mediaTypes));
  const [query,setQuery]=useState('');
@@ -352,7 +359,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [post,setPost]=usePref('studio.run.post',false,isBoolean);
  const [postTiled,setPostTiled]=usePref('studio.run.post.tiled',false,isBoolean);
  const [refineDenoise,setRefineDenoise]=usePref('studio.run.refineDenoise',0.25,isNumber);
- const [upscale,setUpscale]=usePref('studio.run.upscale',1,isNumber);
+ const [upscale,setUpscale]=usePref('studio.run.upscale',2,isNumber);
  const [upscaleModelPref,setUpscaleModel]=usePref('studio.run.upscaleModel','',isString);
  const [inpaintDenoise,setInpaintDenoise]=usePref('studio.run.inpaintDenoise',0.8,isNumber);
  // H3 edits regenerate fully by default (1.0); below 1 they keep the encoded source (still path).
@@ -375,8 +382,8 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [faceRefine,setFaceRefine]=usePref<FaceRefineSettings>('studio.run.faceRefine',{auto:false,denoise:0.3,cropFactor:2.5,feather:6,prompt:''},isFaceRefineSettings);
  const samVideoSettings={cuts:samVideoCuts,sceneThreshold:samVideoSceneThreshold,checkpoint:samCheckpoint,threshold:samThreshold,maxObjects:samVideoMax,detectInterval:samVideoInterval,startSeconds:samVideoStart,durationSeconds:samVideoDuration};
  const [samBusy,setSamBusy]=useState(false);const [nativeRefining,setNativeRefining]=useState(false);const [samStatus,setSamStatus]=useState('');
- const samValue={checkpoint:samCheckpoint,targets:samText,enabled:samEnabled,denoise:samDenoise,threshold:samThreshold};
- const setSamValue=(v:typeof samValue)=>{setSamCheckpoint(v.checkpoint);setSamText(v.targets);setSamEnabled(v.enabled);setSamDenoise(v.denoise);setSamThreshold(v.threshold);};
+ const samValue={checkpoint:samCheckpoint,targets:samText,enabled:samEnabled,denoise:samDenoise,threshold:samThreshold,maskBlur};
+ const setSamValue=(v:typeof samValue)=>{setSamCheckpoint(v.checkpoint);setSamText(v.targets);setSamEnabled(v.enabled);setSamDenoise(v.denoise);setSamThreshold(v.threshold);setMaskBlur(v.maskBlur);};
  const [masked,setMasked]=useState(false);
  const editorRef=useRef<EditorHandle>(null);
  const sourceEpoch=useRef(0);const draftEpoch=useRef(0);
@@ -415,7 +422,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   if(!native||(!automatic&&(lock.current||scanning))||(!modelsDir&&!endpoint.trim()))return;
   setScanning(true);setError('');const version=++epoch.current;
   try{
-   const next=modelsDir?await scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[])
+   const next=modelsDir?await (automatic?scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[]):scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[],true))
     :await checkRecipePrerequisites(endpoint).then(e=>{if(live.current&&version===epoch.current)setChoices(e.allowlist);return [...e.allowlist.checkpoints.map(name=>({category:'checkpoints',name})),...(e.allowlist.loras??[]).map(name=>({category:'loras',name}))].map(m=>({...m,path:'',size:0,info:null}));});
    if(live.current&&version===epoch.current){setModels(next);if(modelsDir&&!automatic&&endpoint.trim())await refreshChoices();}
   }catch(e){if(live.current&&version===epoch.current)setError(e instanceof Error?e.message:String(e));}
@@ -456,20 +463,18 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const samModels=[...new Set([...(models??[]).filter(m=>m.category==='checkpoints'&&m.family==='sam3').map(m=>m.name),...(choices?.checkpoints??[]).filter(name=>/sam3[._-]?1/i.test(name))])].filter(name=>!choices||choices.checkpoints.includes(name)).sort();
  useEffect(()=>{if(choices&&samModels.length&&!samModels.includes(samCheckpoint))setSamCheckpoint(samModels[0]);},[choices,samModels,samCheckpoint,setSamCheckpoint]);
  const samUnavailable=!native?t('studio.sam.native'):!choices?t('studio.sam.checking'):!choices.nodes.includes('SAM3_Detect')?t('studio.sam.missingNode'):!samCheckpoint||!samModels.includes(samCheckpoint)?t('studio.sam.missingModel'):'';
- const samSettings=()=>({checkpoint:samCheckpoint,targets:samTargets(samText),denoise:samDenoise,margin:maskGrow,threshold:samThreshold});
- // Dock search/sort are display-only: the pick logic keeps the name-sorted lists. Models have no date, so that option exists for media only.
- const sorts=dockTab==='media'?['date','name','size'] as const:['name','size'] as const;
- const sort=(sorts as readonly string[]).includes(sortPref)?sortPref:sorts[0];
+ const samSettings=()=>({checkpoint:samCheckpoint,targets:samTargets(samText),denoise:samDenoise,margin:maskGrow,maskBlur,threshold:samThreshold});
+ // Media sorting also serves the References picker while a model dock is active.
+ const sort=sortPref;
  const [folders,setFolders]=useState<Record<string,string>>({});const folder=folders[dockTab]??'';
- const match=(m:LocalModel)=>(!folder||m.name.replace(/\\/g,'/').startsWith(folder+'/'))&&m.name.toLowerCase().includes(query.trim().toLowerCase());
- // Model names carry their subfolders (`sdxl/base.safetensors`); the tree is those prefixes, always open, filtering the tiles beside it.
- const folderTree=(list:LocalModel[])=>{
-  const dirs=new Set(list.flatMap(m=>m.name.split(/[\\/]/).slice(0,-1).map((_,i,p)=>p.slice(0,i+1).join('/'))));
-  const node=(path:string,label:string):React.ReactNode=><li key={path}><div className="media-folder-row"><button type="button" className="media-folder-name" aria-current={folder===path?'location':undefined} onClick={()=>setFolders({...folders,[dockTab]:path})}>{label}</button></div>
-   <ul>{[...dirs].filter(d=>d.slice(0,Math.max(d.lastIndexOf('/'),0))===path).sort().map(d=>node(d,d.slice(d.lastIndexOf('/')+1)))}</ul></li>;
-  return dirs.size>0&&<nav className="media-folders" aria-label={t('media.folders')}><ul>{node('',t(`studio.run.dock.${dockTab}`))}</ul></nav>;
- };
- const bySort=(a:LocalModel,b:LocalModel)=>sort==='size'?b.size-a.size:byName(a,b);
+ const [hiddenByDock,setHiddenByDock]=usePref<HiddenModelFolders>('studio.dock.hiddenFolders',{},validHiddenModelFolders);const hiddenFolderKey=`${modelsDir??endpoint}:${dockTab}`;const hiddenFolders=hiddenByDock[hiddenFolderKey]??[];
+ const match=(m:LocalModel)=>!modelFolderHidden(m.name,hiddenFolders)&&(!folder||m.name.replace(/\\/g,'/').startsWith(folder+'/'))&&m.name.toLowerCase().includes(query.trim().toLowerCase());
+ // The same folder tree is used by Library and both Studio model docks.
+ const folderTree=(list:LocalModel[])=><ModelFolderTree names={list.map(m=>m.name)} selected={folder} onSelect={path=>setFolders({...folders,[dockTab]:path})} storageKey={`studio:${modelsDir??endpoint}:${dockTab}`} rootLabel={t(`studio.run.dock.${dockTab}`)} hiddenFolders={hiddenFolders} onToggleHidden={path=>setHiddenByDock(old=>({...old,[hiddenFolderKey]:(old[hiddenFolderKey]??[]).includes(path)?(old[hiddenFolderKey]??[]).filter(p=>p!==path):[...old[hiddenFolderKey]??[],path]}))}/>;
+ const [modelTileLimit,setModelTileLimit]=useState(60);
+ useEffect(()=>setModelTileLimit(60),[dockTab,folder,query,modelSort,viewAllModels]);
+ const visibleModelTiles=(list:LocalModel[])=>sortModels(list.filter(match),modelSort,modelUsage,shuffleSeed).slice(0,modelTileLimit);
+ const moreModelTiles=(list:LocalModel[])=>list.filter(match).length>modelTileLimit&&(viewAllModels?<ModelAutoLoad onMore={()=>setModelTileLimit(n=>n+60)}/>:<button type="button" className="library-load-more" onClick={()=>setModelTileLimit(n=>n+60)}>{t('library.loadMore',{count:Math.min(60,list.filter(match).length-modelTileLimit)})}</button>);
  // ComfyUI's LoadImage reads its input folder, and its output folder through the `name [output]` annotation (resolved and contained by ComfyUI).
  const under=(item:MediaItem|null,root?:string)=>item?.media==='image'&&item.path&&root?relativeMediaPath(item.path,root):'';
  // The overview names the picture only; the full ComfyUI name (folders, `[output]`) stays in the tooltip.
@@ -618,6 +623,11 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
  const loraNames=loraModels.map(m=>m.name);
  const activeLoras=loras.filter(l=>loraNames.includes(l.name));
+ const previousUses=useRef<Set<string>|null>(null);
+ const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=loraModels.find(m=>m.name===l.name);return m?[m]:[];})];
+ const appliedUsageKey=appliedUsageModels.map(modelUsageKey).join('\0');
+ useEffect(()=>{if(!models){previousUses.current=null;return;}const next=new Set(appliedUsageModels.map(modelUsageKey));if(previousUses.current){for(const m of appliedUsageModels)if(!previousUses.current.has(modelUsageKey(m)))recordModelUse(m);}previousUses.current=next;},[models!==null,appliedUsageKey]);
+
 
  const beginnerLoraModels=loraModels.filter(m=>!!family&&m.family===(family.loraFamily??family.id)&&supportedLoraFormat(m)&&!m.metadataError);
  const beginnerLoraDraft=useRef<BeginnerLoraDraft|null>(readPref('beginner.loras',null,isBeginnerLoraDraft));
@@ -651,7 +661,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   ...mossIssues.map(i=>t('studio.run.moss.plain',{name:i.name})),
   ...(imageRefs.length&&!referenceMethod?[t('studio.run.reference.inactive')]:[]),
   ...(imageRefs.length&&referenceMethod?(!choices?[]:(revisionOk?['CLIPVisionLoader','LoadImage','CLIPVisionEncode','unCLIPConditioning']:[promptEncoder,'LoadImage',...(qwenRefs?['ImageScale']:[])]).filter(n=>!choices.nodes.includes(n))):[]),
-  ...(models?loras.filter(l=>!loraNames.includes(l.name)).map(l=>`LoRA: ${l.name}`):[]),
+  ...(models?loras.filter(l=>!models.some(m=>m.category==='loras'&&m.name===l.name)).map(l=>`LoRA: ${l.name}`):[]),
  ...loraModels.filter(m=>(checkModel(m).compatibility==='blocked'||!supportedLoraFormat(m))&&loras.some(l=>l.name===m.name)).map(m=>`${checkModel(m).compatibility==='blocked'?modelCheckText(checkModel(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
   ...(split&&!split.encoders.includes(textEncoder)?[textEncoder||t('studio.run.textEncoder')]:[]),
   ...(dualClip&&split&&(!textEncoder2||!split.encoders.includes(textEncoder2))?[textEncoder2||t('studio.run.textEncoder2')]:[]),
@@ -1465,7 +1475,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   :[];
  const mediaActions=(item:MediaItem):MediaAction[]=>[...inputActions(item),...(item.media==='image'?[{label:t('studio.sam.refine'),onClick:()=>void refineObjects(item),blocked:(!native||serialBlocked||admissionBlocked||isVideo||isMusic||!model||(!item.path&&item.src!==media?.src))?t('studio.sam.refineHelp'):samTargets(samText).length?samUnavailable||undefined:item.src===media?.src&&masked?undefined:t('studio.sam.needsTargets')}]:[]),...(item.path&&item.media!=='audio'?[{label:t('studio.run.metadata.apply'),onClick:()=>void applyFileSettings(item,'all'),blocked:samVideoOutput(item)?t('studio.samVideo.hint'):(!native||scanning||working||autoPlan||resolving||!!planRun.current)?t('studio.run.metadata.native'):undefined}]:[]),...(item.path?[{label:t('studio.run.exportClean.label'),more:true,hint:t('studio.run.exportClean.hint'),onClick:()=>void exportClean(item.path!),blocked:native?undefined:t('studio.run.exportClean.native')}]:[]),...(onAnalyze&&item.path&&(item.media==='image'||item.media==='video')?[{label:t('analysis.open'),more:true,onClick:()=>onAnalyze(item)}]:[])];
  // Metadata-free copy through the native save dialog; cancel (null) stays silent, the source file is never touched.
- const exportClean=async(path:string)=>{setMoreResult(null);try{const saved=await exportWithoutMetadata(path,t('studio.run.exportClean.title'));if(saved)setMoreResult(t('studio.run.exportClean.done',{path:saved.path}));}catch(e){setMoreResult(t('studio.run.exportClean.failed',{error:e instanceof Error?e.message:String(e)}));}};
+ const exportClean=async(path:string)=>{const ticket=++exportFeedbackEpoch.current;setMoreResult(null);setExportResult(null);try{const saved=await exportWithoutMetadata(path,t('studio.run.exportClean.title'));if(saved&&ticket===exportFeedbackEpoch.current)setExportResult(t('studio.run.exportClean.done',{path:saved.path}));}catch(e){if(ticket===exportFeedbackEpoch.current)setExportResult(t('studio.run.exportClean.failed',{error:e instanceof Error?e.message:String(e)}));}};
  // After every render, so the frame picker always asks the current actions (not a render-time side effect).
  useEffect(()=>{onFrameActions?.(inputActions);});
  const stageMark=media?.path&&marks.get(media.path);
@@ -1549,7 +1559,7 @@ const promptTools=forgeContext&&<>
  useLayoutEffect(()=>{if(aceProfile&&model&&aceProfilePref!==JSON.stringify([model.path,model.family])){startingSettings(model);setCheckpoint(model.name);setModelIdentity(identity(model));}},[aceProfile?.version,model?.path,model?.family,aceProfilePref]);
  const switchDraft=(p:Pipeline,m:LocalModel,defaults=false,keepSource=false,keepPrompts=false)=>{
   if(draftPipe(p)===draftPipe(pipeline)&&model&&identity(m)===identity(model)){if(p!==pipeline)setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));if(!checkpointPref&&defaults)startingSettings(m);return;}
-  rememberDraft();draftEpoch.current++;setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));
+  rememberDraft();draftEpoch.current++;setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));setBrowsed(null);setSelectedJob('');
   const saved=drafts.current.get(draftKey(p,m));
   // Only the checkpoint changed: its remembered settings return, the prompts on screen stay.
   // First visit to another checkpoint of the SAME family keeps the current settings instead of family defaults, so models can be compared side by side; family defaults still apply when the family (or pipeline) changes.
@@ -1624,6 +1634,8 @@ const promptTools=forgeContext&&<>
  });
  // Each toolbar owns its menu; split-view tools must not open or dismiss a sibling menu.
  const [moreFor,setMoreFor]=useState<string|null>(null);const [moreResult,setMoreResult]=useState<ReactNode>(null);
+ const [exportResult,setExportResult]=useState<string|null>(null);const exportFeedbackEpoch=useRef(0);
+ useEffect(()=>{setExportResult(null);return()=>{exportFeedbackEpoch.current++;};},[scope,pipeline,modelIdentity,selectedJob,selectedOutput,browsed?.src,media?.src]);
  const selectMoreAction=(_selected:true,action:()=>void)=>{setMoreFor(null);action();};
  useEffect(()=>{
   if(!moreFor)return;
@@ -1654,7 +1666,7 @@ const promptTools=forgeContext&&<>
    else {
     if(restoredFamily?.id!==family?.id){
      setTextEncoder('');setTextEncoder2('');setVae('');setVideo(defaultVideo);setOptions({...structuredClone(defaultOptions),outputNaming:optionsPref.outputNaming});
-     setPost(false);setPostTiled(false);setUpscale(1);setUpscaleModel('');setTve(defaultTve);setDerope(defaultDerope);setH3Latent({...h3Latent,enabled:false});setLtxLatent({...ltxLatent,enabled:false});
+     setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setTve(defaultTve);setDerope(defaultDerope);setH3Latent({...h3Latent,enabled:false});setLtxLatent({...ltxLatent,enabled:false});
      setSourceVideo(null);setImageRefs([]);setRefs([]);setRefmods([]);setFramePeople({});setLastFrame(null);setLoras([]);setWildcardEnabled(false);
     }
     if(!restoredFamily?.pipelines.includes(pipeline)&&restoredFamily)setPipeline(restoredFamily.video?'t2v':'t2i');
@@ -1741,7 +1753,7 @@ const promptTools=forgeContext&&<>
   setLoras((intent.loras??[]).map(l=>({...l})));setOptions(value.options);
   setPipeline(value.pipeline);setComponentOverrides({textEncoders:true,vaes:true,audioVaes:true,textProjections:true});
   setImageRefs(value.references.map(ref=>({item:{name:ref.name,media:'image',src:''},strength:ref.strength})));
-  setPost(false);setPostTiled(false);setUpscale(1);setUpscaleModel('');setInputScaling('off');setEdit('resample');
+  setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setInputScaling('off');setEdit('resample');
   if(isVideoIntent(intent)){
    setTve(fromVideoPost(intent.videoPost));setDerope(fromDerope(intent.videoPost?.derope));audioEnhance.restore(intent.audioEnhance);
    if(intent.family==='minimax-h3'){
@@ -1869,6 +1881,7 @@ const promptTools=forgeContext&&<>
   latent:latentEnabled,
   tve,
   refine:post,
+  imageUpscaleModel:upscaleModelPref,
   sam:samEnabled,
   audioMode:audioEnhance.mode,
   music:isMusic,
@@ -1890,12 +1903,12 @@ const promptTools=forgeContext&&<>
  const postCategories=postCategoryOrder.map(id=>{
   const count=postByCategory[id].length;
   const active=count>0;
-  const available=id==='audio'?isMusic||isVideo:id==='latent'?latent:id==='face-analysis'?isVideo&&isH3Video(videoFamily):id==='sam'?!isVideo&&!isMusic:id==='refine'?!isVideo&&!isMusic&&!h3Image&&!moss:id==='derope'?isVideo&&videoFamily==='minimax-h3':id==='regenerate'?regenerateAvailable:isVideo;
+  const available=id==='audio'?isMusic||isVideo:id==='latent'?latent:id==='face-analysis'?isVideo&&isH3Video(videoFamily):id==='sam'?!isVideo&&!isMusic:(id==='refine'||id==='model'&&!isVideo)?!isVideo&&!isMusic&&!h3Image&&!moss:id==='derope'?isVideo&&videoFamily==='minimax-h3':id==='regenerate'?regenerateAvailable:isVideo;
   const reason=id==='audio'?(!isMusic&&!isVideo?t('studio.run.post.reason.audioVideoOnly'):isVideo&&videoFamily==='wan'&&audioEnhance.mode!=='off'?t('studio.run.post.reason.audioManualOnly'):'')
    :id==='latent'?(h3MaskedEdit?t('studio.run.post.reason.latentMasked'):!latent?t('studio.run.post.reason.latentOnly'):latentProblems[0]??'')
    :id==='face-analysis'?(!(isVideo&&isH3Video(videoFamily))?t('studio.run.post.reason.h3VideoOnly'):faceRefine.auto&&faceRefineAutoUnavailable?faceRefineAutoUnavailable:'')
    :id==='sam'?(isVideo||isMusic?t('studio.run.post.reason.imageOnly'):samEnabled&&samUnavailable?samUnavailable:'')
-   :id==='refine'?(isVideo||isMusic?t('studio.run.post.reason.imageOnly'):h3Image?t('studio.run.h3EditHint'):moss?t('studio.plan.imageOnly'):'')
+   :(id==='refine'||id==='model'&&!isVideo)?(isVideo||isMusic?t('studio.run.post.reason.imageOnly'):h3Image?t('studio.run.h3EditHint'):moss?t('studio.plan.imageOnly'):'')
    :id==='derope'?(!(isVideo&&videoFamily==='minimax-h3')?t('studio.run.post.reason.h3VideoOnly'):'')
    :id==='regenerate'?(!regenerateAvailable?t('studio.run.post.reason.h3VideoOnly'):regenerateProblems[0]??'')
    :!isVideo?t('studio.run.post.reason.videoOnly'):'';
@@ -2060,7 +2073,7 @@ const promptTools=forgeContext&&<>
      {(browsed||media||shown)&&<button type="button" className="wb-stage-close" data-preview-close aria-label={t('studio.run.close')} title={t('studio.run.close')} onClick={closePreview}>✕</button>}
      {(browsed||media||shown)&&<button type="button" className="wb-stage-meta" data-metadata-toggle aria-pressed={metaOpen} onClick={()=>setMetaOpen(!metaOpen)}>{t('studio.run.metadata.button')}</button>}
      {stageTools()}
-     {moreResult&&<p className="wb-more-feedback" role="status">{moreResult}</p>}
+     {(moreResult||exportResult)&&<p className="wb-more-feedback" role="status">{moreResult||exportResult}</p>}
      {!browsed&&(media||shown)&&(hint||(!shown&&stageMark))&&<div className="wb-stage-notes">{!shown&&stageMark&&<span className="media-mark wb-stage-mark">{stageMark}</span>}{hint&&<p className="wb-stage-hint" role="status">{t(hint,{multiple:String(grid)})}</p>}</div>}
      {(browsed||media||shown)&&metaOpen&&<GenerationMetadata job={browsed?null:shown} media={browsed??(shown?null:media)} onRestore={reuseJob}/>}
      {browsed&&<figure className="media-preview" data-browsed-preview>{browsed.media==='image'?<img className="wb-zoomable" src={browsed.src} alt={browsed.name} role="button" tabIndex={0} aria-label={t('studio.run.viewer.open')} title={t('studio.run.viewer.open')} onClick={e=>openImage(e,browsed)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setViewer({src:browsed.src,alt:browsed.name,item:browsed});}}}/>:browsed.media==='video'?linuxVideo?<NativeVideo source={{path:browsed.path??''}} label={browsed.name}/>:<video src={native?browsedBlob.url:browsed.src} controls/>:audioPlayer(browsed,native?browsedBlob.url:browsed.src)}<figcaption>{browsed.name}{browsedBlob.error&&<span className="error-message"> · {browsedBlob.error}</span>}</figcaption></figure>}
@@ -2113,7 +2126,7 @@ const promptTools=forgeContext&&<>
    <div className="wb-dock-handle" role="separator" aria-orientation="horizontal" aria-label={t('studio.run.dockResize')} title={t('studio.run.dockResize')} tabIndex={0} aria-valuemin={120} aria-valuemax={dockMax} aria-valuenow={dockSize} data-locked={dockHidden||undefined} onKeyDown={e=>{if(!dockHidden)resizeKey(e,dockSize,120,dockMax,setDockHeight,true);}} onPointerDown={e=>{if(!dockHidden)dragPane(e,dockSize,120,dockMax,setDockHeight,true);}}/>
    {paneToggle(dockHidden,setDockHidden,'dock','studio-dock')}
    {dockTab==='media'?<MediaPanel selected={browsed??media} onSelect={setBrowsed} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} toolbar={dockNavigation} marks={marks} actions={mediaActions}/>:<div className="media-toolbar">{dockNavigation}
-    {(dockTab==='models'||dockTab==='loras')&&<><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sorts={sorts}/><button type="button" className="wb-dock-action" data-run-load disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
+    {(dockTab==='models'||dockTab==='loras')&&<><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sortControl={<><ModelSortControl value={modelSort} onChange={setModelSort} onShuffle={()=>setShuffleSeed(n=>n+1)}/><ModelViewAllControl value={viewAllModels} onChange={setViewAllModels}/></>}/><button type="button" className="wb-dock-action" data-run-load disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
    </div>}
    {dockTab==='presets'&&<div className="wb-dock-panel"><PresetPanel disabled={busy||!!current||autoPlan||resolving}/></div>}
     {dockTab==='wildcards'&&<div className="wb-dock-panel"><WildcardPanel library={wildcardLibrary} loading={wildcardLoading} error={wildcardLibraryError} onReload={()=>setWildcardRevision(v=>v+1)} value={wildcard} onChange={setWildcard} enabled={wildcardEnabled} onEnabled={setWildcardEnabled} positive={positive} negative={negative} onInsert={name=>setPositive(p=>`${p.trim()?`${p} `:''}$${name}`)}/></div>}
@@ -2206,13 +2219,14 @@ const promptTools=forgeContext&&<>
          <div className="wb-option"><span><label className="wb-option-row"><input type="checkbox" checked={postTiled&&!family?.temporalLatent} disabled={!!family?.temporalLatent||(!!choices&&!choices.nodes?.includes('DaSiWaTiledDiffusion'))} onChange={e=>setPostTiled(e.target.checked)}/>{t('studio.run.post.tiled')}</label></span><small>{t(family?.temporalLatent?'studio.run.post.tiledFamily':choices&&!choices.nodes?.includes('DaSiWaTiledDiffusion')?'studio.run.post.tiledMissing':'studio.run.post.tiledHint',{width:String(snap(modelSize.width)),height:String(snap(modelSize.height)),overlap:String(snap(Math.max(64,Math.min(modelSize.width,modelSize.height)/8)))})}</small></div>
          <label className="wb-option"><span>{t('studio.run.post.denoise')}</span><input type="number" value={refineDenoise} min={0.05} max={1} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n))setRefineDenoise(clamp(n,0.05,1));}}/></label>
          <label className="wb-option"><span>{t('studio.run.upscale')}</span><input type="number" value={upscale} min={1} max={4} step={0.25} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n))setUpscale(clamp(n,1,4));}}/></label>
-         <label className="wb-option"><span>{t('studio.run.post.model')}</span><select value={upscaleModel} onFocus={loadChoices} onPointerDown={loadChoices} onChange={e=>setUpscaleModel(e.target.value)}><option value="">{t('studio.run.post.lanczos')}</option>{(choices?.upscaleModels??[]).map(m=><option key={m} value={m}>{m}</option>)}</select></label>
         </div></fieldset>:<p className="field-help" data-post-unavailable="refine">{t('studio.run.post.reason.imageOnly')}</p>}
        </div>
        <div className="wb-post-category" data-post-category="model" hidden={openPostCategory!=='model'}>
         {isVideo?<fieldset className="wb-group" data-post-group="model"><legend>{t('studio.run.post.model')}</legend><div className="wb-options">
          <label className="wb-option"><select data-tve-post="upscaleModel" aria-label={t('studio.run.post.model')} value={tve.upscaleModel} onFocus={loadChoices} onPointerDown={loadChoices} onChange={e=>setTve({...tve,upscaleModel:e.target.value})}><option value="">{t('studio.tve.post.off')}</option>{(choices?.upscaleModels??[]).map(m=><option key={m} value={m}>{m}</option>)}{tve.upscaleModel&&!choices?.upscaleModels?.includes(tve.upscaleModel)&&<option value={tve.upscaleModel}>{tve.upscaleModel}</option>}</select><small>{t('studio.run.post.group.modelHint')}</small></label>
-        </div></fieldset>:<p className="field-help" data-post-unavailable="model">{t('studio.run.post.reason.videoOnly')}</p>}
+        </div></fieldset>:<fieldset className="wb-group" data-post-group="model" disabled={isMusic||h3Image||moss}><legend>{t('studio.run.post.model')}</legend><div className="wb-options">
+         <label className="wb-option"><span>{t('studio.run.post.model')}</span><select data-image-post="upscaleModel" aria-label={t('studio.run.post.model')} value={upscaleModelPref} onFocus={loadChoices} onPointerDown={loadChoices} onChange={e=>{setUpscaleModel(e.target.value);if(e.target.value)setPost(true);}}><option value="">{t('studio.run.post.lanczos')}</option>{(choices?.upscaleModels??[]).map(m=><option key={m} value={m}>{m}</option>)}{upscaleModelPref&&!choices?.upscaleModels?.includes(upscaleModelPref)&&<option value={upscaleModelPref}>{upscaleModelPref}</option>}</select><small>{t('studio.run.post.group.imageModelHint')}</small></label>
+        </div></fieldset>}
        </div>
        <div className="wb-post-category" data-post-category="derope" hidden={openPostCategory!=='derope'}>
         {isVideo&&videoFamily==='minimax-h3'?<DeropeControls value={deropePref} onChange={setDerope} allow={choices} onRead={loadChoices} conflict={continuityOn&&plan.outputMode==='segment'&&nextStep(plan)?.continuity.sourceKind==='video'}/>:<p className="field-help" data-post-unavailable="derope">{t('studio.run.post.reason.h3VideoOnly')}</p>}
@@ -2226,10 +2240,10 @@ const promptTools=forgeContext&&<>
    </section>}
 
    {dockTab==='options'&&<section className="wb-dock-panel" aria-label={t('studio.run.dock.options')}><OptionsPanel value={optionsPref} onChange={setOptions} allow={choices} family={family?.id} video={isVideo} imageInput={pipeline==='i2i'} onRead={loadChoices} canRead={native&&!!endpoint.trim()}/></section>}
-   {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
+   {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel wb-model-browser-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
     {!models&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
-    {models&&dockTab==='models'&&(allModels.length===0?<p className="media-help">{t('studio.run.noModels')}</p>:<div className="media-browser">{folderTree(allModels)}<ul className="wb-tiles" data-run-checkpoint>{allModels.filter(match).sort(bySort).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul></div>)}
-    {models&&dockTab==='loras'&&(loraNames.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(loraModels)}<ul className="wb-tiles wb-loras">{loraModels.filter(match).sort(bySort).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/>);})}</ul></div>)}
+    {models&&dockTab==='models'&&(allModels.length===0?<p className="media-help">{t('studio.run.noModels')}</p>:<div className="media-browser">{folderTree(allModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles" data-run-checkpoint>{visibleModelTiles(allModels).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul>{moreModelTiles(allModels)}</div></div>)}
+    {models&&dockTab==='loras'&&(loraNames.length===0?<p className="media-help">{t('studio.run.noLoras')}</p>:<div className="media-browser">{folderTree(loraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(loraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,!!on,()=>toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/>);})}</ul>{moreModelTiles(loraModels)}</div></div>)}
    </section>}
   </div>
  </div>
