@@ -45,7 +45,7 @@ const GGUF_REVISION: &str = "6ea2651e7df66d7585f6ffee804b20e92fb38b8a";
 /// HyperFlow Flash node pack for MiniMax H3 HyperFlow GGUF checkpoints; provisioning pins the
 /// inspected SHA and its sole pip requirement (`gguf`) already comes from ComfyUI-GGUF.
 const HYPERFLOW: &str = "https://github.com/Video-Rebirth/ComfyUI-HyperFlow-Flash.git";
-const HYPERFLOW_REVISION: &str = "20a22ab2b075f3c948eb5dba62637ff89fc0f363";
+const HYPERFLOW_REVISION: &str = "356649c32dca9a1dd46608d530ccb5e025fb338d";
 const KJNODES: &str = "https://github.com/kijai/ComfyUI-KJNodes.git";
 const KJNODES_REVISION: &str = "d3cfe21625e5170126ce06fbfcfe1d88108688c3";
 #[path = "install_torch.rs"]
