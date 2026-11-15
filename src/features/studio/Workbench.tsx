@@ -2247,6 +2247,14 @@ const promptTools=forgeContext&&<>
    </div>)}
   </div>
  </section>,forgeHost)}
- {continuityOpen&&continuityAvailable&&!planVisible&&<ContinuityOverlay endpoint={endpoint} root={root} forgeContext={forgeContext} allowReferences={continuityReferences} plan={plan} onChange={setPlan} onRun={runPlan} running={autoPlan||resolving||!!planRun.current||!!current} disabled={!native||busy||admissionBlocked||!isVideo||!!continuitySizeError||unavailable.length>0} onClose={()=>{setContinuityOpen(false);continuityButton.current?.focus();}}/>}
+ {continuityOpen&&continuityAvailable&&!planVisible&&<ContinuityOverlay captureTransition={continuityAvailable&&videoFamily&&model&&split&&naming!==null?()=>{
+    const epoch=admissionEpoch.current,capturedEndpoint=endpoint,uploads=new Set<string>();
+    const identify=(item:MediaItem,force=false)=>{const name=!force&&comfyName(item);if(name)return name;uploads.add(item.path!);return item.path!;};
+    const intent=structuredClone(buildVideoIntent(videoFamily,naming,optionsPref.output??defaultVideoOutput,identify));
+    return {admissionEpoch:epoch,intent,prepare:async()=>{
+      const names=new Map(await Promise.all([...uploads].map(async path=>[path,await uploadInput(capturedEndpoint,path)] as const)));
+      return JSON.parse(JSON.stringify(intent),(key,value:unknown)=>['image','file','sourceVideo','firstFrame','lastFrame'].includes(key)&&typeof value==='string'&&names.has(value)?names.get(value):value) as VideoIntentV1;
+    }};
+  }:undefined} endpoint={endpoint} root={root} forgeContext={forgeContext} allowReferences={continuityReferences} plan={plan} onChange={setPlan} onRun={runPlan} running={autoPlan||resolving||!!planRun.current||!!current} disabled={!native||busy||admissionBlocked||!isVideo||!!continuitySizeError||unavailable.length>0} onClose={()=>{setContinuityOpen(false);continuityButton.current?.focus();}}/>}
  </div></>;
 }

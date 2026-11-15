@@ -30,6 +30,11 @@ test('SAM jobs cannot be mistaken for image-generation intents or retried on unk
  const job={id:'sam-job',baseUrl:'http://127.0.0.1:9',promptId:'p',state:'unknown' as const,outputs:[],error:null,generationReady:false as const,intent:sam};
  await expect(waitForWorkbenchJob(job,()=>true)).rejects.toThrow('unknown');expect(invoke).not.toHaveBeenCalled();
 });
+test.each(['cancelled','failed','unknown'] as const)('terminal waiter preserves structured %s identity without retry',async state=>{
+ const job={id:'terminal-job',baseUrl:'http://127.0.0.1:9',promptId:'p',state,outputs:[],error:'native outcome',generationReady:false as const,intent};
+ await expect(waitForWorkbenchJob(job,()=>true)).rejects.toMatchObject({message:'native outcome',jobState:state,jobId:job.id});
+ expect(invoke).not.toHaveBeenCalled();
+});
 // Mage-Flow: one encode node carries prompt, negative and latent (no EmptyLatentImage, no separate negative node).
 test('Mage-Flow compiles the combined encode node', () => {
   const nodes = ['UNETLoader', 'CLIPLoader', 'VAELoader', 'KSampler', 'VAEDecode', 'SaveImage', 'TextEncodeMageFlowEdit'];

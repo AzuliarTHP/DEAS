@@ -7,7 +7,9 @@ import { Workbench } from './Workbench';
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { checkRecipePrerequisites } from '../../lib/recipePrerequisites';
 import { scanModels } from '../../lib/models';
-import { runWorkbenchJob, pollWorkbench, uploadMask, uploadInput, type JobStatus } from '../../lib/jobs';
+import { inspectVideoPost, uploadVideoPostSource } from '../../lib/videoPost';
+vi.mock('../../lib/videoPost',()=>({inspectVideoPost:vi.fn(),uploadVideoPostSource:vi.fn()}));
+import { runWorkbenchJob, readCurrentWorkbench, waitForWorkbenchJob, pollWorkbench, uploadMask, uploadInput, type JobStatus } from '../../lib/jobs';
 
 test('IPC fixture: with an environment the models folder is scanned on mount instead of probing the backend',async()=>{
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'sdxl/base.safetensors',path:'/m/checkpoints/sdxl/base.safetensors',size:1,info:null},{category:'loras',name:'grain.safetensors',path:'/m/loras/grain.safetensors',size:1,info:null},{category:'vae',name:'x.safetensors',path:'/m/vae/x.safetensors',size:1,info:null}]);
@@ -802,6 +804,43 @@ test('H3 continuity opens outside the dock, preserves edits and restores focus w
  fireEvent(screen.getByRole('dialog',{name:'Continuity'}),new Event('cancel',{cancelable:true}));
  expect(screen.queryByRole('dialog',{name:'Continuity'})).toBeNull();expect(document.activeElement).toBe(open);
  expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
+test('H3 transition dialog captures the real Workbench builder and blocks Close/Escape while owned',async()=>{
+ localStorage.setItem('deas.pref.studio.run.continuity',JSON.stringify({enabled:true,session:'join-test',outputMode:'segment',steps:[]}));
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue(videoEvidence);
+ vi.mocked(scanModels).mockResolvedValue([
+  {category:'diffusion_models',name:'MiniMaxH3/h3.safetensors',path:'/m/h3.safetensors',size:1,info:null,family:'minimax-h3'},
+  {category:'text_encoders',name:'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',path:'/m/t',size:1,info:null},
+  {category:'vae',name:'MiniMaxH3/minimax_h3_video_vae_fp16.safetensors',path:'/m/v',size:1,info:null},
+  {category:'vae',name:'MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors',path:'/m/a',size:1,info:null}]);
+ vi.mocked(readCurrentWorkbench).mockResolvedValue(collection());
+ vi.mocked(inspectVideoPost).mockResolvedValue({sourceId:'source',name:'clip',blockers:[],durationSeconds:20} as never);
+ vi.mocked(uploadVideoPostSource).mockResolvedValueOnce('a.mp4').mockResolvedValueOnce('b.mp4').mockResolvedValueOnce('c.mp4');
+ vi.stubGlobal('fetch',vi.fn(async()=>({json:async()=>({ok:true,issues:[],seconds:60,mode:'re-encode'})})));
+ let finish!:()=>void;
+ vi.mocked(runWorkbenchJob).mockImplementation(async()=>({...heldJob('job'+vi.mocked(runWorkbenchJob).mock.calls.length,'queued'),baseUrl:'http://127.0.0.1:7801'}));
+ vi.mocked(waitForWorkbenchJob).mockImplementationOnce(job=>new Promise(resolve=>{finish=()=>resolve({...job,state:'succeeded',transition:'h3_transitions/one.mp4'});})).mockImplementation(async job=>({...job,state:'succeeded',transition:'h3_transitions/two.mp4',outputs:[{filename:'joined.mp4',subfolder:'',type:'output'}]}));
+ render(<I18nProvider><Workbench endpoint="http://127.0.0.1:7801" roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(pipe('Text → Video').disabled).toBe(false));choosePipe('Text → Video');
+ fireEvent.change(screen.getByLabelText('Prompt'),{target:{value:'real Workbench settings'}});
+ fireEvent.click(screen.getByRole('button',{name:'Continuity'}));
+ const dialog=screen.getByRole('dialog',{name:'Continuity'});
+ fireEvent.change(within(dialog).getByRole('combobox',{name:'Source'}),{target:{value:'files'}});
+ const toggle=within(dialog).getByRole('checkbox',{name:'Generate an H3 transition between each pair of clips'}) as HTMLInputElement;
+ expect(toggle.checked).toBe(false);fireEvent.click(toggle);
+ for(let i=0;i<3;i++){fireEvent.click(within(dialog).getByRole('button',{name:'Add video…'}));await act(async()=>{});}
+ fireEvent.click(within(dialog).getByRole('button',{name:'Check preflight'}));await act(async()=>{});
+ fireEvent.click(within(dialog).getByRole('button',{name:'Join now'}));
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({recipeId:'video-generation',family:'minimax-h3',model:'MiniMaxH3/h3.safetensors',positivePrompt:'real Workbench settings',textEncoder:'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors',vae:'MiniMaxH3/minimax_h3_video_vae_fp16.safetensors',h3:{audioVae:'MiniMaxH3/minimax_h3_audio_vae_fp32.safetensors',transition:{contextFrames:22,transitionFrames:29,files:[{filename:'a.mp4'},{filename:'b.mp4'}]}}});
+ expect((within(dialog).getByRole('button',{name:'Close'}) as HTMLButtonElement).disabled).toBe(true);
+ for(let i=0;i<3;i++){const escape=new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true});fireEvent(dialog,escape);expect(escape.defaultPrevented).toBe(true);}
+ fireEvent(dialog,new Event('cancel',{cancelable:true}));expect(screen.getByRole('dialog',{name:'Continuity'})).toBe(dialog);
+ expect((within(dialog).getByRole('checkbox',{name:'Continuity active'}) as HTMLInputElement).disabled).toBe(true);
+ await act(async()=>finish());await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(3));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[2][1]).toMatchObject({recipeId:'h3-join',h3:{join:{files:[{filename:'a.mp4'},{filename:'h3_transitions/one.mp4'},{filename:'b.mp4'},{filename:'h3_transitions/two.mp4'},{filename:'c.mp4'}]}}});
+ await waitFor(()=>expect((within(dialog).getByRole('button',{name:'Close'}) as HTMLButtonElement).disabled).toBe(false));
 });
 
 test('H3 frame people are opt-in, reach the Forge and reset on a new source picture',async()=>{

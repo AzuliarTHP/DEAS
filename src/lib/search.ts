@@ -31,6 +31,11 @@ export interface SearchEntry {
 const studio: SearchView = 'studio';
 
 export const searchIndex: readonly SearchEntry[] = [
+  {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.transitions',target:'[data-cont-join-transition]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},
+  {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.context',target:'[data-cont-join-context]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},
+  {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.length',target:'[data-cont-join-length]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},
+  {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.description',target:'[data-cont-join-description]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},
+
   // Beginner experience
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'beginner.navigation', section: 'beginner.generate', label: 'studio.layout.prompt', target: '[data-beginner-prompt-resize]', aliases: ['prompt height', 'resize', 'preview divider'], reason: 'beginner.switchHint' },
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'beginner.navigation', section: 'beginner.generate', label: 'studio.layout.promptCollapse', target: '[data-pane-toggle="prompt"]', aliases: ['expand prompt', 'hide prompt', 'collapse'], reason: 'beginner.switchHint' },
@@ -287,6 +292,11 @@ export interface RevealOutcome {
 
 /** Opens collapsed ancestors, scrolls to the control and flashes it; reports a currently disabled control. */
 export function revealTarget(target: string): RevealOutcome {
+  if(target.startsWith('[data-cont-join-'))flushSync(()=>{
+    document.querySelector<HTMLButtonElement>('[data-pane-toggle="settings"][aria-expanded="false"]')?.click();
+    document.querySelector<HTMLButtonElement>('[data-continuity-open][aria-expanded="false"]')?.click();
+  });
+  if(target.startsWith('[data-cont-join-'))flushSync(()=>window.dispatchEvent(new Event('deas:reveal-join')));
   if(target==='#beginner-mode'||target.startsWith('[data-music-')||target.startsWith('[data-ace-'))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-pane-toggle="settings"][aria-expanded="false"]')?.click());
   if(target.startsWith('[data-music-prompt='))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-pane-toggle="prompt"][aria-expanded="false"]')?.click());
   if(target.startsWith('[data-video-role')||target==='[data-video-refmods-clear]')flushSync(()=>document.querySelector<HTMLButtonElement>('[data-open-references]')?.click());

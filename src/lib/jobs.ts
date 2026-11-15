@@ -28,6 +28,8 @@ export interface JobStatus {
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown';
   /** `format` is the MIME type the video combine reports (`video/webm`); image savers omit it. */
   outputs: { filename: string; subfolder: string; type: 'output'; format?: string; role?: 'original' | 'processed' | 'mask-preview' }[];
+  /** Native-validated intermediate in backend input; not a Media output. */
+  transition?: string;
   error: string | null;
   generationReady: false;
   /** Immutable native-held intent, never the workbench's current controls; TVE tab jobs carry the enhance recipe. */
@@ -117,7 +119,7 @@ export const pollWorkbench = (): Promise<WorkbenchSnapshot> => observeWorkbench(
 export async function waitForWorkbenchJob(job:JobStatus,active:()=>boolean):Promise<JobStatus>{
  while(active()){
   if(job.state==='succeeded')return job;
-  if(['failed','cancelled','unknown'].includes(job.state))throw new Error(job.error||`SAM selection ${job.state}`);
+  if(['failed','cancelled','unknown'].includes(job.state))throw Object.assign(new Error(job.error||`SAM selection ${job.state}`),{jobState:job.state,jobId:job.id});
   await new Promise(resolve=>setTimeout(resolve,500));
   if(!active())break;
   const next=await pollWorkbench();const found=next.jobs.find(j=>j.id===job.id);

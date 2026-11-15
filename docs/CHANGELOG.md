@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.34 BETA (unreleased)
+
+- **H3 transitions between joined video files.** In Continuity → Join clips → Video files, the default-OFF transition option renders one short H3 bridge per cut with the captured Workbench model, sampler and Director settings, then joins clips and bridges in order. Context per side starts at 22 frames and transition length at 29; an optional description guides the bridge. Each job uses the original admission fence and exact job identity. Cancel or a failed/unknown cut prevents later cuts and the final join; completed bridges remain in backend Input and are listed in the dialog. Close/Escape are locked while Join owns work; **Cancel join sequence** remains available. Existing model-free joins stay unchanged when the option is off. Six languages and global search are included. Real GPU bridges/joins and bounded native Windows UI/playback checks passed, including an owner-reviewed 10-second reference film. Full native-owned sequence/cancellation, sequential RAM admission and broader audio-seam acceptance remain open; see VERIFICATION.md.
+
 ## 0.2.33 BETA
 
 - **Linux video preview no longer crashes the window when moved too early.** Moving or resizing a native video preview before its surface existed panicked the UI thread; it now reports "Native video surface is unavailable" like starting a preview does.
