@@ -1,5 +1,9 @@
 # News
 
+## 0.2.36 BETA (unreleased)
+
+- H3 Hi-Res Regenerate now has its own refiner-LoRA strength. Upscale refine strength and 2D sharpness are shared with Latent upscale: change either card and both show the same values. The new Hi-Res tuning needs DaSiWa node pack 0.5.55; normal authoring starts at the existing shared strength 0.2, while 1 restores the full three-step Hi-Res preset.
+
 ## 0.2.35 BETA
 
 - Model scanning is much faster: hashing big model files got ~20x faster (a large checkpoint now takes seconds instead of minutes), the file listing ~3x, and *Scan Files* now handles four files at a time.

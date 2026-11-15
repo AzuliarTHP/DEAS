@@ -1930,12 +1930,8 @@ async fn h3_regenerate_original_prepare_skips_upscaler_but_requires_supported_ta
     }
 }
 
-#[tokio::test]
-async fn h3_regenerate_prepare_names_the_node_pack_and_requires_the_lora() {
-    let mut intent = crate::jobs_video::tests::h3();
-    intent["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors",
-        "regenerate":{"lora":"open_h3_regenerate_2k_native_svd.safetensors","target":"2K"}});
-    let graph = compile(&intent).unwrap();
+fn h3_regenerate_prepare_nodes(intent: &Value) -> Value {
+    let graph = compile(intent).unwrap();
     let mut all = nodes();
     for node in graph.as_object().unwrap().values() {
         let class = node["class_type"].as_str().unwrap();
@@ -1945,7 +1941,10 @@ async fn h3_regenerate_prepare_names_the_node_pack_and_requires_the_lora() {
     }
     all["DaSiWa_EnhancedVideoCombine"]["output"] = json!(["IMAGE", "STRING"]);
     all["DEAS_VideoPostprocessGate"] = json!({"input":{"required":{"baseline":["IMAGE,STRING"],"image":["IMAGE",{"lazy":true}]},"optional":{"audio":["AUDIO",{"lazy":true}]}},"output":["IMAGE","AUDIO"]});
-    for (field, names) in crate::jobs_video::requirements(&intent) {
+    for (field, names) in crate::jobs_video::requirements(intent) {
+        if names.is_empty() {
+            continue;
+        }
         let (node, input) = match field {
             "diffusionModels" => ("UNETLoader", "unet_name"),
             "textEncoders" => ("CLIPLoader", "clip_name"),
@@ -1954,13 +1953,164 @@ async fn h3_regenerate_prepare_names_the_node_pack_and_requires_the_lora() {
             "images" => ("LoadImage", "image"),
             "h3LatentUpscaleModels" => ("DaSiWaH3TiledUpscale", "upscale_model"),
             "loras" => ("LoraLoader", "lora_name"),
-            _ if names.is_empty() => continue,
             _ => unreachable!("{field}"),
         };
         all[node]["input"]["required"][input] = json!([names]);
     }
     all["KSampler"]["input"]["required"]["sampler_name"] = json!([[intent["sampler"]]]);
     all["KSampler"]["input"]["required"]["scheduler"] = json!([[intent["scheduler"]]]);
+    all["DaSiWaH3HiResRegenerate"]["input"]["required"]["target"] =
+        json!([["1080P", "2K", "4K", "Original"]]);
+    all
+}
+
+#[tokio::test]
+async fn h3_regenerate_tuning_prepare_requires_compatible_optional_inputs() {
+    for target in ["1080P", "2K", "4K", "Original"] {
+        let mut intent = crate::jobs_video::tests::h3();
+        intent["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_2d_conv_v1.safetensors",
+            "regenerate":{"lora":"open_h3_regenerate_native.safetensors","target":target}});
+        if target == "Original" {
+            intent["latentUpscale"]["model"] = json!("interpolation");
+        }
+        let all = h3_regenerate_prepare_nodes(&intent);
+        // DaSiWa node pack 0.5.55: nodes/nodes_minimax_h3_regenerate.py::INPUT_TYPES.
+        let optional = json!({"denoise":["FLOAT",{"default":1.0,"min":0.0,"max":1.0}],
+            "upscale_sharpness":["INT",{"default":1,"min":1,"max":6}]});
+        for case in [
+            "legacy",
+            "denoise only",
+            "sharpness only",
+            "bad denoise",
+            "bad sharpness",
+            "compatible",
+        ] {
+            let mut info = all.clone();
+            let inputs = &mut info["DaSiWaH3HiResRegenerate"]["input"]["optional"];
+            *inputs = optional.clone();
+            match case {
+                "legacy" => *inputs = json!({}),
+                "denoise only" => {
+                    inputs.as_object_mut().unwrap().remove("upscale_sharpness");
+                }
+                "sharpness only" => {
+                    inputs.as_object_mut().unwrap().remove("denoise");
+                }
+                "bad denoise" => inputs["denoise"][1]["max"] = json!(0.9),
+                "bad sharpness" => inputs["upscale_sharpness"][0] = json!("FLOAT"),
+                _ => {}
+            }
+            let (base, task) = server(move |path, _| {
+                assert_eq!(
+                    path, "GET /comfy/object_info HTTP/1.1",
+                    "prepare must not execute"
+                );
+                (200, info.to_string())
+            })
+            .await;
+            let jobs = Jobs::default();
+            for strength in [None, Some(0.0), Some(1.3), Some(2.0)] {
+                let mut legacy = intent.clone();
+                if let Some(strength) = strength {
+                    legacy["latentUpscale"]["regenerate"]["strength"] = json!(strength);
+                }
+                let graph = compile(&legacy).unwrap();
+                assert!(graph["U"]["inputs"].get("denoise").is_none());
+                assert!(graph["U"]["inputs"].get("upscale_sharpness").is_none());
+                let plan = jobs.prepare(base.clone(), legacy).await.unwrap();
+                assert_eq!(plan["graph"], graph, "{target}: {case}: {strength:?}");
+            }
+            for tuning in [
+                json!({"denoise":0}),
+                json!({"denoise":1}),
+                json!({"sharpness":1}),
+                json!({"sharpness":6}),
+                json!({"denoise":0.35,"sharpness":4}),
+            ] {
+                let mut request = intent.clone();
+                request["latentUpscale"]["regenerate"]
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(tuning.as_object().unwrap().clone());
+                let graph = compile(&request).unwrap();
+                let result = jobs.prepare(base.clone(), request.clone()).await;
+                if case == "compatible" {
+                    let plan = result.unwrap();
+                    assert_eq!(plan["graph"], graph);
+                    assert_eq!(plan["intent"], request);
+                } else {
+                    let err = result.unwrap_err();
+                    assert!(
+                        err.contains("node pack 0.5.55")
+                            && err.contains("denoise")
+                            && err.contains("upscale_sharpness")
+                            && err.contains("Backend → Upgrade")
+                            && err.contains("restart the backend"),
+                        "{target}: {case}: {tuning}: {err}"
+                    );
+                    let session = jobs.lock().unwrap();
+                    assert!(session.plan.is_none() && session.preparing.is_none());
+                }
+            }
+            task.abort();
+        }
+    }
+}
+
+#[tokio::test]
+async fn h3_regenerate_tuning_prepare_preserves_older_capability_remedies() {
+    for target in ["2K", "Original"] {
+        let mut intent = crate::jobs_video::tests::h3();
+        intent["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_2d_conv_v1.safetensors",
+            "regenerate":{"lora":"open_h3_regenerate_native.safetensors","target":target}});
+        if target == "Original" {
+            intent["latentUpscale"]["model"] = json!("interpolation");
+        }
+        let all = h3_regenerate_prepare_nodes(&intent);
+        intent["latentUpscale"]["regenerate"]["denoise"] = json!(0);
+        intent["latentUpscale"]["regenerate"]["sharpness"] = json!(1);
+        for case in ["missing node", "old target"] {
+            let mut info = all.clone();
+            if case == "missing node" {
+                info.as_object_mut()
+                    .unwrap()
+                    .remove("DaSiWaH3HiResRegenerate");
+            } else {
+                if target != "Original" {
+                    continue;
+                }
+                info["DaSiWaH3HiResRegenerate"]["input"]["required"]["target"] =
+                    json!([["1080P", "2K", "4K"]]);
+            }
+            let (base, task) = server(move |path, _| {
+                assert_eq!(path, "GET /comfy/object_info HTTP/1.1");
+                (200, info.to_string())
+            })
+            .await;
+            let err = Jobs::default()
+                .prepare(base, intent.clone())
+                .await
+                .unwrap_err();
+            task.abort();
+            assert!(
+                err.contains(if case == "missing node" {
+                    "node pack 0.5.50"
+                } else {
+                    "node pack 0.5.52"
+                }),
+                "{err}"
+            );
+            assert!(!err.contains("0.5.55"), "{err}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn h3_regenerate_prepare_names_the_node_pack_and_requires_the_lora() {
+    let mut intent = crate::jobs_video::tests::h3();
+    intent["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors",
+        "regenerate":{"lora":"open_h3_regenerate_2k_native_svd.safetensors","target":"2K"}});
+    let all = h3_regenerate_prepare_nodes(&intent);
     for case in ["ok", "old pack", "no lora"] {
         let mut info = all.clone();
         match case {

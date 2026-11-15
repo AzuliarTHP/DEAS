@@ -121,6 +121,13 @@ test('an Options dock card selects its dock tab first, then reveals the card; Ba
   for(const role of ['first','last','both','reference','source'])expect(matchEntries(searchIndex, role, text, searchIndex.length).map(entry=>entry.target)).toContain(`[data-video-role="${role}"]`);
 });
 
+test('search finds each Hi-Res strength and shared upscaler control',()=>{
+ const text=(key:string)=>bundledCatalog.dictionaries.en[key]??key;
+ for(const [query,anchor] of [['refiner LoRA strength','strength'],['Hi-Res upscale refine strength','denoise'],['Hi-Res upscale sharpness','sharpness']]){
+  expect(matchEntries(searchIndex,query,text,searchIndex.length).map(e=>e.target)).toContain(`.wb-post [data-regenerate-${anchor}]`);
+ }
+});
+
 test('a Post-Processing nested control selects the Post dock, opens its category overlay idempotently, and focuses the control', async () => {
   const dock = document.createElement('button');
   dock.setAttribute('data-dock-tab', 'post');
