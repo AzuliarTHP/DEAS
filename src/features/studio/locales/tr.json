@@ -7,6 +7,7 @@
   "modelCheck.status.missing": "Kullanılamıyor",
   "modelCheck.reason.metadata": "Model meta verisi geçersiz veya eski; bildirimi onarın/sıfırlayın",
   "modelCheck.reason.integrity": "Dosya bütünlüğü denetimi başarısız; dosyayı değiştirin",
+  "modelCheck.reason.pickleFormat": "Picklenmiş biçim (.pt/.pth/.bin): ComfyUI yüklerken bu dosyadan kod çalıştırabilir",
   "modelCheck.reason.conflict": "Başlık ve kimlik kanıtı çelişiyor",
   "modelCheck.reason.unverified": "Yapısal uyumluluk doğrulanmadı; bilinmiyor uyumsuz demek değildir",
   "modelCheck.reason.remote": "Yalnız uzak/katalog kaydı; yerel başlık incelenmedi",

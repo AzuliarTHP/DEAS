@@ -7,6 +7,7 @@
   "modelCheck.status.missing": "不可用",
   "modelCheck.reason.metadata": "模型元数据无效或过期；请修复或重置声明",
   "modelCheck.reason.integrity": "文件完整性检查失败；请替换文件",
+  "modelCheck.reason.pickleFormat": "Pickle 格式（.pt/.pth/.bin）：ComfyUI 加载此文件时可能执行其中的代码",
   "modelCheck.reason.conflict": "文件头与身份信息冲突",
   "modelCheck.reason.unverified": "尚无结构兼容性证据；未知并不等于不兼容",
   "modelCheck.reason.remote": "仅远程或目录条目；未检查本地文件头",
