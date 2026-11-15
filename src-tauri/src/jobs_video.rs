@@ -244,14 +244,25 @@ pub(crate) fn regenerate_size(width: u64, height: u64, target: &str) -> (u64, u6
 }
 
 fn valid_regenerate(r: &Value) -> bool {
-    keys_in(r, &["lora", "target", "model", "spatialTiling", "strength", "denoise", "sharpness"])
-        && r["lora"]
-            .as_str()
-            .is_some_and(|l| comfy_model_name(l) && l.ends_with(".safetensors"))
+    keys_in(
+        r,
+        &[
+            "lora",
+            "target",
+            "model",
+            "spatialTiling",
+            "strength",
+            "denoise",
+            "sharpness",
+        ],
+    ) && r["lora"]
+        .as_str()
+        .is_some_and(|l| comfy_model_name(l) && l.ends_with(".safetensors"))
         && pick(r, "target", &REGENERATE_TARGETS)
         && r.get("strength").is_none_or(|s| finite(s, 0.0, 2.0))
         && r.get("denoise").is_none_or(|d| finite(d, 0.0, 1.0))
-        && r.get("sharpness").is_none_or(|s| s.as_i64().is_some_and(|s| (1..=6).contains(&s)))
+        && r.get("sharpness")
+            .is_none_or(|s| s.as_i64().is_some_and(|s| (1..=6).contains(&s)))
         && r.get("model").is_none_or(|m| {
             m.as_str()
                 .is_some_and(|m| comfy_model_name(m) && !crate::jobs::is_gguf(m))
@@ -287,8 +298,12 @@ fn h3_regenerate_node(g: &mut Value, i: &Value, conditioning: Value, latent: Val
         "lora_name":r["lora"],"strength":r.get("strength").cloned().unwrap_or(json!(1.0)),"upscale_model":u["model"],"target":r["target"],"seed":i["seed"],
         "noise":["N",0],"spatial_tiling":r.get("spatialTiling").cloned().unwrap_or(json!(true))}});
     // Shared authoring values only reach the node when explicitly set; older packs and legacy intents stay untouched.
-    if let Some(d) = r.get("denoise") { node["inputs"]["denoise"] = d.clone(); }
-    if let Some(s) = r.get("sharpness") { node["inputs"]["upscale_sharpness"] = s.clone(); }
+    if let Some(d) = r.get("denoise") {
+        node["inputs"]["denoise"] = d.clone();
+    }
+    if let Some(s) = r.get("sharpness") {
+        node["inputs"]["upscale_sharpness"] = s.clone();
+    }
     node
 }
 

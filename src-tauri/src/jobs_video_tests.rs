@@ -1326,10 +1326,8 @@ fn hyperflow_flash_uses_its_own_loader_and_saved_schedule() {
     assert!(graph["1"]["inputs"].get("weight_dtype").is_none());
     assert_eq!(graph["Z"]["class_type"], "HyperFlowSigmas");
     let required = requirements(&safetensors);
-    assert!(required
-        .iter()
-        .any(|(key, names)| *key == "diffusionModels"
-            && names.contains(&"MiniMaxH3/hyperflow_int8_convrot.safetensors")));
+    assert!(required.iter().any(|(key, names)| *key == "diffusionModels"
+        && names.contains(&"MiniMaxH3/hyperflow_int8_convrot.safetensors")));
     let required = requirements(&i);
     assert!(required
         .iter()
@@ -2975,16 +2973,30 @@ fn h3_regenerate_omitted_strength_keeps_the_default_graph() {
 fn h3_regenerate_forwards_shared_tuning_only_when_present() {
     let mut i = regenerate_intent();
     let baseline = compile(&i).unwrap();
-    assert!(baseline["U"]["inputs"].get("denoise").is_none() && baseline["U"]["inputs"].get("upscale_sharpness").is_none());
+    assert!(
+        baseline["U"]["inputs"].get("denoise").is_none()
+            && baseline["U"]["inputs"].get("upscale_sharpness").is_none()
+    );
     i["latentUpscale"]["regenerate"]["denoise"] = json!(0.35);
     i["latentUpscale"]["regenerate"]["sharpness"] = json!(4);
     let g = compile(&i).unwrap();
     assert_eq!(g["U"]["inputs"]["denoise"], json!(0.35));
     assert_eq!(g["U"]["inputs"]["upscale_sharpness"], json!(4));
-    for (key, value) in [("denoise", json!(-0.01)), ("denoise", json!(1.01)), ("denoise", json!("0.5")), ("sharpness", json!(0)), ("sharpness", json!(7)), ("sharpness", json!(2.5)), ("sharpness", json!("4"))] {
+    for (key, value) in [
+        ("denoise", json!(-0.01)),
+        ("denoise", json!(1.01)),
+        ("denoise", json!("0.5")),
+        ("sharpness", json!(0)),
+        ("sharpness", json!(7)),
+        ("sharpness", json!(2.5)),
+        ("sharpness", json!("4")),
+    ] {
         let mut b = i.clone();
         b["latentUpscale"]["regenerate"][key] = value.clone();
-        assert!(compile(&b).unwrap_err().contains("Invalid latentUpscale"), "{key}:{value}");
+        assert!(
+            compile(&b).unwrap_err().contains("Invalid latentUpscale"),
+            "{key}:{value}"
+        );
     }
 }
 
