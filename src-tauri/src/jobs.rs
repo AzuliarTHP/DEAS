@@ -1716,12 +1716,11 @@ impl Jobs {
             if crate::jobs_video::regenerate_only(&intent) && allow["h3RegenerateOriginal"] != true {
                 return Err("H3 regenerate only at input resolution needs DaSiWa node pack 0.5.52 or newer (Original target). Use Backend → Upgrade → ComfyUI and node packs, then restart the backend".into());
             }
-            if intent["latentUpscale"]["regenerate"].get("denoise").is_some()
-                || intent["latentUpscale"]["regenerate"].get("sharpness").is_some()
+            if (intent["latentUpscale"]["regenerate"].get("denoise").is_some()
+                || intent["latentUpscale"]["regenerate"].get("sharpness").is_some())
+                && allow["h3RegenerateTuning"] != true
             {
-                if allow["h3RegenerateTuning"] != true {
-                    return Err("H3 Hi-Res Regenerate refinement denoise and 2D sharpness need DaSiWa node pack 0.5.55 or newer (denoise and upscale_sharpness inputs). Use Backend → Upgrade → ComfyUI and node packs, then restart the backend".into());
-                }
+                return Err("H3 Hi-Res Regenerate refinement denoise and 2D sharpness need DaSiWa node pack 0.5.55 or newer (denoise and upscale_sharpness inputs). Use Backend → Upgrade → ComfyUI and node packs, then restart the backend".into());
             }
             let diffusion = &intent["diffusion"];
             let split = diffusion.is_object();
