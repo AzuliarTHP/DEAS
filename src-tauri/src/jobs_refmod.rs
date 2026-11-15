@@ -104,7 +104,11 @@ pub(crate) fn compile(r: &Value, request_id: &str) -> Result<Value, String> {
     }
     crate::jobs_video::validate_h3_media(&json!(plain), true, true)?;
     let (visual, audio) = lane_flags(&plain);
-    let vae = |key: &str| o.get(key).and_then(Value::as_str).filter(|v| model_name(v));
+    let vae = |key: &str| {
+        o.get(key)
+            .and_then(Value::as_str)
+            .filter(|v| comfy_model_name(v))
+    };
     let mut inputs = json!({"request_id":request_id,"name":name,"description":description,"concept_type":concept});
     let mut graph = json!({});
     for (needed, key, input, node) in [
@@ -202,15 +206,11 @@ fn pick_h3_vae(catalog: &[String], want_audio: bool) -> Option<String> {
         .map(|(_, _, name)| name.to_owned())
 }
 
-/// The form the request must carry: ComfyUI matches a combo value exactly, while `compile()` reads a
-/// portable `/` name (see `comfy_model_name`), so a native `\` id crosses only after normalization and
-/// a name neither form accepts resolves to nothing.
+/// Backend-listed ids cross unchanged: ComfyUI matches a combo value exactly, and `compile()` accepts
+/// both forms through `comfy_model_name`, so a native `\` id never needs rewriting. A name neither
+/// form accepts resolves to nothing.
 fn loadable(name: &str) -> Option<String> {
-    if model_name(name) {
-        return Some(name.to_owned());
-    }
-    let slash = name.replace('\\', "/");
-    model_name(&slash).then_some(slash)
+    comfy_model_name(name).then(|| name.to_owned())
 }
 
 /// Fills the lanes `compile()` would refuse on with the library's own H3 VAEs before it runs. An explicit
