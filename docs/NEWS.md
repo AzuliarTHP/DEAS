@@ -1,8 +1,10 @@
 # News
 
-## 0.2.36 BETA (unreleased)
+## 0.2.36 BETA
 
-- H3 Hi-Res Regenerate now has its own refiner-LoRA strength. Upscale refine strength and 2D sharpness are shared with Latent upscale: change either card and both show the same values. The new Hi-Res tuning needs DaSiWa node pack 0.5.55; normal authoring starts at the existing shared strength 0.2, while 1 restores the full three-step Hi-Res preset.
+- H3 Hi-Res Regenerate now has its own refiner-LoRA strength. Upscale refine strength and 2D sharpness are shared with Latent upscale: change either card and the other card shows the same value. The new Hi-Res tuning needs DaSiWa node pack 0.5.55; normal authoring starts at the existing shared strength 0.2, while 1 restores the full three-step Hi-Res preset.
+- HyperFlow H3 Flash now also accepts the single-file safetensors checkpoints (INT8 convrot and BF16 conversions), not only GGUF — Studio routes them through the backend's HyperFlowLoader. If the backend upgrade did not offer that loader, update the owned backend.
+- **Windows: the enhanced video preview plays as a video again** instead of a static pixelated image per step — the preview clip was blocked by the app's content-security policy.
 
 ## 0.2.35 BETA
 

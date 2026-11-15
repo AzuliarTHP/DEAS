@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.36 BETA (unreleased)
+## 0.2.36 BETA
 
 - **Enhanced video preview plays on Windows.** On Windows the preview clip reaches the webview as a `data:` URL, but the app CSP did not allow `data:` in `media-src`, so every clip was blocked at load (`MEDIA_ERR_SRC_NOT_SUPPORTED`) and the preview stayed at the static per-step image; the Linux native player bypasses the webview and was unaffected. `data:` is now allowed for media only (in-page bytes, no network reference; `img-src` already carried the same grant). Reproduced headlessly: identical fragmented MP4 plays without the restriction, fails with code 4 under it.
 - **HyperFlow pack pin now ships the loader.** The pinned ComfyUI-HyperFlow-Flash revision stayed at 1.0.0 (GGUF-only), so `Backend → Upgrade` re-provisioned the exact pack whose `HyperFlowLoader` the new model check demands — the selection stayed Unavailable forever. The pin now points at 1.1.1, which registers `HyperFlowLoader`.
