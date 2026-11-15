@@ -52,6 +52,7 @@ pub fn cache_file_identity(file: &File) -> Result<(u64, [u8; 16], u64), String> 
     use windows_sys::Win32::Storage::FileSystem::{
         FileIdInfo, GetFileInformationByHandleEx, FILE_ID_INFO,
     };
+    let legacy = info(file)?;
     let mut id: FILE_ID_INFO = unsafe { std::mem::zeroed() };
     if unsafe {
         GetFileInformationByHandleEx(
@@ -62,12 +63,21 @@ pub fn cache_file_identity(file: &File) -> Result<(u64, [u8; 16], u64), String> 
         )
     } == 0
     {
-        return Err("Cannot inspect full cache file identity".into());
+        // exFAT/FAT has no FileIdInfo (error 87) and no hard links, so the legacy
+        // per-volume index is the identity there.
+        // shortcut: exFAT reuses deleted files' indexes, so a cache stamp can go stale;
+        // upgrade only if sidecar mismatch reports appear on exFAT drives.
+        let index = ((legacy.nFileIndexHigh as u128) << 32) | legacy.nFileIndexLow as u128;
+        return Ok((
+            legacy.dwVolumeSerialNumber as u64,
+            index.to_le_bytes(),
+            legacy.nNumberOfLinks as u64,
+        ));
     }
     Ok((
         id.VolumeSerialNumber,
         id.FileId.Identifier,
-        info(file)?.nNumberOfLinks as u64,
+        legacy.nNumberOfLinks as u64,
     ))
 }
 /// Opens the object itself (never its reparse target) and rejects reparse points.
