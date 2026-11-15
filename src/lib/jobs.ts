@@ -151,7 +151,7 @@ export type RefModConcept = 'generic' | 'identity' | 'style' | 'motion' | 'audio
 export interface RefModCreateRequest { name: string; description: string; conceptType: RefModConcept; media: (H3Media & { description?: string })[]; refmods: string[]; vae?: string; audioVae?: string }
 export interface RefModCreated { name: string; members: number; counts: { image: number; video: number; audio: number }; warnings: string[] }
 export type RefModExportState = { state: 'queued' | 'running' | 'cancelled' | 'missing' } | { state: 'done'; result: RefModCreated } | { state: 'failed'; error: string };
-export const submitRefMod = (baseUrl: string, request: RefModCreateRequest): Promise<{ promptId: string }> => native('native_h3_refmod_submit', { baseUrl, request });
+export const submitRefMod = (baseUrl: string, request: RefModCreateRequest, modelsDir?: string): Promise<{ promptId: string }> => native('native_h3_refmod_submit', { baseUrl, request, modelsDir });
 export const refModStatus = (baseUrl: string, promptId: string): Promise<RefModExportState> => native('native_h3_refmod_status', { baseUrl, promptId });
 export const cancelRefMod = (baseUrl: string, promptId: string): Promise<{ cancelled: 'queued' | 'running' | 'none' }> => native('native_h3_refmod_cancel', { baseUrl, promptId });
 export const readH3Session = (baseUrl: string, session: string): Promise<{ latestId: string | null; clips: H3Clip[] }> => native('native_h3_session', { baseUrl, session });

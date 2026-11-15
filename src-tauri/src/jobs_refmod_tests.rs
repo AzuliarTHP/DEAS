@@ -172,28 +172,6 @@ fn keeps_a_form_both_the_backend_and_compile_accept() {
     assert_eq!(loadable(r"../h3\video_vae.safetensors"), None);
 }
 
-/// The Windows `VAELoader` combo lists and matches `Sub\file` exactly (TESTPC probe): the
-/// resolver keeps the advertised id and `compile()` forwards it unchanged.
-#[test]
-fn a_native_windows_vae_id_survives_the_resolver_and_compile() {
-    assert_eq!(
-        loadable(r"MiniMaxH3\minimax_h3_video_vae_fp16.safetensors").as_deref(),
-        Some(r"MiniMaxH3\minimax_h3_video_vae_fp16.safetensors")
-    );
-    let mut r = request();
-    r["vae"] = json!(r"MiniMaxH3\video_vae.safetensors");
-    r["audioVae"] = json!(r"MiniMaxH3\audio_vae.safetensors");
-    let g = compile(&r, "req-win").unwrap();
-    assert_eq!(
-        g["V"]["inputs"]["vae_name"],
-        r"MiniMaxH3\video_vae.safetensors"
-    );
-    assert_eq!(
-        g["AV"]["inputs"]["vae_name"],
-        r"MiniMaxH3\audio_vae.safetensors"
-    );
-}
-
 /// A backend whose VAELoader combo advertises `list`: it counts the library reads and keeps the queued prompt.
 async fn library_backend(
     list: Vec<String>,
@@ -230,7 +208,7 @@ async fn submit_fills_blank_lanes_from_the_advertised_library() {
     let mut r = request();
     r.as_object_mut().unwrap().remove("vae");
     r["audioVae"] = json!("");
-    let id = native_h3_refmod_submit(base, r).await.unwrap();
+    let id = native_h3_refmod_submit(base, r, None).await.unwrap();
     assert_eq!(id["promptId"], PROMPT);
     assert_eq!(
         reads.load(Ordering::SeqCst),
@@ -238,8 +216,7 @@ async fn submit_fills_blank_lanes_from_the_advertised_library() {
         "one library read covers both lanes"
     );
     let graph = queued_prompt(&posted);
-    // Advertised names enter the graph exactly as listed: the Windows combo matches `Sub\file` verbatim
-    // (TESTPC probe) and compile() accepts both forms via comfy_model_name.
+    // Advertised names enter the graph unchanged: they are the exact values the backend validates against.
     assert_eq!(
         graph["V"]["inputs"]["vae_name"],
         r"Minimax\minimax_h3_video_vae_fp16.safetensors"
@@ -256,7 +233,9 @@ async fn submit_fills_blank_lanes_from_the_advertised_library() {
 async fn an_explicit_vae_pair_wins_over_the_library_default() {
     let (base, posted, reads, task) = library_backend(library()).await;
     assert_eq!(
-        native_h3_refmod_submit(base, request()).await.unwrap()["promptId"],
+        native_h3_refmod_submit(base, request(), None)
+            .await
+            .unwrap()["promptId"],
         PROMPT
     );
     assert_eq!(reads.load(Ordering::SeqCst), 0);
@@ -281,7 +260,9 @@ async fn an_unresolved_lane_keeps_the_existing_refusal() {
     r.as_object_mut().unwrap().remove("vae");
     r["audioVae"] = json!("");
     assert_eq!(
-        native_h3_refmod_submit(base, r.clone()).await.unwrap_err(),
+        native_h3_refmod_submit(base, r.clone(), None)
+            .await
+            .unwrap_err(),
         "Video references need the MiniMax H3 video VAE"
     );
     assert_eq!(
@@ -292,8 +273,8 @@ async fn an_unresolved_lane_keeps_the_existing_refusal() {
     task.abort();
     // A lost library read behaves the same, in either lane.
     let dead = crate::validate_base_url("http://127.0.0.1:9").unwrap();
-    assert_eq!(fill_h3_vaes(&dead, r.clone()).await, r);
-    let untouched = fill_h3_vaes(&dead, r).await;
+    assert_eq!(fill_h3_vaes(&dead, r.clone(), None).await, r);
+    let untouched = fill_h3_vaes(&dead, r, None).await;
     assert_eq!(
         compile(&untouched, "x").unwrap_err(),
         "Video references need the MiniMax H3 video VAE"
@@ -302,9 +283,117 @@ async fn an_unresolved_lane_keeps_the_existing_refusal() {
     audio["media"] = json!([{"type":"audio","file":"deas-inputs/v.wav","slot":0}]);
     audio.as_object_mut().unwrap().remove("audioVae");
     assert_eq!(
-        compile(&fill_h3_vaes(&dead, audio).await, "x").unwrap_err(),
+        compile(&fill_h3_vaes(&dead, audio, None).await, "x").unwrap_err(),
         "Audio references need the MiniMax H3 audio VAE"
     );
+}
+
+/// A RefMod needs the folders on disk, not a running backend: with the backend down the same H3 pair is
+/// resolved from `vae/`, named the way this machine's backend lists them — the exact state that used to
+/// answer "…need the MiniMax H3 video VAE".
+#[tokio::test]
+async fn a_stopped_backend_still_resolves_the_h3_vaes_from_the_model_folders() {
+    let models = vae_library();
+    let dead = crate::validate_base_url("http://127.0.0.1:9").unwrap();
+    let mut r = request();
+    r.as_object_mut().unwrap().remove("vae");
+    r["audioVae"] = json!("");
+    let filled = fill_h3_vaes(&dead, r, Some(models.path())).await;
+    assert_eq!(
+        filled["vae"],
+        json!(native("Minimax/minimax_h3_video_vae_fp16.safetensors"))
+    );
+    assert_eq!(
+        filled["audioVae"],
+        json!(native("Minimax/minimax_h3_audio_vae_fp32.safetensors"))
+    );
+    assert!(compile(&filled, "x").is_ok());
+}
+
+/// An explicit choice is forwarded exactly as the app showed it. ComfyUI validates `vae_name` against its
+/// own enum, which on Windows reads `Minimax\file`; the earlier rewrite to `/` passed `compile()` and then
+/// failed that enum check, and the older strict gate refused the native id outright.
+#[tokio::test]
+async fn an_explicit_native_id_is_forwarded_unchanged() {
+    let dead = crate::validate_base_url("http://127.0.0.1:9").unwrap();
+    let mut r = request();
+    r["vae"] = json!(r"Minimax\minimax_h3_video_vae_fp16.safetensors");
+    r["audioVae"] = json!(r"Minimax\minimax_h3_audio_vae_fp32.safetensors");
+    let filled = fill_h3_vaes(&dead, r, None).await;
+    assert_eq!(
+        filled["vae"],
+        json!(r"Minimax\minimax_h3_video_vae_fp16.safetensors")
+    );
+    assert_eq!(
+        filled["audioVae"],
+        json!(r"Minimax\minimax_h3_audio_vae_fp32.safetensors")
+    );
+    assert_eq!(
+        compile(&filled, "x").unwrap()["V"]["inputs"]["vae_name"],
+        json!(r"Minimax\minimax_h3_video_vae_fp16.safetensors")
+    );
+}
+
+/// The folders are read through the same category map that writes `deas-models.yaml`: `vae/` supplies VAEs,
+/// a sidecar is not a model, and another category's file of the same name never joins.
+#[test]
+fn disk_vaes_lists_the_vae_folders_only() {
+    let models = vae_library();
+    assert_eq!(
+        disk_vaes(models.path()),
+        names(&[
+            &native("Minimax/minimax_h3_audio_vae_fp32.safetensors"),
+            &native("Minimax/minimax_h3_video_vae_fp16.safetensors"),
+            "taeh3.safetensors",
+        ])
+    );
+}
+
+/// The backend's own list wins because the queued prompt is validated against it; the folder list is the
+/// fallback, and a lane with neither source stays unresolved.
+#[test]
+fn the_backend_list_wins_and_the_folder_list_is_the_fallback() {
+    let disk = disk_vaes(vae_library().path());
+    assert_eq!(
+        resolve_lane(&[], &disk, false),
+        Some((
+            "library",
+            native("Minimax/minimax_h3_video_vae_fp16.safetensors")
+        ))
+    );
+    assert_eq!(
+        resolve_lane(
+            &names(&["Other/h3_video_vae_bf16.safetensors"]),
+            &disk,
+            false
+        ),
+        Some(("backend", "Other/h3_video_vae_bf16.safetensors".to_owned()))
+    );
+    assert_eq!(resolve_lane(&[], &[], true), None);
+}
+
+/// A folder-path id in the form a ComfyUI on this machine lists: `/` in the tests, the platform separator
+/// on disk, because `folder_paths` reports what the filesystem shows and the prompt is validated against it.
+fn native(path: &str) -> String {
+    path.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
+/// A real `vae/` folder for the resolver: the H3 pair, a preview decoder, a sidecar, and the same name in a
+/// category that must not be read.
+fn vae_library() -> tempfile::TempDir {
+    let models = tempfile::tempdir().unwrap();
+    for file in [
+        "vae/Minimax/minimax_h3_video_vae_fp16.safetensors",
+        "vae/Minimax/minimax_h3_audio_vae_fp32.safetensors",
+        "vae/Minimax/minimax_h3_audio_vae_fp32.safetensors.deas.json",
+        "vae/taeh3.safetensors",
+        "loras/Minimax/minimax_h3_video_vae_fp16.safetensors",
+    ] {
+        let path = models.path().join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"x").unwrap();
+    }
+    models
 }
 
 #[test]
@@ -438,7 +527,7 @@ async fn live_refmod_export() {
     let request = json!({"name":format!("deas-probe-{}", uuid::Uuid::new_v4().simple()),"description":"probe","conceptType":"identity",
         "media":[{"type":"image","file":"deas-inputs/probe.png","slot":0,"description":"noise"}],"refmods":[],
         "vae":"MiniMaxH3/minimax_h3_video_vae_fp16.safetensors"});
-    let id = native_h3_refmod_submit(base.clone(), request)
+    let id = native_h3_refmod_submit(base.clone(), request, None)
         .await
         .unwrap()["promptId"]
         .as_str()

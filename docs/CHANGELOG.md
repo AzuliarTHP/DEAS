@@ -2,7 +2,7 @@
 
 ## 0.2.35 BETA (unreleased)
 
-- **Create RefMod picks the MiniMax H3 VAEs you left unchosen.** An empty VAE/audio-VAE lane now resolves to the backend's own advertised `VAELoader` files: MiniMax H3 files only, never another family's VAE and never the `taeh3` preview decoder, audio names for sound only, one library read per submit, the chosen file named in central Logs. Backend-listed ids cross unchanged — a Windows combo advertises and matches `Sub\file` names exactly (probed on the Windows test host). A picked VAE always wins; a lane with no candidate keeps the existing refusal.
+- **Create RefMod picks the MiniMax H3 VAEs you left unchosen.** An empty VAE/audio-VAE lane resolves to the pipeline's own matching VAE set (the Model files **Matching** list for that slot), and the native resolver fills any lane still blank from the running backend's advertised `VAELoader` files or, when the backend is stopped, from the configured model folders — MiniMax H3 files only, never another family's VAE and never a `tae*` preview decoder, one lookup per submit, every outcome named in central Logs. Backend-listed ids cross unchanged — a Windows combo advertises and matches `Sub\file` names exactly (probed on the Windows test host). A picked VAE always wins; a lane with no candidate keeps the existing refusal.
 
 - **Model hashing reads 8 MiB slices.** Library *Scan Files* hashing now reads in 8 MiB chunks instead of `std::io::copy`'s 8 KiB buffer (~21× on the reference machine); the digest and the grew-while-hashing / stopped-short checks are unchanged, pinned by a boundary test.
 

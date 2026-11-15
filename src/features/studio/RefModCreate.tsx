@@ -7,17 +7,10 @@ const concepts:RefModConcept[]=['generic','identity','style','motion','audio'];
 type Phase='idle'|'uploading'|'queued'|'running'|'done'|'failed'|'cancelled';
 const busyPhases:Phase[]=['uploading','queued','running'];
 
-export interface RefModCreateProps { endpoint:string; refs:VideoRef[]; /** Director tags (`<Picture 1>`…) per reference. */ tags:string[]; /** Saved RefMod rows that can be re-bundled. */ saved:string[]; vae:string; audioVae:string; /** VAE files the model library shows; a lane the user left unchosen is filled from these. */ vaes?:string[]; /** Copies a local file into the backend input folder; returns its `deas-inputs/…` name. */ upload:(path:string)=>Promise<string>; onSaved:(name:string)=>void }
-
-/** The rule the native resolver applies to the same list: only MiniMax H3 VAEs qualify — other families' files never do, and neither does a `tae*` preview decoder that carries the `h3` token. The audio lane takes an audio file and every other lane must not be one, a video name wins inside a lane, then the shortest name, then A-Z. */
-export const pickH3Vae=(names:readonly string[],wantAudio:boolean):string=>{
- const lane=names.filter(name=>{const lower=name.toLowerCase(),base=lower.split(/[\\/]/).pop()??lower;return lower.includes('h3')&&!lower.includes('taeh3')&&!base.startsWith('tae')&&lower.includes('audio')===wantAudio;});
- const rank=(name:string)=>name.toLowerCase().includes('video')?0:1;
- return [...lane].sort((a,b)=>rank(a)-rank(b)||a.length-b.length||(a<b?-1:a>b?1:0))[0]??'';
-};
+export interface RefModCreateProps { endpoint:string; refs:VideoRef[]; /** Director tags (`<Picture 1>`…) per reference. */ tags:string[]; /** Saved RefMod rows that can be re-bundled. */ saved:string[]; vae:string; audioVae:string; /** The pipeline's own matching model list — the Model files **Matching** set for that slot. A lane the user left unchosen takes its first entry; `tae*` preview decoders are not in the VAE slot's set. */ vaes?:string[]; audioVaes?:string[]; /** The configured models folder: with the backend stopped the native resolver reads `vae/` from it. */ modelsDir?:string; /** Copies a local file into the backend input folder; returns its `deas-inputs/…` name. */ upload:(path:string)=>Promise<string>; onSaved:(name:string)=>void }
 
 /** Director *Create RefMod*: encodes the checked references into one new file in `models/refmods`. References and prompt stay unchanged. */
-export function RefModCreate({endpoint,refs,tags,saved,vae,audioVae,vaes=[],upload,onSaved}:RefModCreateProps){
+export function RefModCreate({endpoint,refs,tags,saved,vae,audioVae,vaes=[],audioVaes=[],modelsDir,upload,onSaved}:RefModCreateProps){
  const {t}=useI18n();
  const [name,setName]=useState(''),[concept,setConcept]=useState<RefModConcept>('generic'),[description,setDescription]=useState('');
  // Like the Director, every row starts checked; descriptions default to the reference's own description.
@@ -29,9 +22,10 @@ export function RefModCreate({endpoint,refs,tags,saved,vae,audioVae,vaes=[],uplo
  const chosen=refs.filter((_,i)=>picked[i]);
  const visual=chosen.some(r=>r.item.media==='image'||(r.item.media==='video'&&r.mediaMode!=='audio'));
  const sound=chosen.some(r=>r.item.media==='audio'||(r.item.media==='video'&&r.mediaMode!=='video'));
- // An explicit choice always wins; an unchosen lane falls back to the library's own H3 file, and only a lane with no candidate blocks.
- const useVae=vae||pickH3Vae(vaes,false);
- const useAudioVae=audioVae||pickH3Vae(vaes,true);
+ // An explicit choice always wins; an unchosen lane takes the pipeline's own matching file — the same
+ // resolver the Model files pane shows as **Matching** — and only a lane with no matching file blocks.
+ const useVae=vae||vaes[0]||'';
+ const useAudioVae=audioVae||audioVaes[0]||'';
  const reason=!chosen.length&&!pickedSaved.some(Boolean)?'studio.run.video.refmodNothing':visual&&!useVae?'studio.run.video.refmodNeedsVae':sound&&!useAudioVae?'studio.run.video.refmodNeedsAudioVae':'';
  const busy=busyPhases.includes(phase),locked=busy||phase==='done';
  async function create(){
@@ -43,7 +37,7 @@ export function RefModCreate({endpoint,refs,tags,saved,vae,audioVae,vaes=[],uplo
    const media=chosen.map((r,i)=>({type:r.item.media as 'image'|'video'|'audio',file:files[i],slot:slots[i],...(r.item.media==='video'?{mediaMode:r.mediaMode??'video'}:{}),
     ...(r.item.media!=='image'&&r.trimStart!==undefined?{trimStart:r.trimStart}:{}),...(r.item.media!=='image'&&r.trimEnd!==undefined?{trimEnd:r.trimEnd}:{}),
     ...(notes[indices[i]].trim()?{description:notes[indices[i]].trim()}:{})}));
-   const {promptId}=await submitRefMod(endpoint,{name:name.trim(),description:description.trim(),conceptType:concept,media,refmods:saved.filter((_,i)=>pickedSaved[i]),...(visual?{vae:useVae}:{}),...(sound?{audioVae:useAudioVae}:{})});
+   const {promptId}=await submitRefMod(endpoint,{name:name.trim(),description:description.trim(),conceptType:concept,media,refmods:saved.filter((_,i)=>pickedSaved[i]),...(visual?{vae:useVae}:{}),...(sound?{audioVae:useAudioVae}:{})},modelsDir);
    prompt.current=promptId;
    for(;;){
     if(!alive.current)return;
