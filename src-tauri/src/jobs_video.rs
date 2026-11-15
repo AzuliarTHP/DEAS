@@ -70,7 +70,7 @@ const H3_INPUT_SCALING: [&str; 7] = [
     "Long side with divisible crop",
 ];
 /// Every class the three graphs can emit; prepare() checks each against object_info.
-pub(crate) const VIDEO_NODES: [&str; 40] = [
+pub(crate) const VIDEO_NODES: [&str; 41] = [
     "ModelPreviewOverrideKJ",
     "DaSiWaH3TiledUpscale",
     "DaSiWaH3HiResRegenerate",
