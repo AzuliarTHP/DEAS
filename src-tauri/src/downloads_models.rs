@@ -12,7 +12,11 @@ use std::{
 };
 
 const EXTENSIONS: [&str; 7] = ["safetensors", "sft", "ckpt", "pt", "pth", "gguf", "bin"];
-const MAX_MODELS: usize = 5000;
+// The walk guard is a runaway guard for a misconfigured root, not a real library; the UI payload
+// has its own cap and says so when it cuts. shortcut: listing describes every found file before
+// capping; revisit when someone actually walks 100k.
+const MAX_WALK: usize = 100_000;
+const MAX_LISTING: usize = 25_000;
 const MAX_DEPTH: usize = 8;
 const SIDECAR: &str = ".deas.json";
 // Small advisory JSON only; read at most this bound plus one detection byte.
@@ -947,7 +951,13 @@ fn describe(category: &str, base: &Path, path: &Path) -> Result<LocalModel, Stri
     Ok(model)
 }
 
-fn walk(category: &str, base: &Path, dir: &Path, depth: usize, out: &mut Vec<LocalModel>) {
+fn walk(
+    category: &'static str,
+    base: &Path,
+    dir: &Path,
+    depth: usize,
+    out: &mut Vec<(&'static str, PathBuf, PathBuf)>,
+) {
     let Ok((resolved, _)) = resolve_directory(dir) else {
         return;
     };
@@ -957,7 +967,7 @@ fn walk(category: &str, base: &Path, dir: &Path, depth: usize, out: &mut Vec<Loc
     let mut entries: Vec<_> = entries.flatten().map(|e| dir.join(e.file_name())).collect();
     entries.sort();
     for path in entries {
-        if out.len() >= MAX_MODELS {
+        if out.len() >= MAX_WALK {
             return;
         }
         let hidden = path
@@ -971,11 +981,54 @@ fn walk(category: &str, base: &Path, dir: &Path, depth: usize, out: &mut Vec<Loc
                 walk(category, base, &path, depth + 1, out);
             }
         } else if is_model(&path) {
-            if let Ok(model) = describe(category, base, &path) {
-                out.push(model);
-            }
+            out.push((category, base.to_path_buf(), path));
         }
     }
+}
+
+/// All model files under the standard ComfyUI category folders of `root`, sorted per folder.
+pub fn scan(root: &Path) -> Result<Vec<LocalModel>, String> {
+    if !root.is_absolute() {
+        return Err("Models folder must be absolute".into());
+    }
+    if resolve_directory(root).is_err() {
+        return Err(format!("{}: not an existing directory", root.display()));
+    }
+    let mut jobs = vec![];
+    for (category, base) in crate::settings::model_locations(root) {
+        walk(category, &base, &base, 0, &mut jobs);
+    }
+    if jobs.len() >= MAX_WALK {
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            &format!(
+                "WARN: model walk stopped at {MAX_WALK} files under {}",
+                root.display()
+            ),
+        );
+    }
+    // describe() is syscall/header-bound; 4 threads, more would thrash spinning disks.
+    // shortcut: fixed 4, raise only with a measured reason (NVMe-only fleets).
+    let threads = jobs.len().div_ceil(4).clamp(1, 4);
+    let chunk = jobs.len().div_ceil(threads).max(1);
+    let mut out = vec![];
+    std::thread::scope(|s| {
+        let handles: Vec<_> = jobs
+            .chunks(chunk)
+            .map(|part| {
+                s.spawn(move || {
+                    part.iter()
+                        .filter_map(|(c, b, p)| describe(c, b, p).ok())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        for h in handles {
+            out.extend(h.join().unwrap());
+        }
+    });
+    deduplicate(&mut out);
+    Ok(out)
 }
 
 /// All model files under the standard ComfyUI category folders of each root, sorted per folder.
@@ -987,22 +1040,6 @@ pub fn scan_roots(roots: &[PathBuf]) -> Result<Vec<LocalModel>, String> {
     }
     deduplicate(&mut models);
     Ok(models)
-}
-
-/// All model files under the standard ComfyUI category folders of `root`, sorted per folder.
-pub fn scan(root: &Path) -> Result<Vec<LocalModel>, String> {
-    if !root.is_absolute() {
-        return Err("Models folder must be absolute".into());
-    }
-    if resolve_directory(root).is_err() {
-        return Err(format!("{}: not an existing directory", root.display()));
-    }
-    let mut out = vec![];
-    for (category, base) in crate::settings::model_locations(root) {
-        walk(category, &base, &base, 0, &mut out);
-    }
-    deduplicate(&mut out);
-    Ok(out)
 }
 
 fn deduplicate(models: &mut Vec<LocalModel>) {
@@ -1298,6 +1335,20 @@ pub async fn native_model_family_write(
     result
 }
 
+/// The webview payload carries its own cap; a listing that big already signals a misconfigured
+/// root, and silence about dropped files is worse than the cap.
+fn cap_for_ui(models: Vec<LocalModel>) -> Vec<LocalModel> {
+    let total = models.len();
+    if total > MAX_LISTING {
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            &format!("WARN: model listing truncated to {MAX_LISTING} of {total} files"),
+        );
+        return models.into_iter().take(MAX_LISTING).collect();
+    }
+    models
+}
+
 // async + blocking pool: a sync command runs on the main thread and would freeze the UI during the header reads.
 #[tauri::command]
 pub async fn native_models_scan(
@@ -1308,7 +1359,7 @@ pub async fn native_models_scan(
     if let Some(extra) = extra_roots {
         roots.extend(extra.iter().map(PathBuf::from));
     }
-    tauri::async_runtime::spawn_blocking(move || scan_roots(&roots))
+    tauri::async_runtime::spawn_blocking(move || scan_roots(&roots).map(cap_for_ui))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -2868,6 +2919,59 @@ mod tests {
             size,
             path.display(),
             size as f64 / 1_048_576.0 / seconds
+        );
+    }
+
+    #[test]
+    fn an_oversized_ui_listing_is_cut_honestly() {
+        let seed = LocalModel {
+            check: None,
+            category: "loras".into(),
+            name: "m.safetensors".into(),
+            path: "/models/loras/m.safetensors".into(),
+            size: 1,
+            info: None,
+            family: None,
+            detected_family: None,
+            family_evidence: None,
+            family_override: None,
+            metadata_error: None,
+            component: None,
+            integrity: None,
+            misplaced_all_in_one: false,
+        };
+        assert_eq!(
+            cap_for_ui(vec![seed.clone(); MAX_LISTING + 5]).len(),
+            MAX_LISTING
+        );
+        assert_eq!(cap_for_ui(vec![seed; 7]).len(), 7);
+    }
+
+    /// Measures the whole-listing wall time over a real library: `DEAS_SCAN_LIBRARY=/path cargo
+    /// test --lib -- --ignored --test-threads=1 --nocapture scan_listing_throughput_reference`.
+    /// Prints per-round and best/avg seconds; skips itself when the folder is not mounted.
+    #[test]
+    #[ignore = "walks the whole model library"]
+    fn scan_listing_throughput_reference() {
+        let root = PathBuf::from(std::env::var("DEAS_SCAN_LIBRARY").unwrap_or_default());
+        if !root.is_dir() {
+            eprintln!("scan: skipped, {} is not mounted", root.display());
+            return;
+        }
+        let mut best = f64::MAX;
+        let mut total = 0.0;
+        let mut count = 0;
+        for round in 0..5 {
+            let started = std::time::Instant::now();
+            count = super::scan(&root).expect("scan").len();
+            let secs = started.elapsed().as_secs_f64();
+            best = best.min(secs);
+            total += secs;
+            eprintln!("scan round {round}: {count} models in {secs:.3}s");
+        }
+        eprintln!(
+            "scan: {count} models, best {best:.3}s, avg {:.3}s",
+            total / 5.0
         );
     }
 
