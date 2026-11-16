@@ -44,11 +44,11 @@
   "studio.samVideo.cutsAdapter": "DEAS_SAM3ShotMask is missing. Restart or update the owned backend, or turn off hard-cut detection.",
   "studio.samVideo.title": "H3 Face-Refiner",
   "studio.faceRefine.auto": "Refine faces after H3 generation",
-  "studio.faceRefine.autoHint": "Adds face refinement to every MiniMax H3 run: the unrefined video is saved first, then each tracked face is re-sampled and stitched back. Off by default.",
+  "studio.faceRefine.autoHint": "Adds face refinement after MiniMax H3 image or video generation. Original and Processed are both kept. Off by default.",
   "studio.faceRefine.denoise": "Refine strength",
   "studio.faceRefine.denoiseHint": "Share of the H3 schedule re-run on each face crop (0.3 keeps identity; higher rewrites more). At least 2 steps always run.",
   "studio.faceRefine.cropFactor": "Crop context",
-  "studio.faceRefine.cropFactorHint": "Square crop side as a multiple of the tallest face height in the shot.",
+  "studio.faceRefine.cropFactorHint": "Square crop side as a multiple of the tallest face height in the image or shot.",
   "studio.faceRefine.feather": "Edge feather (px)",
   "studio.faceRefine.featherHint": "Grows and softens the face mask so the stitched face has no seam.",
   "studio.faceRefine.prompt": "Refine prompt",
@@ -1161,7 +1161,7 @@
   "studio.faceRefine.minFace": "Minimum face size (px)",
   "studio.faceRefine.minFaceHint": "Faces never taller than this keep their original pixels (0 = refine every face). A tiny face is upscaled to the 768 refine canvas and costs a full H3 pass for little detail.",
   "studio.faceRefine.primaryOnly": "Main face only",
-  "studio.faceRefine.primaryOnlyHint": "Refine only the largest tracked face in each shot (the main subject); other faces keep their original pixels. Off = every tracked face.",
+  "studio.faceRefine.primaryOnlyHint": "Refine only the largest face in the image or tracked face in each video shot (the main subject); other faces keep their original pixels. Off = every face.",
   "studio.run.post.card.active": "Enabled",
   "studio.run.post.card.inactive": "Inactive",
   "studio.run.post.card.unavailable": "Unavailable for this pipeline",
@@ -1249,5 +1249,8 @@
   "loraSets.disable": "Disable {name}",
   "loraSets.disabled": "Disabled",
   "loraSets.moved": "Moved {name} to position {position} of {total}.",
-  "loraDetails.copySelected": "Copy selected ({count})"
+  "loraDetails.copySelected": "Copy selected ({count})",
+  "studio.faceRefine.stillHint": "After H3 image generation, detect faces with SAM3.1, refine square crops and composite them back. Original and Processed are both kept. No video analysis or manual refinement action is needed.",
+  "studio.faceRefine.stillUnavailable": "H3 still-image Face Refine requires a compatible adapter with BOOLEAN still_image support.",
+  "studio.faceRefine.h3Only": "Available for MiniMax H3 images and videos only."
 }

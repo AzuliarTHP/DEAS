@@ -2021,6 +2021,7 @@ fn h3(i: &Value) -> Value {
             json!(["D", 8]),
             sampling,
             f,
+            (json!(["C",0]), json!(["V",0])),
         );
     }
     if upscale && refining {

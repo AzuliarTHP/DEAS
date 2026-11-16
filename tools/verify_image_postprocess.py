@@ -10,6 +10,7 @@ from pathlib import Path
 import sys
 import tempfile
 import types
+from unittest.mock import patch
 from PIL import Image
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -80,6 +81,36 @@ class Post:
             raise comfy.model_management.InterruptProcessingException()
         return (1 - image,)
 
+class RealFacePost(Post):
+    """Run the actual still adapter; only unavailable model computation is doubled."""
+    def run(self, image, loader):
+        import torch
+        from comfy_extras import nodes_sam3, nodes_custom_sampler
+        from comfy_extras.nodes_minimax_h3 import temporal_shape
+        spec = importlib.util.spec_from_file_location('deas_face_order_probe', Path(__file__).resolve().parents[1] / 'src-tauri/src/sam3_video_window.py')
+        assert spec is not None and spec.loader is not None
+        face = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(face)
+        calls.append('post')
+        assert list(Path(folder_paths.get_output_directory()).glob('*original*.png')), 'face adapter ran before Original'
+        class Vae:
+            def encode(self, pixels):
+                assert pixels.shape == (5, 768, 768, 3)
+                return torch.zeros(1, 24, temporal_shape(1)[1], 48, 48)
+            def decode(self, latent):
+                return torch.ones(1, 5, 768, 768, 3)
+        def sample(**kwargs):
+            if loader == 'fail':
+                raise RuntimeError('synthetic H3 sampling failure')
+            if loader == 'interrupt':
+                raise comfy.model_management.InterruptProcessingException()
+            return types.SimpleNamespace(result=({'samples': kwargs['latent_image']['samples']},))
+        with patch.object(face, 'track_shot', return_value={'packed_masks': torch.zeros(1, 1, 2, 2, dtype=torch.uint8)}), \
+                patch.object(nodes_sam3.SAM3_TrackToMask, 'execute', return_value=types.SimpleNamespace(result=(torch.ones_like(image[..., 0]),))), \
+                patch.object(nodes_custom_sampler.SamplerCustomAdvanced, 'execute', side_effect=sample):
+            return face.H3FaceRefine().refine(image, 24.0, None, None, 0.5, 4, 1, 0.0,
+                                            None, None, None, None, Vae(), 2.5, 0, still_image=True)
+
 class BrokenSaver(nodes.SaveImage):
     def save_images(self, images, filename_prefix='ComfyUI', **kwargs):
         raise RuntimeError('synthetic baseline saver failure')
@@ -87,7 +118,7 @@ class BrokenSaver(nodes.SaveImage):
 class BrokenMetadataSaver(BrokenSaver):
     RETURN_TYPES = ('STRING',)
 
-nodes.NODE_CLASS_MAPPINGS.update(PP_MetadataStub=MetadataSaver, PP_Loader=Loader, PP_Post=Post, PP_BrokenSaver=BrokenSaver, PP_BrokenMetadataSaver=BrokenMetadataSaver)
+nodes.NODE_CLASS_MAPPINGS.update(PP_MetadataStub=MetadataSaver, PP_Loader=Loader, PP_Post=Post, PP_RealFacePost=RealFacePost, PP_BrokenSaver=BrokenSaver, PP_BrokenMetadataSaver=BrokenMetadataSaver)
 class Server:
     client_id = None
     last_node_id = None
@@ -178,4 +209,11 @@ with tempfile.TemporaryDirectory(prefix='deas-pp1-', dir=args.scratch) as direct
         run(fresh(), graph('PP_BrokenSaver' if saver == 'SaveImage' else 'PP_BrokenMetadataSaver', 'ok'), False, baseline=False)
         assert not calls, calls
         results.append(f'{saver}: baseline failure blocks all post roots')
+        for mode in ['ok', 'loader-fail', 'fail', 'interrupt']:
+            clear()
+            g = graph(saver, mode)
+            g['R6']['class_type'] = 'PP_RealFacePost'
+            run(fresh(), g, mode == 'ok', processed=mode == 'ok')
+            assert calls == (['loader'] if mode == 'loader-fail' else ['loader', 'post']), calls
+            results.append(f'{saver}: actual still-face adapter {mode}, Original retained')
 print(json.dumps({'python': sys.version.split()[0], 'torch': execution.torch.__version__, 'device': str(comfy.model_management.get_torch_device()), 'cache': args.cache_type, 'passed': len(results), 'checks': results}, indent=2))

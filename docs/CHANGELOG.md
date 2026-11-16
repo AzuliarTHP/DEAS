@@ -2,6 +2,8 @@
 
 ## 0.2.38 BETA (unreleased)
 
+- **H3 face refinement for still images.** Advanced H3 Image uses the existing default-OFF face-refinement settings and SAM checkpoint, without video-analysis or standalone-video controls. The existing adapter explicitly pads a still to H3's minimum clip, refines tracked face crops and returns one stitched image; short video shots keep their previous behavior. The native graph saves Original before refinement, preserves Processed separately, and composes reference/masked edits and optional latent upscale (face refinement before upscale). Capability discovery requires the new still-image ABI without disabling older video refinement. Runtime/model-quality acceptance remains separate.
+
 - **PR #36 integration review.** Lying Sigma remains an initial-image-pass modifier; independent manual/chained SAM Auto Refine removes it before native validation and compilation. MOSS settings reuse restores the submitted SLG choice (absent means disabled), same-kind model switches preserve deliberately empty negative prompts, and both compilers reject nonexistent MOSS layers using the shared 42-layer family declaration.
 - **Earlier readiness and source invalidation.** Studio reports the native eight-active-LoRA limit before Run while retaining larger saved collections; deleting a chooser-selected TVE source invalidates its retained inspection too.
 - **Streaming export compatibility.** Unsupported WebM audio encoder configuration follows the house codec fallback rather than aborting on PyAV ValueError. Windows publishes private staged exports with no-replace rename instead of requiring filesystem hard-link support.

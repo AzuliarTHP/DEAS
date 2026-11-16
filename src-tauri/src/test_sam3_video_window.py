@@ -555,6 +555,83 @@ class CoreRefineTests(unittest.TestCase):
             window.H3FaceRefine().refine(torch.zeros(5, 8, 8, 3), 30.0, None, None, 0.5, 4, 1, 0.0,
                                          None, None, None, None, None, 2.5, 6)
 
+    def test_still_image_refines_one_frame_with_padding_and_preserves_unmasked_pixels(self):
+        import torch
+        from types import SimpleNamespace
+        from comfy_extras import nodes_sam3, nodes_custom_sampler
+        from comfy_extras.nodes_minimax_h3 import temporal_shape
+        self.assertEqual(window.H3FaceRefine.INPUT_TYPES()["optional"].get("still_image"),
+                         ("BOOLEAN", {"default": False}))
+        images = torch.full((1, 64, 96, 3), 0.25)
+        original = images.clone()
+        mask = torch.zeros(1, 64, 96)
+        mask[:, 20:30, 40:50] = 1
+        seen = {}
+        class Vae:
+            def encode(self, pixels):
+                seen["pixels"] = pixels.clone()
+                return torch.zeros(1, 24, temporal_shape(1)[1], 48, 48)
+            def decode(self, latent):
+                return torch.ones(1, temporal_shape(1)[0], 768, 768, 3)
+        def sample(**kwargs):
+            seen["noise_mask"] = kwargs["latent_image"]["noise_mask"].unbind()
+            seen["sound"] = kwargs["latent_image"]["samples"].unbind()[1]
+            return SimpleNamespace(result=({"samples": kwargs["latent_image"]["samples"]},))
+        track = {"packed_masks": torch.zeros(1, 1, 2, 2, dtype=torch.uint8)}
+        with patch.object(window, "track_shot", return_value=track) as tracker, \
+                patch.object(nodes_sam3.SAM3_TrackToMask, "execute", return_value=SimpleNamespace(result=(mask,))), \
+                patch.object(nodes_custom_sampler.SamplerCustomAdvanced, "execute", side_effect=sample):
+            out, = window.H3FaceRefine().refine(images, 24.0, None, None, 0.5, 4, 1, 0.0,
+                                               None, None, None, None, Vae(), 2.5, 0, still_image=True)
+        self.assertEqual(tracker.call_args.args[1:3], (0, 1))
+        self.assertEqual(tuple(seen["pixels"].shape), (5, 768, 768, 3))
+        self.assertTrue(torch.equal(seen["pixels"], seen["pixels"][:1].expand_as(seen["pixels"])))
+        self.assertEqual(float(seen["sound"].abs().sum()), 0)
+        self.assertEqual(tuple(out.shape), tuple(images.shape))
+        self.assertAlmostEqual(out[:, 20:30, 40:50].mean().item(), 1.0, places=4)
+        outside = out.clone(); outside[:, 20:30, 40:50] = 0.25
+        self.assertTrue(torch.equal(outside, original))
+        self.assertTrue(torch.equal(images, original))
+        self.assertEqual((float(seen["noise_mask"][0].min()), float(seen["noise_mask"][1].max())), (1.0, 0.0))
+
+    def test_still_mode_rejects_multi_frame_audio_and_coercions_before_tracking(self):
+        import torch
+        from comfy_extras import nodes_custom_sampler
+        audio = {"waveform": torch.zeros(1, 2, 100), "sample_rate": 48000}
+        with patch.object(window, "track_shot", return_value={"packed_masks": None}) as tracker, \
+                patch.object(nodes_custom_sampler.SamplerCustomAdvanced, "execute") as sampler:
+            for count, flag, sound in [(2, True, None), (5, True, None), (1, 1, None),
+                                        (1, "true", None), (1, None, None), (1, True, audio)]:
+                with self.subTest(count=count, flag=flag, audio=sound is not None):
+                    with self.assertRaisesRegex(ValueError, "still_image"):
+                        window.H3FaceRefine().refine(torch.zeros(count, 8, 8, 3), 24.0,
+                            None, None, 0.5, 4, 1, 0.0, None, None, None, None, None, 2.5, 0,
+                            audio=sound, audio_vae=object() if sound else None, still_image=flag)
+            tracker.assert_not_called()
+            sampler.assert_not_called()
+
+    def test_still_no_face_and_short_video_shots_keep_exact_source_without_sampling(self):
+        import torch
+        from comfy_extras import nodes_custom_sampler
+        with patch.object(window, "track_shot", return_value={"packed_masks": None}) as tracker, \
+                patch.object(nodes_custom_sampler.SamplerCustomAdvanced, "execute") as sampler:
+            for count in [1, 2, 3, 4]:
+                images = torch.full((count, 8, 8, 3), 0.25)
+                out, = window.H3FaceRefine().refine(images, 24.0, None, None, 0.5, 4, 1, 0.0,
+                                                   None, None, None, None, None, 2.5, 0)
+                self.assertTrue(torch.equal(out, images))
+            images = torch.tensor([0., 0., 1., 1., 0., 0.])[:, None, None, None].expand(-1, 8, 8, 3)
+            out, = window.H3FaceRefine().refine(images, 24.0, None, None, 0.5, 4, 1, 0.3,
+                                               None, None, None, None, None, 2.5, 0)
+            self.assertTrue(torch.equal(out, images))
+            tracker.assert_not_called()
+            images = torch.full((1, 8, 8, 3), 0.25)
+            out, = window.H3FaceRefine().refine(images, 24.0, None, None, 0.5, 4, 1, 0.0,
+                                               None, None, None, None, None, 2.5, 0, still_image=True)
+            self.assertTrue(torch.equal(out, images))
+            tracker.assert_called_once()
+            sampler.assert_not_called()
+
     def test_refine_pads_to_h3_grid_holds_audio_and_stitches_only_the_feathered_face(self):
         import torch
         from types import SimpleNamespace

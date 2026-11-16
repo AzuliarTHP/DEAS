@@ -44,11 +44,11 @@
   "studio.samVideo.cutsAdapter": "DEAS_SAM3ShotMask fehlt. Eigenes Backend neu starten oder aktualisieren, oder Schnitterkennung ausschalten.",
   "studio.samVideo.title": "H3 Face-Refiner",
   "studio.faceRefine.auto": "Gesichter nach H3-Generierung verfeinern",
-  "studio.faceRefine.autoHint": "Ergänzt jeden MiniMax-H3-Lauf um Gesichtsverfeinerung: Erst wird das unverfeinerte Video gespeichert, dann wird jedes verfolgte Gesicht neu berechnet und eingesetzt. Standardmäßig aus.",
+  "studio.faceRefine.autoHint": "Ergänzt die MiniMax-H3-Bild- oder Videogenerierung um Gesichtsverfeinerung. Original und bearbeitetes Ergebnis bleiben erhalten. Standardmäßig aus.",
   "studio.faceRefine.denoise": "Verfeinerungsstärke",
   "studio.faceRefine.denoiseHint": "Anteil des H3-Zeitplans, der auf jedem Gesichtsausschnitt neu läuft (0,3 erhält die Identität; höher verändert mehr). Es laufen immer mindestens 2 Schritte.",
   "studio.faceRefine.cropFactor": "Ausschnitt-Kontext",
-  "studio.faceRefine.cropFactorHint": "Seitenlänge des quadratischen Ausschnitts als Vielfaches der größten Gesichtshöhe in der Einstellung.",
+  "studio.faceRefine.cropFactorHint": "Seitenlänge des quadratischen Ausschnitts als Vielfaches der größten Gesichtshöhe im Bild oder Shot.",
   "studio.faceRefine.feather": "Randweichzeichnung (px)",
   "studio.faceRefine.featherHint": "Vergrößert und glättet die Gesichtsmaske, damit keine Naht sichtbar ist.",
   "studio.faceRefine.prompt": "Verfeinerungs-Prompt",
@@ -1161,7 +1161,7 @@
   "studio.faceRefine.minFace": "Mindest-Gesichtsgröße (px)",
   "studio.faceRefine.minFaceHint": "Gesichter, die nie größer als dieser Wert sind, behalten ihre Original-Pixel (0 = alle verfeinern). Ein winziges Gesicht wird auf das 768er-Raster hochskaliert und kostet einen vollen H3-Durchgang für wenig Detail.",
   "studio.faceRefine.primaryOnly": "Nur Hauptgesicht",
-  "studio.faceRefine.primaryOnlyHint": "Verfeinert pro Shot nur das größte getrackte Gesicht (das Hauptmotiv); andere Gesichter behalten ihre Original-Pixel. Aus = alle getrackten Gesichter.",
+  "studio.faceRefine.primaryOnlyHint": "Verfeinert nur das größte Gesicht im Bild oder getrackte Gesicht pro Video-Shot (das Hauptmotiv); andere Gesichter behalten ihre Original-Pixel. Aus = alle Gesichter.",
   "studio.run.post.card.active": "Aktiv",
   "studio.run.post.card.inactive": "Inaktiv",
   "studio.run.post.card.unavailable": "Für diese Pipeline nicht verfügbar",
@@ -1249,5 +1249,8 @@
   "loraSets.disable": "{name} deaktivieren",
   "loraSets.disabled": "Deaktiviert",
   "loraSets.moved": "{name} auf Position {position} von {total} verschoben.",
-  "loraDetails.copySelected": "Auswahl kopieren ({count})"
+  "loraDetails.copySelected": "Auswahl kopieren ({count})",
+  "studio.faceRefine.stillHint": "Nach der H3-Bildgenerierung erkennt SAM3.1 Gesichter, verfeinert quadratische Ausschnitte und setzt sie wieder ein. Original und bearbeitetes Ergebnis bleiben erhalten. Keine Videoanalyse oder manuelle Verfeinerung nötig.",
+  "studio.faceRefine.stillUnavailable": "H3-Gesichtsverfeinerung für Einzelbilder benötigt einen kompatiblen Adapter mit BOOLEAN-still_image-Unterstützung.",
+  "studio.faceRefine.h3Only": "Nur für MiniMax-H3-Bilder und -Videos verfügbar."
 }

@@ -67,8 +67,8 @@ import { OptionsPanel, defaultOptions, isOptionsPref, parseSigmas, runOptions } 
 import builtinFamilies from '../../families/builtin.json' with { type: 'json' };
 import { aspects, resolutions, scalingModes, canvasSize, scaleInput, validCanvas, type Size, type ScalingMode } from '../../lib/resolution';
 import { Sam3Controls, samTargets } from './Sam3Controls';
-import { Sam3VideoControls, type FaceRefineSettings } from './Sam3VideoControls';
-import { isSam3VideoIntent, sam3VideoNodes, type Sam3VideoMaskIntentV1, isSam3Intent, type Sam3MaskIntentV1, faceRefineNodes, isFaceRefineBlock, type H3FaceRefineBlock, type H3FaceRefineIntentV1 } from '../../lib/sam3';
+import { FaceRefineControls, Sam3VideoControls, type FaceRefineSettings } from './Sam3VideoControls';
+import { isSam3VideoIntent, sam3VideoNodes, type Sam3VideoMaskIntentV1, isSam3Intent, type Sam3MaskIntentV1, faceRefineNodes, faceRefineStillNodes, isFaceRefineBlock, type H3FaceRefineBlock, type H3FaceRefineIntentV1 } from '../../lib/sam3';
 import { StudioImageEditor, copyImageLayer, type EditorHandle, type EditorSnapshot } from './StudioImageEditor';
 import { ImageViewer } from './ImageViewer';
 import { StarMediaButton } from '../media/StarMediaButton';
@@ -116,7 +116,7 @@ const supportedLoraFormat=(m:LocalModel)=>/\.safetensors$/i.test(m.name);
 type Lora=SelectedLora;
 const isLoras=(v:unknown):v is Lora[]=>Array.isArray(v)&&v.every(l=>l&&typeof l.name==='string'&&typeof l.strength==='number'&&(l.enabled===undefined||typeof l.enabled==='boolean'));
 const isNumber=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
-const isFaceRefineSettings=(v:unknown):v is FaceRefineSettings=>!!v&&typeof v==='object'&&typeof (v as FaceRefineSettings).auto==='boolean'&&typeof (v as FaceRefineSettings).prompt==='string'&&(['denoise','cropFactor','feather'] as const).every(k=>typeof (v as FaceRefineSettings)[k]==='number');
+const isFaceRefineSettings=(v:unknown):v is FaceRefineSettings=>!!v&&typeof v==='object'&&typeof (v as FaceRefineSettings).auto==='boolean'&&typeof (v as FaceRefineSettings).prompt==='string'&&(['denoise','cropFactor','feather'] as const).every(k=>typeof (v as FaceRefineSettings)[k]==='number')&&((v as FaceRefineSettings).minFace===undefined||typeof (v as FaceRefineSettings).minFace==='number')&&((v as FaceRefineSettings).primaryOnly===undefined||typeof (v as FaceRefineSettings).primaryOnly==='boolean');
 const isMaskGrow=(v:unknown):v is number=>isNumber(v)&&Number.isInteger(v)&&v>=0&&v<=512;
 const isMaskBlur=(v:unknown):v is number=>isMaskGrow(v)&&v<=31;
 const clamp=(n:number,min:number,max:number)=>Math.min(max,Math.max(min,n));
@@ -393,6 +393,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [samVideoSceneThreshold,setSamVideoSceneThreshold]=usePref('studio.run.samVideoSceneThreshold',0.3,isNumber);
  // Off by default; denoise/crop/feather start from the reference node's defaults (unverified on H3 quality).
  const [faceRefine,setFaceRefine]=usePref<FaceRefineSettings>('studio.run.faceRefine',{auto:false,denoise:0.3,cropFactor:2.5,feather:6,prompt:''},isFaceRefineSettings);
+ const [imageFaceRefine,setImageFaceRefine]=usePref('studio.run.imageFaceRefine',false,isBoolean);
  const samVideoSettings={cuts:samVideoCuts,sceneThreshold:samVideoSceneThreshold,checkpoint:samCheckpoint,threshold:samThreshold,maxObjects:samVideoMax,detectInterval:samVideoInterval,startSeconds:samVideoStart,durationSeconds:samVideoDuration};
  const [samBusy,setSamBusy]=useState(false);const [nativeRefining,setNativeRefining]=useState(false);const [samStatus,setSamStatus]=useState('');
  const samValue={checkpoint:samCheckpoint,targets:samText,enabled:samEnabled,denoise:samDenoise,threshold:samThreshold,maskBlur};
@@ -613,14 +614,16 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const fps=family?.video?.fixedFps?family.video.fps:video.fps;
  const frames=videoFamily?videoFrames(videoFamily,video.seconds,fps):0;
  const audioVae=video.audioVae||recommended?.audioVaes[0]||'';
- const faceRefineBlock:H3FaceRefineBlock={samCheckpoint,prompt:faceRefine.prompt.trim()||positive,threshold:samThreshold,maxObjects:samVideoMax,detectInterval:samVideoInterval,...(samVideoCuts?{sceneThreshold:samVideoSceneThreshold}:{}),denoise:faceRefine.denoise,cropFactor:faceRefine.cropFactor,feather:faceRefine.feather,...(faceRefine.minFace?{minFace:faceRefine.minFace}:{}),...(faceRefine.primaryOnly?{subjects:'primary' as const}:{})};
- const faceRefineMissing=choices?faceRefineNodes.filter(node=>!choices.nodes.includes(node)):[];
+ const faceRefineBlock:H3FaceRefineBlock={samCheckpoint,prompt:faceRefine.prompt.trim()||positive,threshold:samThreshold,maxObjects:samVideoMax,detectInterval:samVideoInterval,...(isVideo&&samVideoCuts?{sceneThreshold:samVideoSceneThreshold}:{}),denoise:faceRefine.denoise,cropFactor:faceRefine.cropFactor,feather:faceRefine.feather,...(faceRefine.minFace!==undefined?{minFace:faceRefine.minFace}:{}),...(faceRefine.primaryOnly?{subjects:'primary' as const}:{})};
+ const faceRefineMissing=choices?(h3Image?faceRefineStillNodes:faceRefineNodes).filter(node=>!choices.nodes.includes(node)):[];
  // Blockers shared by generation chaining and the explicit action (which also needs a source video).
  const faceRefineSetup=!native?t('studio.sam.native'):!endpoint.trim()?t('studio.samVideo.noBackend'):!choices?t('studio.sam.checking')
+  :h3Image&&choices.faceRefineStill!==true?t('studio.faceRefine.stillUnavailable')
   :faceRefineMissing.length?t('studio.samVideo.core',{names:faceRefineMissing.join(', ')})
-  :!samCheckpoint||!samModels.includes(samCheckpoint)?t('studio.sam.missingModel')
+  :!samCheckpoint||!samModels.includes(samCheckpoint)||!choices.checkpoints.includes(samCheckpoint)?t('studio.sam.missingModel')
   :!isFaceRefineBlock(faceRefineBlock)?t('studio.faceRefine.invalid'):'';
  const faceRefineAutoUnavailable=faceRefineSetup;
+ const faceRefineAutoEnabled=h3Image?imageFaceRefine:faceRefine.auto;
  const textProjection=video.textProjection||recommended?.textProjections[0]||'';
  // Family labels filter browsing only. Every explicitly selected, present LoRA enters the intent.
  const allLoraModels=(models??[]).filter(m=>m.category==='loras').sort(byName);
@@ -726,7 +729,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  if((isMusic||isVideo&&videoFamily!=='wan')&&!audioEnhance.ready)unavailable.push(t('studio.audioEnhance.notReady'));
  // A chained refinement that cannot run blocks Run instead of being silently dropped.
  if(streamRequested&&streamReason)unavailable.push(streamReason);
- if(isVideo&&isH3Video(videoFamily)&&faceRefine.auto&&faceRefineAutoUnavailable)unavailable.push(faceRefineAutoUnavailable);
+ if((h3Image||isVideo&&isH3Video(videoFamily))&&faceRefineAutoEnabled&&faceRefineAutoUnavailable)unavailable.push(faceRefineAutoUnavailable);
  const lowModel=isVideo&&model?lowOf(model,family):'';
  const lowFile=lowModel?(models??[]).find(m=>m.name===lowModel&&m.category===model?.category):undefined;
  if(lowFile&&checkModel(lowFile).compatibility==='blocked')unavailable.push(`${lowFile.metadataError?t('modelMeta.invalid'):modelCheckText(checkModel(lowFile),t)} ${lowModel}`);
@@ -893,7 +896,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const activeRun=(ticket:{generation:number})=>live.current&&ticket.generation===preparationGeneration.current;
  // Press revisions must not delay reconciliation after the last Run reply settles.
  const finishRun=(ticket:{generation:number},admitted:boolean)=>{if(!activeRun(ticket))return;localPreparations.current--;lock.current=localPreparations.current>0;setBusy(lock.current);if(admitted&&!lock.current){setObservationRetry(0);setRecovered(false);}};
- function buildImageIntent(naming:string,out:VideoOutput,only?:{image:string;size:Size;upscaleOnly?:boolean}):DiagnosticImageIntentV1{
+ function buildImageIntent(naming:string,out:VideoOutput,only?:{image:string;size:Size;upscaleOnly?:boolean},includeFaceRefine=true):DiagnosticImageIntentV1{
   const target=up(only?only.size:outputSize);
   const refinePass=post&&!h3Image;
   const inputLayers=visibleImages(layers);
@@ -903,7 +906,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   const resized=!!upscaleModel||target.width!==only?.size.width||target.height!==only?.size.height;
   return Object.freeze(only
    ?{...common,width:target.width,height:target.height,steps:refineSigmas?refineSigmas.length-1:steps,...(refineSigmas?{sigmas:refineSigmas}:{}),inputImage:only.image,denoise:only.upscaleOnly?0:refineDenoise,...(resized?{inputResize:{...target,crop:'disabled' as const}}:{}),...(upscaleModel?{upscaleModel}:{})}
-   :{...common,width:outputSize.width,height:outputSize.height,steps:sigmas?sigmas.length-1:steps,...(sigmas?{sigmas}:{}),...(pipeline==='i2i'?{inputImage,denoise:h3Image?h3Denoise:strength,...(scaled?.resize?{inputResize:scaled.resize}:{}),...(inputLayers.length?{inputLayers}:{})}:{}),
+   :{...common,...(h3Image&&includeFaceRefine&&imageFaceRefine?{faceRefine:{...faceRefineBlock}}:{}),width:outputSize.width,height:outputSize.height,steps:sigmas?sigmas.length-1:steps,...(sigmas?{sigmas}:{}),...(pipeline==='i2i'?{inputImage,denoise:h3Image?h3Denoise:strength,...(scaled?.resize?{inputResize:scaled.resize}:{}),...(inputLayers.length?{inputLayers}:{})}:{}),
     ...(refinePass?{refine:{...target,denoise:refineDenoise,...(upscaleModel?{upscaleModel}:{}),...(refineSigmas?{sigmas:refineSigmas}:{}),...(tiled?{tiled}:{})}}:{})});
  }
  /** `only` = Post-process: the refine/upscale pass alone on that image (an image-to-image job), without a first generation. */
@@ -1010,7 +1013,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   const snapshot=editor?.capture();const image=editor?.sourcePng();const masks=inpaint?editor?.refineMasks():undefined;
   const size=snapshot?{width:snapshot.source.width,height:snapshot.source.height}:null;
   const settings=structuredClone(samSettings());
-  const intent={...structuredClone(buildImageIntent('DEAS/AutoRefine',optionsPref.output??defaultVideoOutput))};
+  const intent={...structuredClone(buildImageIntent('DEAS/AutoRefine',optionsPref.output??defaultVideoOutput,undefined,false))};
   const refs=imageRefs.map(r=>({...r,item:{...r.item}})),method=referenceMethod,vision=refVision;
   observation.current++;setObservationRetry(n=>n+1);const ticket=beginRun();setSamBusy(true);setSamStatus('');let admitted=false;
   try{
@@ -1024,7 +1027,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    const png=sourcePng??await flattenImages([{id:'source',name:picked!.name,src:picked!.src,x:0,y:0,...sourceSize,visible:true}],sourceSize.width,sourceSize.height);
    const sourceImage=await uploadMask(endpoint,png);
    Object.assign(intent,{width:sourceSize.width,height:sourceSize.height,inputImage:sourceImage,denoise:settings.denoise});
-   for(const key of ['inputResize','inputLayers','inputMask','maskBlur','inpaintCrop','upscaleModel','refine','lyingSigma'] as const)delete intent[key];
+   for(const key of ['inputResize','inputLayers','inputMask','maskBlur','inpaintCrop','upscaleModel','refine','lyingSigma','faceRefine'] as const)delete intent[key];
    if(refs.length&&method){const uploaded=await Promise.all(refs.map(r=>uploadInput(endpoint,r.item.path!)));if(method==='revision')intent.imageReference={visionModel:vision,images:uploaded.map((image,i)=>({image,strength:refs[i].strength}))};else intent.nativeImageReference={method,images:uploaded};}
    if(!activeRun(ticket))return;
    admitted=true;const result=await autoRefine(endpoint,intent,settings,ticket.admissionEpoch,null,selectedMasks.map(m=>({name:m.name,png:Array.from(m.png)})));
@@ -1614,6 +1617,7 @@ const promptTools=forgeContext&&<>
   if(draftPipe(p)===draftPipe(pipeline)&&model&&identity(m)===identity(model)){if(p!==pipeline)setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));if(!checkpointPref&&defaults)startingSettings(m,true);return;}
   rememberDraft();draftEpoch.current++;setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));setBrowsed(null);setSelectedJob('');
   const saved=drafts.current.get(draftKey(p,m));
+  if(!saved){setFaceRefine({...faceRefine,auto:false});setImageFaceRefine(false);}
   if(!saved)setLoras(loras.map(l=>l.enabled===true?{name:l.name,strength:l.strength}:l));
   // Only the checkpoint changed: its remembered settings return, the prompts on screen stay.
   // First visit to another checkpoint of the SAME family keeps the current settings instead of family defaults, so models can be compared side by side; family defaults still apply when the family (or pipeline) changes.
@@ -1711,6 +1715,7 @@ const promptTools=forgeContext&&<>
  };
  const applySettings=(s:GenerationSettings):string[]=>{
   rememberDraft();
+  setFaceRefine({...faceRefine,auto:false});setImageFaceRefine(false);
   setLyingSigma(s.lyingSigma&&isLyingSigma(s.lyingSigma)?{...s.lyingSigma}:{...defaultLyingSigma});
   setMossSkip(s.skipLayers??'');
   const skipped=(s.skipped??[]).map(item=>item==='video.intent'?t('studio.run.metadata.videoPartial'):item);
@@ -1802,6 +1807,11 @@ const promptTools=forgeContext&&<>
    fixedSeed(intent.seed);setCheckpoint(intent.checkpoint);setSteps(intent.steps);setCfg(intent.cfg);setSampler(intent.sampler);setScheduler(intent.scheduler);setOptions(value.options);
    setPipeline(value.pipeline);return true;
   }
+  const restoredFace=isFaceRefineBlock(intent.faceRefine)?intent.faceRefine:undefined;
+  if(isImageIntent(intent))setImageFaceRefine(!!restoredFace);
+  const restoredFaceAuto=isVideoIntent(intent)?!!restoredFace:faceRefine.auto;
+  setFaceRefine(restoredFace?{auto:restoredFaceAuto,denoise:restoredFace.denoise,cropFactor:restoredFace.cropFactor,feather:restoredFace.feather,prompt:restoredFace.prompt,minFace:restoredFace.minFace??0,primaryOnly:restoredFace.subjects==='primary'}:{...faceRefine,auto:restoredFaceAuto});
+  if(restoredFace){setSamCheckpoint(restoredFace.samCheckpoint);setSamThreshold(restoredFace.threshold);setSamVideoMax(restoredFace.maxObjects);setSamVideoInterval(restoredFace.detectInterval);setSamVideoCuts(restoredFace.sceneThreshold!==undefined);setSamVideoSceneThreshold(restoredFace.sceneThreshold??0.3);}
   setPositive(intent.positivePrompt);setNegative(intent.negativePrompt);
   fixedSeed(intent.seed);setCheckpoint(isVideoIntent(intent)?intent.model:intent.checkpoint);
   setSteps(intent.steps);setCfg(intent.cfg);setSampler(intent.sampler);setScheduler(intent.scheduler);
@@ -1953,8 +1963,8 @@ const promptTools=forgeContext&&<>
   regenerate:regenerateEnabled,
   regenerateTilingOff:regenerateEnabled&&!regeneratePref.spatialTiling,
   samVideoCuts,
-  faceRefine:faceRefine.auto&&!faceRefineAutoUnavailable,
-  faceRefinePrimaryOnly:faceRefine.auto&&!faceRefineAutoUnavailable&&!!faceRefine.primaryOnly,
+  faceRefine:faceRefineAutoEnabled&&!faceRefineAutoUnavailable,
+  faceRefinePrimaryOnly:faceRefineAutoEnabled&&!faceRefineAutoUnavailable&&!!faceRefine.primaryOnly,
   refineTiled:post&&postTiled&&!family?.temporalLatent&&!!choices?.nodes?.includes('DaSiWaTiledDiffusion'),
   derope:videoFamily==='minimax-h3'&&derope.enabled,
   deropeKeepBackground:videoFamily==='minimax-h3'&&derope.enabled&&deropePref.keepBackground,
@@ -1964,10 +1974,10 @@ const promptTools=forgeContext&&<>
  const postCategories=postCategoryOrder.map(id=>{
   const count=postByCategory[id].length;
   const active=count>0;
-  const available=id==='audio'?isMusic||isVideo:id==='latent'?latent:id==='face-analysis'?isVideo&&isH3Video(videoFamily):id==='sam'?!isVideo&&!isMusic:(id==='refine'||id==='model'&&!isVideo)?!isVideo&&!isMusic&&!h3Image&&!moss:id==='derope'?isVideo&&videoFamily==='minimax-h3':id==='regenerate'?regenerateAvailable:isVideo;
+  const available=id==='audio'?isMusic||isVideo:id==='latent'?latent:id==='face-analysis'?(h3Image||isVideo&&isH3Video(videoFamily)):id==='sam'?!isVideo&&!isMusic:(id==='refine'||id==='model'&&!isVideo)?!isVideo&&!isMusic&&!h3Image&&!moss:id==='derope'?isVideo&&videoFamily==='minimax-h3':id==='regenerate'?regenerateAvailable:isVideo;
   const reason=id==='audio'?(!isMusic&&!isVideo?t('studio.run.post.reason.audioVideoOnly'):isVideo&&videoFamily==='wan'&&audioEnhance.mode!=='off'?t('studio.run.post.reason.audioManualOnly'):'')
    :id==='latent'?(h3MaskedEdit?t('studio.run.post.reason.latentMasked'):!latent?t('studio.run.post.reason.latentOnly'):latentProblems[0]??'')
-   :id==='face-analysis'?(!(isVideo&&isH3Video(videoFamily))?t('studio.run.post.reason.h3VideoOnly'):faceRefine.auto&&faceRefineAutoUnavailable?faceRefineAutoUnavailable:'')
+   :id==='face-analysis'?(!(h3Image||isVideo&&isH3Video(videoFamily))?t('studio.faceRefine.h3Only'):faceRefineAutoEnabled&&faceRefineAutoUnavailable?faceRefineAutoUnavailable:'')
    :id==='sam'?(isVideo||isMusic?t('studio.run.post.reason.imageOnly'):samEnabled&&samUnavailable?samUnavailable:'')
    :(id==='refine'||id==='model'&&!isVideo)?(isVideo||isMusic?t('studio.run.post.reason.imageOnly'):h3Image?t('studio.run.h3EditHint'):moss?t('studio.plan.imageOnly'):'')
    :id==='derope'?(!(isVideo&&videoFamily==='minimax-h3')?t('studio.run.post.reason.h3VideoOnly'):'')
@@ -2279,7 +2289,7 @@ const promptTools=forgeContext&&<>
         </fieldset>:<p className="field-help" data-post-unavailable="regenerate">{t('studio.run.post.reason.h3VideoOnly')}</p>}
        </div>
        <div className="wb-post-category" data-post-category="face-analysis" hidden={openPostCategory!=='face-analysis'}>
-        {isVideo&&isH3Video(videoFamily)?<Sam3VideoControls value={samVideoSettings} onChange={v=>{setSamCheckpoint(v.checkpoint);setSamThreshold(v.threshold);setSamVideoStart(v.startSeconds);setSamVideoDuration(v.durationSeconds);setSamVideoMax(v.maxObjects);setSamVideoInterval(v.detectInterval);setSamVideoCuts(v.cuts);setSamVideoSceneThreshold(v.sceneThreshold);}} models={samModels} sourceName={samVideoSource?.media==='video'?samVideoSource.name:undefined} unavailable={samVideoUnavailable} busy={serialBlocked||admissionBlocked||scanning} onAnalyze={()=>void analyzeFaceMasks()} refine={{value:faceRefine,onChange:setFaceRefine,unavailable:faceRefineUnavailable,autoUnavailable:faceRefineAutoUnavailable,onRefine:()=>void refineFaces()}}/>:<p className="field-help" data-post-unavailable="face-analysis">{t('studio.run.post.reason.h3VideoOnly')}</p>}
+        {isVideo&&isH3Video(videoFamily)?<Sam3VideoControls value={samVideoSettings} onChange={v=>{setSamCheckpoint(v.checkpoint);setSamThreshold(v.threshold);setSamVideoStart(v.startSeconds);setSamVideoDuration(v.durationSeconds);setSamVideoMax(v.maxObjects);setSamVideoInterval(v.detectInterval);setSamVideoCuts(v.cuts);setSamVideoSceneThreshold(v.sceneThreshold);}} models={samModels} sourceName={samVideoSource?.media==='video'?samVideoSource.name:undefined} unavailable={samVideoUnavailable} busy={serialBlocked||admissionBlocked||scanning} onAnalyze={()=>void analyzeFaceMasks()} refine={{value:faceRefine,onChange:setFaceRefine,unavailable:faceRefineUnavailable,autoUnavailable:faceRefineAutoUnavailable,onRefine:()=>void refineFaces()}}/>:h3Image?<fieldset className="wb-group" data-post-group="face-analysis"><legend>{t('studio.samVideo.title')}</legend><div className="wb-options"><label className="wb-option"><span>{t('studio.sam.model')}</span><select data-face-refine="checkpoint" value={samCheckpoint} onChange={e=>setSamCheckpoint(e.target.value)}><option value="">{t('studio.sam.choose')}</option>{samModels.map(name=><option key={name} value={name}>{name}</option>)}</select></label><label className="wb-option"><span>{t('studio.sam.threshold')}</span><input data-face-refine="threshold" type="number" min={0} max={1} step={0.05} value={Number.isNaN(samThreshold)?'':samThreshold} onChange={e=>setSamThreshold(e.target.valueAsNumber)}/></label></div><FaceRefineControls still refine={{value:{...faceRefine,auto:imageFaceRefine},onChange:v=>{setImageFaceRefine(v.auto);setFaceRefine({...v,auto:faceRefine.auto});},unavailable:'',autoUnavailable:faceRefineAutoUnavailable}}/></fieldset>:<p className="field-help" data-post-unavailable="face-analysis">{t('studio.faceRefine.h3Only')}</p>}
        </div>
        <div className="wb-post-category" data-post-category="sam" hidden={openPostCategory!=='sam'}>
         {!isVideo&&!isMusic?samControls():<p className="field-help" data-post-unavailable="sam">{t('studio.run.post.reason.imageOnly')}</p>}

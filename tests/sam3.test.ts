@@ -1,9 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileSam3Mask, isSam3Intent, isFaceRefineBlock, type Sam3MaskIntentV1 } from '../src/lib/sam3.ts';
-import type { RecipeAllowlist } from '../src/lib/execution.ts';
+import { compileSam3Mask, isSam3Intent, isFaceRefineBlock, faceRefineStillNodes, type Sam3MaskIntentV1 } from '../src/lib/sam3.ts';
+import { compileRecipe, type RecipeAllowlist } from '../src/lib/execution.ts';
 const intent = (): Sam3MaskIntentV1 => ({ recipeId: 'sam3-mask', version: 1, checkpoint: 'sam3.1.safetensors', inputImage: 'source.png', width: 641, height: 479, outputPrefix: 'DEAS/mask', prompt: 'eyes', threshold: 0.5 });
 const allow: RecipeAllowlist = { nodes: ['CheckpointLoaderSimple', 'LoadImage', 'CLIPTextEncode', 'SAM3_Detect', 'MaskToImage', 'SaveImage', 'PrimitiveBoundingBox'], checkpoints: ['sam3.1.safetensors'], images: ['source.png'], samplers: [], schedulers: [] };
+
+
+test('H3 image Face Refine preserves the native-only preview boundary and uses the image gate',()=>{
+ const block={samCheckpoint:'sam3.1.safetensors',prompt:'face',threshold:0.5,maxObjects:4,detectInterval:1,denoise:0.3,cropFactor:2.5,feather:6};
+ assert.ok(faceRefineStillNodes.includes('DEAS_ImagePostprocessGate'));
+ assert.ok(!faceRefineStillNodes.some(node=>String(node)==='DEAS_VideoPostprocessGate'));
+ for(const bad of [{...block,extra:true},{...block,subjects:'largest'},{...block,minFace:NaN},{...block,threshold:Infinity}])assert.equal(isFaceRefineBlock(bad),false);
+ const image={recipeId:'checkpoint-text-to-image-diagnostic',version:1,positivePrompt:'portrait',negativePrompt:'',checkpoint:'h3.safetensors',seed:42,width:1024,height:768,steps:8,cfg:1,sampler:'euler',scheduler:'normal',outputPrefix:'raw/image/42',family:'minimax-h3',h3Edit:{shiftVideo:10,shiftAudio:3}};
+ assert.throws(()=>compileRecipe(image,allow),/h3Edit/);
+ assert.throws(()=>compileRecipe({...image,faceRefine:block},allow),/h3Edit/);
+ const {h3Edit,...unsupported}=image;void h3Edit;
+ assert.throws(()=>compileRecipe({...unsupported,faceRefine:block},allow),/faceRefine/);
+ const {family,...plain}=unsupported;void family;
+ for(const faceRefineStill of [true,false,undefined])assert.doesNotThrow(()=>compileRecipe({...plain,checkpoint:allow.checkpoints[0],inputImage:'source.png',denoise:1,sampler:'euler',scheduler:'normal'},{...allow,samplers:['euler'],schedulers:['normal'],nodes:[...allow.nodes,'KSampler','VAEDecode','VAEEncode'] ,faceRefineStill}));
+ assert.throws(()=>compileRecipe({...plain,checkpoint:allow.checkpoints[0]},{...allow,faceRefineStill:'true'}),/allowlist/);
+});
 
 test('H3 face refinement accepts empty prompts but retains field and numeric validation', () => {
  const block = {samCheckpoint:'sam3.1.safetensors',prompt:'',threshold:0.5,maxObjects:4,detectInterval:1,denoise:0.3,cropFactor:2.5,feather:6};

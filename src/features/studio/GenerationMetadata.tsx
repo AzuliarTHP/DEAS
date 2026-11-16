@@ -59,6 +59,7 @@ export function GenerationMetadata({job,media=null,onRestore}:{job:JobStatus|nul
    {row('studio.run.video.settings',JSON.stringify(v.family==='ltx-2'?v.ltx:v.family==='wan'?v.wan:{...v.h3,references:v.h3.references.map(r=>r.image)}))}
    {v.latentUpscale&&<>{row('studio.run.latent.model',v.latentUpscale.model)}{row('studio.run.dock.post',JSON.stringify(v.latentUpscale))}{row('studio.run.latent.enabled',`${latentOutputSize(v.family,v,v.latentUpscale).width} × ${latentOutputSize(v.family,v,v.latentUpscale).height}`)}</>}
    {audioRow}
+   {v.faceRefine&&row('studio.samVideo.title',JSON.stringify(v.faceRefine))}
    {v.videoPost&&row('studio.tve.post.title',`${describeVideoPost(v.videoPost)} · ${videoPostFrameRate(v.frameRate,v.videoPost)} fps`)}
    {timing}{job?.appVersion&&row('studio.run.metadata.version',job?.appVersion)}
   </dl></>:i?<>{onRestore&&job&&<button type="button" className="wb-dock-action" data-metadata-apply onClick={()=>onRestore(job)}>{t('studio.run.metadata.apply')}</button>}<dl>
@@ -76,6 +77,7 @@ export function GenerationMetadata({job,media=null,onRestore}:{job:JobStatus|nul
    {i.diffusion&&<>{row('studio.run.textEncoder',i.diffusion.textEncoder)}{row('studio.run.vae',i.diffusion.vae)}</>}
    {!!i.loras?.length&&row('studio.run.loras',i.loras.map(l=>`${l.name} (${l.strength})`).join(', '))}
    {i.inputImage&&<>{row('studio.run.pipe.input',i.inputImage)}{row('studio.run.denoise',i.denoise)}</>}
+   {i.faceRefine&&row('studio.samVideo.title',JSON.stringify(i.faceRefine))}
    {i.maskBlur!=null&&row('studio.run.maskBlur',i.maskBlur)}
    {i.inpaintCrop&&row('studio.run.inpaintOnlyMasked',`${i.inpaintCrop.x}, ${i.inpaintCrop.y} · ${i.inpaintCrop.width} × ${i.inpaintCrop.height} → ${i.inpaintCrop.targetWidth} × ${i.inpaintCrop.targetHeight}`)}
    {i.options&&row('studio.run.dock.options',Object.entries(i.options).map(([k,v])=>typeof v==='object'?`${v.node} ${v.threshold}`:v===true?k:`${k}: ${v}`).join(' · '))}

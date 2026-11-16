@@ -1,7 +1,7 @@
 //! H3 face refinement: SAM3.1 tracks faces per shot, the bundled `DEAS_H3FaceRefine` adapter
 //! re-samples each face in a square 768 crop with the graph's own H3 sampler and stitches it back.
 //! Used standalone on an existing video (`h3-face-refine`) and chained after H3 generation
-//! (`faceRefine` on a video intent). Both write the unrefined baseline `B7` before refining.
+//! (`faceRefine` on a video or H3 image intent). Both save the unrefined baseline `B7` first.
 use crate::jobs::{comfy_model_name, model_name, safe_output_prefix};
 use serde_json::{json, Value};
 
@@ -91,7 +91,7 @@ pub(crate) fn validate(f: &Value) -> Result<(), String> {
 }
 
 /// Adds SAM tracking, the text-only H3 conditioning and the refine adapter behind the baseline
-/// gate. Expects the house H3 ids `C`/`V`/`AV`/`N`/`Q`/`Z` in `g`; returns the refined images.
+/// gate. Expects house H3 ids `AV`/`N`/`Q`/`Z` and explicit CLIP/VAE links; returns refined images.
 pub(crate) fn insert(
     g: &mut Value,
     images: Value,
@@ -99,21 +99,27 @@ pub(crate) fn insert(
     fps: Value,
     model: Value,
     f: &Value,
+    clip_vae: (Value, Value),
 ) -> Value {
     g["FRS"] =
         json!({"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":f["samCheckpoint"]}});
     g["FRT"] = json!({"class_type":"CLIPTextEncode","inputs":{"clip":["FRS",1],"text":"face"}});
     // Text-only conditioning: generation guides/references belong to the generation canvas.
-    g["FRC"] = json!({"class_type":"MiniMaxH3ImageToVideo","inputs":{"clip":["C",0],"vae":["V",0],"prompt":f["prompt"],"width":768,"height":768,"length":5}});
+    g["FRC"] = json!({"class_type":"MiniMaxH3ImageToVideo","inputs":{"clip":clip_vae.0,"vae":clip_vae.1,"prompt":f["prompt"],"width":768,"height":768,"length":5}});
     g["FRG"] =
         json!({"class_type":"BasicGuider","inputs":{"model":model,"conditioning":["FRC",0]}});
     // SplitSigmasDenoise runs round(steps × strength) steps: a short (distilled) schedule at a low
     // strength runs 1 or even 0. Keep the strength but give refine its own schedule with >= 2 steps.
     let strength = f["denoise"].as_f64().unwrap_or(1.0);
     let steps = g["Z"]["inputs"]["steps"].as_f64().unwrap_or(0.0);
-    let sigmas = if steps > 0.0 && steps * strength < 1.5 {
+    // A still i2i scheduler already starts at generation denoise; face strength cuts a full schedule.
+    let truncated = audio.is_none() && g["Z"]["inputs"]["denoise"].as_f64().is_some_and(|d| d < 1.0);
+    let sigmas = if truncated || (steps > 0.0 && steps * strength < 1.5) {
         g["FRB"] = g["Z"].clone();
         g["FRB"]["inputs"]["steps"] = json!((2.0 / strength).ceil().max(steps) as u64);
+        if truncated {
+            g["FRB"]["inputs"]["denoise"] = json!(1.0);
+        }
         json!(["FRB", 0])
     } else {
         json!(["Z", 0])
@@ -123,7 +129,7 @@ pub(crate) fn insert(
         "images":images,"fps":fps,"sam_model":["FRS",0],"sam_conditioning":["FRT",0],
         "detection_threshold":f["threshold"],"max_objects":f["maxObjects"],"detect_interval":f["detectInterval"],
         "scene_threshold":f.get("sceneThreshold").cloned().unwrap_or(json!(0.0)),
-        "noise":["N",0],"guider":["FRG",0],"sampler":["Q",0],"sigmas":["FRZ",1],"vae":["V",0],
+        "noise":["N",0],"guider":["FRG",0],"sampler":["Q",0],"sigmas":["FRZ",1],"vae":clip_vae.1,
         "crop_factor":f["cropFactor"],"feather":f["feather"],
     });
     if let Some(n) = f.get("minFace") {
@@ -202,6 +208,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         fps.clone(),
         model,
         &i["faceRefine"],
+        (json!(["C",0]), json!(["V",0])),
     );
     gate(&mut g, refined);
     crate::jobs_video::combine(
@@ -241,7 +248,7 @@ pub(crate) fn requirements(i: &Value) -> Vec<(&'static str, Vec<&str>)> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     pub(crate) fn block() -> Value {
@@ -253,6 +260,19 @@ mod tests {
             "textEncoder":"qwen3vl_32b_minimax_h3_int4_convrot.safetensors","vae":"MiniMaxH3/video_vae.safetensors",
             "audioVae":"MiniMaxH3/audio_vae.safetensors","sourceVideo":"take.mp4","startSeconds":0.0,"durationSeconds":5.0,
             "seed":7,"steps":30,"sampler":"euler","scheduler":"simple","shiftVideo":12.0,"shiftAudio":3.0,"faceRefine":block()})
+    }
+
+    #[test]
+    fn insert_uses_explicit_clip_vae_without_changing_video_defaults() {
+        let mut g = json!({"Z":{"class_type":"BasicScheduler","inputs":{"model":["SS",0],"scheduler":"simple","steps":8,"denoise":1.0}}});
+        insert(&mut g,json!(["F",0]),None,json!(24),json!(["SS",0]),&block(),(json!(["custom_clip",2]),json!(["custom_vae",3])));
+        assert_eq!(g["FRC"]["inputs"]["clip"],json!(["custom_clip",2]));
+        assert_eq!(g["FRC"]["inputs"]["vae"],json!(["custom_vae",3]));
+        assert_eq!(g["FR"]["inputs"]["vae"],json!(["custom_vae",3]));
+        let video = compile(&intent()).unwrap();
+        assert!(video["FR"]["inputs"].get("still_image").is_none());
+        assert_eq!(video["FR"]["inputs"]["vae"],json!(["V",0]));
+        assert_eq!(video["FRC"]["inputs"]["clip"],json!(["C",0]));
     }
 
     #[test]
@@ -348,7 +368,7 @@ mod tests {
     }
 
     /// object_info as the bundled adapter reports it on the owned backend (captured live).
-    fn live_object_info() -> Value {
+    pub(crate) fn live_object_info() -> Value {
         json!({"DEAS_H3FaceRefine":{"input":{"required":{"images":["IMAGE"],"fps":["FLOAT",{"default":24.0,"min":0.0,"max":1000.0}],
             "sam_model":["MODEL"],"sam_conditioning":["CONDITIONING"],"detection_threshold":["FLOAT",{"default":0.5,"min":0.0,"max":1.0}],
             "max_objects":["INT",{"default":4,"min":1,"max":64}],"detect_interval":["INT",{"default":1,"min":1,"max":2147483647}],
@@ -461,6 +481,7 @@ mod tests {
             json!(24),
             json!(["SS", 0]),
             &b,
+            (json!(["C",0]), json!(["V",0])),
         );
         assert!(g["FR"]["inputs"].get("min_face").is_none());
         assert!(
@@ -475,6 +496,7 @@ mod tests {
             json!(24),
             json!(["SS", 0]),
             &b,
+            (json!(["C",0]), json!(["V",0])),
         );
         assert_eq!(g["FR"]["inputs"]["min_face"], 96);
         assert!(g["FR"]["inputs"].get("subjects").is_none());
@@ -497,6 +519,7 @@ mod tests {
             json!(24),
             json!(["SS", 0]),
             &b,
+            (json!(["C",0]), json!(["V",0])),
         );
         assert_eq!(g["FR"]["inputs"]["subjects"], "primary");
         // Refine runs >= 2 steps: 4 steps at 0.35 (round(1.4) = 1) get a 6-step schedule (2 run),
@@ -510,6 +533,7 @@ mod tests {
                 json!(24),
                 json!(["SS", 0]),
                 &b,
+                (json!(["C",0]), json!(["V",0])),
             );
             match own {
                 Some(n) => {
@@ -536,6 +560,7 @@ mod tests {
             json!(24),
             json!(["1", 0]),
             &b,
+            (json!(["C",0]), json!(["V",0])),
         );
         assert_eq!(g["FRB"]["inputs"], json!({"model":["1",0],"steps":20}));
     }

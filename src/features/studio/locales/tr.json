@@ -44,11 +44,11 @@
   "studio.samVideo.cutsAdapter": "DEAS_SAM3ShotMask eksik. Yönetilen arka ucu yeniden başlatın veya güncelleyin ya da kesme algılamayı kapatın.",
   "studio.samVideo.title": "H3 Yüz İyileştirici",
   "studio.faceRefine.auto": "H3 üretiminden sonra yüzleri iyileştir",
-  "studio.faceRefine.autoHint": "Her MiniMax H3 çalışmasına yüz iyileştirme ekler: önce iyileştirilmemiş video kaydedilir, ardından izlenen her yüz yeniden örneklenip geri yerleştirilir. Varsayılan olarak kapalı.",
+  "studio.faceRefine.autoHint": "MiniMax H3 görsel veya video üretiminden sonra yüz iyileştirme ekler. Özgün ve işlenmiş sonuçlar korunur. Varsayılan olarak kapalı.",
   "studio.faceRefine.denoise": "İyileştirme gücü",
   "studio.faceRefine.denoiseHint": "Her yüz kırpımında yeniden çalıştırılan H3 zamanlama payı (0,3 kimliği korur; daha yükseği daha çok değiştirir). Her zaman en az 2 adım çalışır.",
   "studio.faceRefine.cropFactor": "Kırpma bağlamı",
-  "studio.faceRefine.cropFactorHint": "Kare kırpımın kenarı, sahnedeki en büyük yüz yüksekliğinin katı olarak.",
+  "studio.faceRefine.cropFactorHint": "Kare kırpımın kenarı, görseldeki veya çekimdeki en büyük yüz yüksekliğinin katı olarak.",
   "studio.faceRefine.feather": "Kenar yumuşatma (px)",
   "studio.faceRefine.featherHint": "Yüz maskesini büyütüp yumuşatır; birleştirilen yüzde dikiş kalmaz.",
   "studio.faceRefine.prompt": "İyileştirme istemi",
@@ -1161,7 +1161,7 @@
   "studio.faceRefine.minFace": "En küçük yüz boyutu (px)",
   "studio.faceRefine.minFaceHint": "Bu değerden hiç büyük olmayan yüzler orijinal piksellerini korur (0 = tüm yüzler). Çok küçük bir yüz 768 tuvaline büyütülür ve az ayrıntı için tam bir H3 geçişine mal olur.",
   "studio.faceRefine.primaryOnly": "Yalnızca ana yüz",
-  "studio.faceRefine.primaryOnlyHint": "Her çekimde yalnızca izlenen en büyük yüzü (ana özne) iyileştirir; diğer yüzler orijinal piksellerini korur. Kapalı = izlenen tüm yüzler.",
+  "studio.faceRefine.primaryOnlyHint": "Yalnızca görseldeki en büyük yüzü veya her video çekiminde izlenen en büyük yüzü (ana özne) iyileştirir; diğer yüzler özgün piksellerini korur. Kapalı = tüm yüzler.",
   "studio.run.post.card.active": "Etkin",
   "studio.run.post.card.inactive": "Devre dışı",
   "studio.run.post.card.unavailable": "Bu iş hattı için kullanılamaz",
@@ -1249,5 +1249,8 @@
   "loraSets.disable": "{name} devre dışı bırak",
   "loraSets.disabled": "Devre dışı",
   "loraSets.moved": "{name}, {total} öğe içinde {position}. sıraya taşındı.",
-  "loraDetails.copySelected": "Seçilenleri kopyala ({count})"
+  "loraDetails.copySelected": "Seçilenleri kopyala ({count})",
+  "studio.faceRefine.stillHint": "H3 görsel üretiminden sonra SAM3.1 yüzleri algılar, kare kırpımları iyileştirip geri yerleştirir. Özgün ve işlenmiş görseller korunur. Video analizi veya elle iyileştirme işlemi gerekmez.",
+  "studio.faceRefine.stillUnavailable": "H3 durağan görsel yüz iyileştirmesi BOOLEAN still_image desteği olan uyumlu bir bağdaştırıcı gerektirir.",
+  "studio.faceRefine.h3Only": "Yalnızca MiniMax H3 görselleri ve videoları için kullanılabilir."
 }

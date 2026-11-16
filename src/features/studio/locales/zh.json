@@ -44,11 +44,11 @@
   "studio.samVideo.cutsAdapter": "缺少 DEAS_SAM3ShotMask。请重启或更新托管后端，或关闭硬切检测。",
   "studio.samVideo.title": "H3 面部精修",
   "studio.faceRefine.auto": "H3 生成后精修人脸",
-  "studio.faceRefine.autoHint": "为每次 MiniMax H3 运行添加人脸精修：先保存未精修的视频，再对每张跟踪到的人脸重新采样并贴回。默认关闭。",
+  "studio.faceRefine.autoHint": "在 MiniMax H3 图像或视频生成后添加人脸精修。原始与处理后结果均保留。默认关闭。",
   "studio.faceRefine.denoise": "精修强度",
   "studio.faceRefine.denoiseHint": "每个人脸裁剪上重跑的 H3 调度比例（0.3 保持身份，越高改动越大）。始终至少运行 2 步。",
   "studio.faceRefine.cropFactor": "裁剪上下文",
-  "studio.faceRefine.cropFactorHint": "方形裁剪边长，为该镜头中最高人脸高度的倍数。",
+  "studio.faceRefine.cropFactorHint": "方形裁剪边长，为图像或镜头中最高人脸高度的倍数。",
   "studio.faceRefine.feather": "边缘羽化（像素）",
   "studio.faceRefine.featherHint": "扩展并柔化人脸遮罩，使贴回的人脸没有接缝。",
   "studio.faceRefine.prompt": "精修提示词",
@@ -1161,7 +1161,7 @@
   "studio.faceRefine.minFace": "最小人脸尺寸（px）",
   "studio.faceRefine.minFaceHint": "从未超过此高度的人脸保留原始像素（0 = 精修全部）。极小的人脸会被放大到 768 画布，耗费一次完整 H3 计算却收效甚微。",
   "studio.faceRefine.primaryOnly": "仅主要人脸",
-  "studio.faceRefine.primaryOnlyHint": "每个镜头只精修跟踪到的最大人脸（主体）；其他人脸保留原始像素。关闭 = 精修所有跟踪到的人脸。",
+  "studio.faceRefine.primaryOnlyHint": "仅精修图像中最大的人脸，或每个视频镜头中跟踪到的最大人脸（主体）；其他人脸保留原始像素。关闭 = 精修所有人脸。",
   "studio.run.post.card.active": "已启用",
   "studio.run.post.card.inactive": "未启用",
   "studio.run.post.card.unavailable": "当前管线不可用",
@@ -1249,5 +1249,8 @@
   "loraSets.disable": "禁用 {name}",
   "loraSets.disabled": "已禁用",
   "loraSets.moved": "已将 {name} 移至第 {position} 位，共 {total} 项。",
-  "loraDetails.copySelected": "复制所选（{count}）"
+  "loraDetails.copySelected": "复制所选（{count}）",
+  "studio.faceRefine.stillHint": "H3 图像生成后，使用 SAM3.1 检测人脸，精修方形裁剪并贴回。原始与处理后图像均保留。无需视频分析或手动精修操作。",
+  "studio.faceRefine.stillUnavailable": "H3 静态图像人脸精修需要支持 BOOLEAN 类型 still_image 的兼容适配器。",
+  "studio.faceRefine.h3Only": "仅适用于 MiniMax H3 图像和视频。"
 }
