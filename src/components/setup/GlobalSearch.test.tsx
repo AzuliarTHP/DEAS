@@ -180,6 +180,23 @@ test('a Post-Processing nested control selects the Post dock, opens its category
   postRoot.remove();
 });
 
+test('Studio organization search opens selection only once and never invokes an organization action',async()=>{
+ const tools=document.createElement('div');tools.className='studio-family-tools';tools.dataset.studioModelDock='loras';
+ const select=document.createElement('button');select.dataset.familySelect='';select.setAttribute('aria-pressed','false');tools.append(select);
+ const action=document.createElement('button');action.dataset.studioSelection='favorite';const write=vi.fn();action.onclick=write;
+ const opened=vi.fn(()=>{select.setAttribute('aria-pressed','true');tools.append(action);});select.onclick=opened;
+ document.body.append(tools);mount();
+ try{
+  for(let i=0;i<2;i++){
+   fireEvent.keyDown(window,{key:'k',ctrlKey:true});fireEvent.change(screen.getByPlaceholderText('Find a control…'),{target:{value:'Add to favorites'}});
+   fireEvent.click(screen.getByRole('button',{name:'Studio › LoRAs › Add to favorites'}));
+   await waitFor(()=>expect(action.classList.contains('search-flash')).toBe(true));
+  }
+  expect(opened).toHaveBeenCalledTimes(1);expect(write).not.toHaveBeenCalled();
+  for(const dockTab of ['models','loras'])for(const label of ['library.favorites','library.selectModels','library.selectMatching','library.clearSelection','library.bulkFamily','library.favoriteAction','library.unfavoriteAction'])expect(searchIndex.some(e=>e.dockTab===dockTab&&e.label===label)).toBe(true);
+ }finally{tools.remove();}
+});
+
 test('matching uses the current language and English aliases, and stays read-only', () => {
   const text = (key: string) => `${bundledCatalog.dictionaries.en[key] ?? key} ${bundledCatalog.dictionaries.de[key] ?? key}`;
   expect(matchEntries(searchIndex, 'Ausführen', text).map((entry) => entry.target)).toContain('[data-run]');

@@ -18,6 +18,8 @@ same components and native source/integrity validators.
 
 ## Contributors
 
+- [AzuliarTHP](https://github.com/AzuliarTHP) contributed shared Library/Studio Favorites, explicit inventory/cover updates, compact bulk organization and confirmed clean-export replacement in [PR #37](https://github.com/darksidewalker/DEAS/pull/37).
+
 - [AzuliarTHP](https://github.com/AzuliarTHP) contributed the Library/Studio expansion in [PR #33](https://github.com/darksidewalker/DEAS/pull/33): LoRA selection/set controls, prompt notes, media deletion and related browsing/output improvements. The 0.2.37 integration adapts that contribution to retain current model-switch behavior and adds maintainer security/regression fixes.
 - [pr0dukt](https://github.com/pr0dukt) reported the cross-pipeline retained-LoRA blocker in [issue #35](https://github.com/darksidewalker/DEAS/issues/35).
 

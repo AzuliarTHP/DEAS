@@ -110,6 +110,7 @@ fn main() {
             deas::native_models_scan,
             deas::native_model_info,
             deas::native_model_family_write,
+            deas::native_model_family_write_many,
             deas::native_model_scan_start,
             deas::native_model_scan_status,
             deas::inspect_backend,

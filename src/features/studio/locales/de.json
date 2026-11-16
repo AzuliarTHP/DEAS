@@ -1127,7 +1127,7 @@
   "studio.run.viewer.next": "Nächstes Bild",
   "studio.run.viewer.closed": "Öffne zuerst ein generiertes Bild in der Vollansicht.",
   "studio.run.exportClean.label": "Ohne Metadaten exportieren…",
-  "studio.run.exportClean.hint": "Speichert eine Kopie ohne Prompt, Workflow und Einstellungen; das Original bleibt unverändert.",
+  "studio.run.exportClean.hint": "Ohne Prompt, Workflow oder Einstellungen speichern. Vorhandene Dateien einschließlich des Originals können nach Bestätigung ersetzt werden.",
   "studio.run.exportClean.title": "Ohne Metadaten exportieren",
   "studio.run.exportClean.native": "Export ohne Metadaten braucht eine lokale Datei in der Desktop-App.",
   "studio.run.exportClean.done": "Kopie ohne Metadaten gespeichert: {path}",
@@ -1252,5 +1252,7 @@
   "loraDetails.copySelected": "Auswahl kopieren ({count})",
   "studio.faceRefine.stillHint": "Nach der H3-Bildgenerierung erkennt SAM3.1 Gesichter, verfeinert quadratische Ausschnitte und setzt sie wieder ein. Original und bearbeitetes Ergebnis bleiben erhalten. Keine Videoanalyse oder manuelle Verfeinerung nötig.",
   "studio.faceRefine.stillUnavailable": "H3-Gesichtsverfeinerung für Einzelbilder benötigt einen kompatiblen Adapter mit BOOLEAN-still_image-Unterstützung.",
-  "studio.faceRefine.h3Only": "Nur für MiniMax-H3-Bilder und -Videos verfügbar."
+  "studio.faceRefine.h3Only": "Nur für MiniMax-H3-Bilder und -Videos verfügbar.",
+  "studio.run.exportClean.replaceTitle": "Vorhandene Datei ersetzen?",
+  "studio.run.exportClean.replaceMessage": "Die ausgewählte Datei durch eine Kopie ohne Metadaten ersetzen? Bei Auswahl des Originals wird auch dieses ersetzt."
 }

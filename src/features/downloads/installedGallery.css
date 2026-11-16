@@ -158,3 +158,6 @@
 .library-added-notice[role="alert"] { color:var(--danger); }
 .library-detail-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
 .library-detail-actions>.action-button { margin:0; }
+
+
+.library-favorite-filter[aria-current=page] { color:var(--copper); background:var(--field); border-color:var(--line); }

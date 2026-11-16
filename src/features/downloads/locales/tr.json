@@ -244,5 +244,22 @@
   "library.loadingMore": "Diğer modeller yükleniyor…",
   "library.addLora": "Studio LoRA’larına ekle",
   "library.loraAdded": "LoRA Studio’ya eklendi.",
-  "library.loraAddFailed": "LoRA eklenemedi. Lütfen tekrar deneyin."
+  "library.loraAddFailed": "LoRA eklenemedi. Lütfen tekrar deneyin.",
+  "library.organizationFailed": "Favoriler veya notlar kaydedilemedi. Lütfen yeniden deneyin.",
+  "library.selectModels": "Model seç",
+  "library.endSelection": "Seçimi bitir",
+  "library.selectedCount": "{count} seçili",
+  "library.selectMatching": "Aynı etiketi seç",
+  "library.selectUnknown": "Bilinmeyenleri seç",
+  "library.clearSelection": "Seçimi temizle",
+  "library.bulkFamily": "Aileyi ayarla…",
+  "library.chooseFamily": "Bir aile seçin",
+  "library.bulkHelp": "Seçilen dosyalara yerel aile atayın. Durdurmak kaydedilmiş değişiklikleri korur.",
+  "library.bulkProgress": "{done}/{total} işlendi · {failed} başarısız",
+  "library.applyFamily": "Aileyi uygula",
+  "library.stopBatch": "Durdur",
+  "library.selectModel": "{name} seç",
+  "library.favoriteAction": "Favorilere ekle",
+  "library.unfavoriteAction": "Favorilerden kaldır",
+  "library.noFavorites": "Henüz favori yok. Kitaplıkta yıldız ekleyin veya Studio kartına sağ tıklayın."
 }

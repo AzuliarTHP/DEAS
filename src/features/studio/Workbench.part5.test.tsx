@@ -1513,8 +1513,8 @@ test('Export without metadata saves a clean copy from the queue menu and preview
  await waitFor(()=>expect(document.querySelector('[data-job-id="last"]')).not.toBeNull());
  fireEvent.contextMenu(document.querySelector('[data-job-id="last"] .wb-queue-select')!);
  const item=screen.getByRole('menuitem',{name:'Export without metadata…'});
- expect(item.getAttribute('title')).toContain('the original is unchanged');fireEvent.click(item);
- await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_media_export_clean',{path:'/out/c.png',title:'Export without metadata'}));
+ expect(item.getAttribute('title')).toContain('can be replaced after confirmation');fireEvent.click(item);
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_media_export_clean',{path:'/out/c.png',title:'Export without metadata',replaceTitle:'Replace existing file?',replaceMessage:'Replace the selected file with a copy without metadata? Choosing the original file replaces it too.'}));
  await screen.findByText('Saved a copy without metadata: /save/c.png');
  reply=async()=>null;const toolbar=()=>document.querySelector<HTMLButtonElement>('[data-media-export-clean]')!;
  expect(toolbar().closest('.wb-more-menu')).not.toBeNull();

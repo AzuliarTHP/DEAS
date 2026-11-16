@@ -8,7 +8,7 @@ This is the **single current plan** for DEAS: what is in place, what is still op
 - [PROJECT-RULES.md](PROJECT-RULES.md), [COMFYUI-RULES.md](COMFYUI-RULES.md) and [EXECUTION-CONTRACT.md](EXECUTION-CONTRACT.md) govern how work is done; [PRODUCT-DECISIONS.md](PRODUCT-DECISIONS.md) governs scope.
 - An open row here is **not** authorization to start it. New integrations and large slices need an explicit owner priority.
 
-Current working-tree source: 0.2.38 BETA. Latest published release: **0.2.38 BETA** (`v0.2.38`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
+Current working-tree source: 0.2.39 BETA. Latest published release: **0.2.38 BETA** (`v0.2.38`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
 
 ## Image Lying Sigma contribution — remaining acceptance
 
@@ -66,6 +66,15 @@ with the user; no live generation is started.
 The DEAS naming adapter has tested Windows no-overwrite rename publication and
 multi-file rollback. Real exFAT generation after an owned-backend restart remains
 user acceptance; no live generation is started during implementation.
+
+## Library/Studio quality-of-life — remaining acceptance
+
+Shared Favorites, explicit inventory/cover updates, compact bulk family/favorite
+actions and separately confirmed clean-export replacement are integrated from
+[PR #37](https://github.com/darksidewalker/DEAS/pull/37). Native Linux/WebKitGTK
+and Windows/WebView2 save-dialog, replacement/recovery and large-library
+interaction/performance acceptance remain open. Automated checks use disposable
+fixtures, not the owner's media, preferences or model collection.
 
 ## Native model browser proposal
 

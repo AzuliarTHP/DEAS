@@ -332,3 +332,152 @@ fn export_folder_reached_through_a_symlink_bookmark_works() {
         .unwrap_err()
         .contains("source"));
 }
+#[test]
+fn confirmed_export_replaces_existing_and_source_without_metadata() {
+    let (root, out) = dirs();
+    let source = root.path().join("in.png");
+    fs::write(&source, tagged_png()).unwrap();
+    let dest = out.path().join("same-name.png");
+    fs::write(&dest, b"previous export").unwrap();
+    let old = replace::capture(&dest).unwrap().unwrap();
+    export_clean_confirmed(root.path(), &source, Some(&dest), Some(&old)).unwrap();
+    assert_eq!(
+        png_pixels(&fs::read(&source).unwrap()),
+        png_pixels(&fs::read(&dest).unwrap())
+    );
+    assert!(!png_chunks(&fs::read(&dest).unwrap())
+        .iter()
+        .any(|s| s == "tEXt"));
+    let old = replace::capture(&source).unwrap().unwrap();
+    export_clean_confirmed(root.path(), &source, Some(&source), Some(&old)).unwrap();
+    assert!(!png_chunks(&fs::read(&source).unwrap())
+        .iter()
+        .any(|s| s == "tEXt"));
+}
+#[test]
+fn replacement_rejects_changes_after_confirmation_and_cancel_keeps_bytes() {
+    let (root, out) = dirs();
+    let source = root.path().join("in.png");
+    fs::write(&source, tagged_png()).unwrap();
+    let dest = out.path().join("out.png");
+    fs::write(&dest, b"old").unwrap();
+    let old = replace::capture(&dest).unwrap().unwrap();
+    fs::write(&dest, b"new concurrent content").unwrap();
+    assert!(export_clean_confirmed(root.path(), &source, Some(&dest), Some(&old)).is_err());
+    assert_eq!(fs::read(&dest).unwrap(), b"new concurrent content");
+    assert!(
+        export_clean_confirmed(root.path(), &source, None, Some(&old))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(fs::read(&dest).unwrap(), b"new concurrent content");
+}
+#[test]
+fn replacement_collision_keeps_new_arrival_and_original_recovery_copy() {
+    let (_root, out) = dirs();
+    let dest = out.path().join("out.png");
+    fs::write(&dest, b"old").unwrap();
+    let old = replace::capture(&dest).unwrap().unwrap();
+    let parent = Anchor::open(out.path()).unwrap();
+    let mut temp = parent.partial("clean.tmp").unwrap();
+    temp.write_all(b"clean").unwrap();
+    let error = replace::publish(&parent, out.path(), "clean.tmp", "out.png", &old, || {
+        fs::write(&dest, b"concurrent arrival").unwrap();
+    })
+    .unwrap_err();
+    assert!(error.contains("recovery"));
+    assert_eq!(fs::read(&dest).unwrap(), b"concurrent arrival");
+    let backups: Vec<_> = fs::read_dir(out.path())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".deas-replaced-")
+        })
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(fs::read(&backups[0]).unwrap(), b"old");
+}
+
+#[test]
+fn replacement_restores_concurrent_object_moved_before_backup_rename() {
+    let (_root, out) = dirs();
+    let dest = out.path().join("out.png");
+    fs::write(&dest, b"old").unwrap();
+    let old = replace::capture(&dest).unwrap().unwrap();
+    let parent = Anchor::open(out.path()).unwrap();
+    let mut temp = parent.partial("clean.tmp").unwrap();
+    temp.write_all(b"clean").unwrap();
+    let arrival = out.path().join("arrival.png");
+    fs::write(&arrival, b"concurrent replacement").unwrap();
+    let error = replace::publish_with_checkpoints(
+        &parent,
+        out.path(),
+        "clean.tmp",
+        "out.png",
+        &old,
+        (
+            || {
+                fs::rename(&arrival, &dest).unwrap();
+            },
+            || panic!("changed destination must not reach publication"),
+            || {},
+        ),
+    )
+    .unwrap_err();
+    assert!(error.contains("changed during replacement"), "{error}");
+    assert_eq!(fs::read(&dest).unwrap(), b"concurrent replacement");
+    assert_eq!(fs::read(out.path().join("clean.tmp")).unwrap(), b"clean");
+    assert_eq!(
+        fs::read_dir(out.path()).unwrap().count(),
+        2,
+        "no hidden arrival"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn replacement_reports_retained_backup_when_cleanup_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_root, out) = dirs();
+    let dest = out.path().join("out.png");
+    fs::write(&dest, b"old").unwrap();
+    let old = replace::capture(&dest).unwrap().unwrap();
+    let parent = Anchor::open(out.path()).unwrap();
+    let mut temp = parent.partial("clean.tmp").unwrap();
+    temp.write_all(b"clean").unwrap();
+    let permissions = fs::metadata(out.path()).unwrap().permissions();
+    let result = replace::publish_with_checkpoints(
+        &parent,
+        out.path(),
+        "clean.tmp",
+        "out.png",
+        &old,
+        (
+            || {},
+            || {},
+            || fs::set_permissions(out.path(), fs::Permissions::from_mode(0o500)).unwrap(),
+        ),
+    );
+    fs::set_permissions(out.path(), permissions).unwrap();
+    let error = result.unwrap_err();
+    assert!(
+        error.contains("Export saved") && error.contains("recovery file"),
+        "{error}"
+    );
+    assert_eq!(fs::read(&dest).unwrap(), b"clean");
+    let backup = fs::read_dir(out.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".deas-replaced-")
+        })
+        .unwrap();
+    assert!(error.contains(&backup.display().to_string()), "{error}");
+    assert_eq!(fs::read(backup).unwrap(), b"old");
+}

@@ -2,6 +2,12 @@
 
 ## Implementation contract
 
+Installed publishes explicit refresh/fetch/scan results to the
+retained Studio inventory. It does not make navigation or focus a provider lookup,
+nor start a second model-folder walk. Shared local Favorites and bounded bulk family
+sidecar edits are described in [Library](LIBRARY.md); native execution checks remain
+authoritative and separate from these browsing updates.
+
 Data-only TOML catalogs declare optional resources and provider plugins. UX is generated from validated catalog data; adding an entry must not require a JSX edit. Catalog files contain no credentials, shell commands or executable hooks. A downloadable workflow/preset is data, not permission to execute it.
 
 Provider families: Hugging Face model/dataset repository files and user repository listing; CivitAI creator/model resources; GitHub user repositories and repository files; generic HTTPS direct files and declarative JSON resource indexes; explicit Ollama endpoint model listing. Ollama installed models are backend resources, not downloadable files or an implicit pull authorization.

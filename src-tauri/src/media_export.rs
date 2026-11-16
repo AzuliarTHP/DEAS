@@ -6,6 +6,9 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[path = "media_export_replace.rs"]
+mod replace;
+
 const MAX_PICTURE: u64 = 512 * 1024 * 1024;
 const BAD_PICTURE: &str = "The picture is truncated or malformed; nothing was exported";
 
@@ -51,10 +54,20 @@ fn owned_source(root: &Path, source: &Path) -> Result<(PathBuf, String), String>
 }
 
 /// `dest` is the save-dialog choice; `None` (cancelled) writes nothing.
+#[cfg(test)]
 pub(crate) fn export_clean(
     root: &Path,
     source: &Path,
     dest: Option<&Path>,
+) -> Result<Option<CleanExport>, String> {
+    export_clean_confirmed(root, source, dest, None)
+}
+
+fn export_clean_confirmed(
+    root: &Path,
+    source: &Path,
+    dest: Option<&Path>,
+    overwrite: Option<&replace::Replacement>,
 ) -> Result<Option<CleanExport>, String> {
     let (canonical, ext) = owned_source(root, source)?;
     let Some(dest) = dest else {
@@ -85,13 +98,15 @@ pub(crate) fn export_clean(
     let parent_path = std::fs::canonicalize(dest.parent().ok_or("Missing export folder")?)
         .map_err(|_| "The export folder is unavailable")?;
     let parent_path = parent_path.as_path();
-    if parent_path.join(name) == canonical {
+    if parent_path.join(name) == canonical && overwrite.is_none() {
         return Err("The clean copy cannot replace its source".into());
     }
     let parent = Anchor::open(parent_path)?;
     parent.validate_directory(false)?;
-    // Same no-clobber publication as native_job_export: an existing file is never replaced.
-    parent.absent(name)?;
+    // Replacement requires the captured target confirmed by the native dialog.
+    if overwrite.is_none() {
+        parent.absent(name)?;
+    }
     let temp = format!(".deas-{}.{ext}", uuid::Uuid::new_v4());
     let mut file = parent.partial(&temp)?;
     let result = (|| {
@@ -111,7 +126,11 @@ pub(crate) fn export_clean(
             .metadata()
             .map_err(|_| "Cannot inspect the clean copy")?
             .len();
-        parent.publish(&temp, name)?;
+        if let Some(old) = overwrite {
+            replace::publish(&parent, parent_path, &temp, name, old, || {})?;
+        } else {
+            parent.publish(&temp, name)?;
+        }
         Ok(size)
     })();
     if parent.owns_partial(&temp, &file) {
@@ -288,6 +307,8 @@ fn remux(source: &Path, target: &Path) -> Result<(), String> {
 pub async fn native_media_export_clean(
     path: String,
     title: String,
+    replace_title: Option<String>,
+    replace_message: Option<String>,
     engine: tauri::State<'_, crate::install::Engine>,
     operations: tauri::State<'_, crate::FolderOperations>,
 ) -> Result<Option<CleanExport>, String> {
@@ -309,14 +330,52 @@ pub async fn native_media_export_clean(
         .set_can_create_directories(false)
         .save_file()
         .await;
+    let overwrite = if let Some(file) = &selected {
+        replace::capture(file.path())?
+    } else {
+        None
+    };
+    if overwrite.is_some() {
+        let heading = replace_title.unwrap_or_else(|| "Replace existing file?".into());
+        let message=replace_message.unwrap_or_else(||"Replace this file with a copy without metadata? This also applies when choosing the source itself.".into());
+        if heading.len() > 480
+            || message.len() > 2048
+            || heading.chars().chain(message.chars()).any(char::is_control)
+        {
+            return Err("Invalid replacement dialog text".into());
+        }
+        let confirmed = rfd::AsyncMessageDialog::new()
+            .set_title(heading)
+            .set_description(format!(
+                "{message}\n\n{}",
+                selected.as_ref().unwrap().path().display()
+            ))
+            .set_level(rfd::MessageLevel::Warning)
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show()
+            .await;
+        if confirmed != rfd::MessageDialogResult::Yes {
+            crate::logs::push(
+                crate::logs::Source::Deas,
+                "INFO: Media operation=export-clean cancelled",
+            );
+            return Ok(None);
+        }
+    }
     // The guard is not Send; a remux may take a while, so tell the runtime this worker blocks.
     let result = tokio::task::block_in_place(|| {
         let _guard = operations.enter()?;
-        export_clean(&root, &source, selected.as_ref().map(|f| f.path()))
+        export_clean_confirmed(
+            &root,
+            &source,
+            selected.as_ref().map(|f| f.path()),
+            overwrite.as_ref(),
+        )
     });
     let line = match &result {
-        Ok(_) => "INFO: Media operation=export-clean completed".to_string(),
-        Err(e) => format!("ERROR: Media operation=export-clean failed: {e}"),
+        Ok(Some(_)) => "INFO: Media operation=export-clean completed".to_string(),
+        Ok(None) => "INFO: Media operation=export-clean cancelled".to_string(),
+        Err(_) => "ERROR: Media operation=export-clean failed".to_string(),
     };
     crate::logs::push(crate::logs::Source::Deas, &line);
     result

@@ -152,6 +152,11 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.sam.title', label: 'studio.editor.samPoint', target: '[data-sam-tool="samPoint"]', aliases: ['SAM', 'click point negative Alt'], reason: 'studio.sam.inpaint' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.sam.title', label: 'studio.editor.samBox', target: '[data-sam-tool="samBox"]', aliases: ['SAM', 'box rectangle object'], reason: 'studio.sam.inpaint' },
   // Studio · bottom dock
+  ...(['models','loras'] as const).flatMap(dockTab=>[
+    {view:studio,studioTab:'generate' as const,dockTab,tab:'setup.tab.studio',section:`studio.run.dock.${dockTab}`,label:'library.favorites',target:`[data-studio-model-dock="${dockTab}"] [data-studio-favorites]`,aliases:['favorites','starred models']},
+    {view:studio,studioTab:'generate' as const,dockTab,tab:'setup.tab.studio',section:`studio.run.dock.${dockTab}`,label:'library.selectModels',target:`[data-studio-model-dock="${dockTab}"] [data-family-select]`,aliases:['bulk','organize models']},
+    ...([['matching','library.selectMatching'],['clear','library.clearSelection'],['family','library.bulkFamily'],['favorite','library.favoriteAction'],['unfavorite','library.unfavoriteAction']] as const).map(([action,label])=>({view:studio,studioTab:'generate' as const,dockTab,tab:'setup.tab.studio',section:`studio.run.dock.${dockTab}`,label,target:`[data-studio-model-dock="${dockTab}"] [data-studio-selection="${action}"]`,aliases:['bulk','organize models']})),
+  ]),
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.options', target: '[data-dock-tab="options"]', aliases: ['settings'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.post', target: '[data-dock-tab="post"]', aliases: ['refine', 'upscale'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.loras', target: '[data-dock-tab="loras"]', aliases: ['lora'] },
@@ -310,6 +315,7 @@ export interface RevealOutcome {
 
 /** Opens collapsed ancestors, scrolls to the control and flashes it; reports a currently disabled control. */
 export function revealTarget(target: string): RevealOutcome {
+  if(target.includes(' [data-studio-selection='))flushSync(()=>document.querySelector<HTMLButtonElement>(`${target.split(' ')[0]} [data-family-select][aria-pressed="false"]`)?.click());
   if(target.startsWith('[data-cont-join-'))flushSync(()=>{
     document.querySelector<HTMLButtonElement>('[data-pane-toggle="settings"][aria-expanded="false"]')?.click();
     document.querySelector<HTMLButtonElement>('[data-continuity-open][aria-expanded="false"]')?.click();

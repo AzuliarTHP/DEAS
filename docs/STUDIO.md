@@ -36,6 +36,17 @@ cards automatically as you scroll. The toggle is remembered; turning it off
 restores manual Show more batches. Neither mode triggers a folder scan. Live execution
 validation remains separate from browsing snapshots.
 
+**Favorites** opens from the left sidebar in both Models and LoRAs. This shared
+Library/Studio view includes favorites inside hidden folders and ignores the
+LoRA family browsing filter. Click a folder to resume its normal visibility rules.
+Right-click a card to add/remove its favorite; starring leaves selected LoRAs and
+their weights unchanged. Favorites require an indexed local file; endpoint-only
+names without a local path cannot be starred. Global search finds Favorites and
+the selection tools in both docks; revealing a bulk action opens selection mode
+without editing files or favorites. Explicit Library Refresh models and completed Fetch/
+Scan Files operations also update the retained Studio inventory and local covers,
+without another folder scan or refocus-triggered reload.
+
 The LoRA dock browses all indexed LoRA families, as Library does. Enable the
 remembered **Hide other families** checkbox to show only compatible or unknown
 families; turn it off to see the full inventory. Cards targeting
@@ -44,7 +55,48 @@ run with their exact weights without a family confirmation or incompatibility po
 A quiet hover hint discloses a differing label; metadata can be incorrect.
 Folder/search/visibility filters only affect browsing; active, present LoRAs
 enter the generation intent. All selected entries remain visible in the LoRA count, including mismatches. New external
-files require explicit Reload; Library and Studio keep their own display filters.
+files require explicit Reload or Library Refresh models; Library and Studio keep their own display filters.
+
+## Bulk family editing
+
+In **Models** or **LoRAs**, use **Select models** beside Search in the dock toolbar.
+Selection checkboxes are separate from the generation selections: clicking a card
+in this mode marks it for family editing without choosing that checkpoint or
+adding/removing a LoRA. Existing LoRA selections and weights stay intact.
+
+**★+** adds every selected card to the shared Library/Studio Favorites; **★−**
+removes every selected card from Favorites. Mixed selections are safe: adding
+leaves existing favorites on, and removing leaves existing non-favorites off.
+These actions do not invert individual states or replace saved notes/tags. Each
+batch saves as one local preference update; a failed save keeps the prior state.
+
+Choose **Select models** to reveal the compact icons and selection count beside
+**Done selecting** in the same toolbar. Select a card, then click the checked-square
+**Select matching label** icon: it selects only cards with that same displayed
+family label in the current folder/search results, including offscreen cards.
+For example, select a mislabeled **SD1.5 · SD2** card, match its label, then use
+**Set family… → Anima**. Correctly labeled Anima cards stay unselected. If manually
+selecting several cards, the most recently checked card supplies the reference
+label. Matching replaces the editing selection rather than mixing other labels;
+with no selected reference card the action is disabled.
+Selection mode shows all families even if normal browsing has **Hide other families**
+enabled; folder eye visibility and search/folder choices still apply. Exiting restores
+the normal family browsing filter. There is no separate Select unknown button;
+select an unclassified card to match other unclassified cards.
+
+The crossed-square icon clears the selection, the tag icon opens **Set family…**,
+and the star plus/minus icons add/remove favorites. Tooltips and accessible labels
+identify each action. **Done selecting** hides the icons and count.
+Use **Set family…** to apply a declaration or return to automatic detection. Only
+checkpoints, diffusion models, UNets and LoRAs support this action. Native writes
+run in bounded batches and report partial failures; successful cards update in
+Library and Studio, while unsuccessful selections stay selected for another attempt.
+**Stop** finishes the current batch before stopping. Family declarations update
+source-bound sidecars, never the weights, and do not bypass structural validation.
+
+**Done selecting** restores normal card behavior. Switching dock tabs or model
+roots clears the editing selection. Library retains its normal browsing actions;
+bulk controls live in Studio.
 
 ## Selected LoRAs and named sets
 
@@ -415,7 +467,7 @@ Each succeeded output has its own queue thumbnail/placeholder and keyboard-focus
 
 While a job samples, the step count carries a client-side estimate (`12/30 · ~45 s left`) from this job's own observed step pace. It appears after two step updates, restarts when a new pass resets the counter, never goes negative and disappears when updates stall or the job ends.
 
-**Export without metadata…** (Media right-click, preview **More**, finished queue row right-click) writes a copy through the save dialog: PNG/JPEG/WebP lose their text/EXIF/XMP blocks while pixels and colour profile stay byte-identical; video/audio are remuxed with FFmpeg stream copy and without tags or chapters. The source is never changed and an existing destination is refused. Removing EXIF also removes a JPEG's orientation tag.
+**Export without metadata…** (Media right-click, preview **More**, finished queue row right-click) writes a copy through the save dialog: PNG/JPEG/WebP lose their text/EXIF/XMP blocks while pixels and colour profile stay byte-identical; video/audio are remuxed with FFmpeg stream copy and without tags or chapters. Choosing an existing destination, including the source itself, requires a separate explicit replacement confirmation. The clean output is prepared first and the captured destination identity is rechecked; cancellation leaves the files intact. A concurrently changed destination is refused, and a publication conflict preserves a recovery file with its location reported. Removing EXIF also removes a JPEG's orientation tag.
 
 Repeated Run, split Run/Stop and native targeted cancellation are delivered within the fixture/build scope described above. The backend still controls execution order; concurrent model execution is not implied. Explicitly labelled client-side queued/running elapsed time remains separate pending work. Submitted settings remain immutable when outputs are selected or starred.
 
