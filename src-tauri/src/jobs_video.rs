@@ -1064,7 +1064,10 @@ pub(crate) fn validate(i: &Value) -> Result<&str, String> {
         if i.get("videoPost").is_some() || i.get("faceRefine").is_some() {
             return Err("streamDecode cannot run full-IMAGE post-processing (TVE, De-rope, Seamless loop or Face Refine)".into());
         }
-        if matches!(i["output"]["container"].as_str(), Some("Animated WebP" | "Animated AVIF")) {
+        if matches!(
+            i["output"]["container"].as_str(),
+            Some("Animated WebP" | "Animated AVIF")
+        ) {
             return Err("streamDecode requires a video container, not an animated image".into());
         }
     }
@@ -2021,7 +2024,7 @@ fn h3(i: &Value) -> Value {
             json!(["D", 8]),
             sampling,
             f,
-            (json!(["C",0]), json!(["V",0])),
+            (json!(["C", 0]), json!(["V", 0])),
         );
     }
     if upscale && refining {
@@ -2116,7 +2119,7 @@ fn h3(i: &Value) -> Value {
     g["P"] = json!({"class_type":"DaSiWaH3ContinuityPublish","inputs":{"filename":[exporter,1],"ticket":["SP",2]}});
     if i["streamDecode"] == true {
         // Keep the exact house encoding/naming settings; no IMAGE or eager audio can pull U before B7.
-        for (id, samples) in [("B7", json!(["SP",0])), ("7", json!(["U",0]))] {
+        for (id, samples) in [("B7", json!(["SP", 0])), ("7", json!(["U", 0]))] {
             let saver = &mut g[id];
             saver["class_type"] = json!("DEAS_H3StreamVideoSave");
             let inputs = saver["inputs"].as_object_mut().unwrap();
@@ -2125,11 +2128,13 @@ fn h3(i: &Value) -> Value {
             inputs.remove("pingpong");
             inputs.remove("pass_frames");
             inputs.insert("samples".into(), samples);
-            inputs.insert("vae".into(), json!(["V",0]));
-            inputs.insert("audio_vae".into(), json!(["AV",0]));
+            inputs.insert("vae".into(), json!(["V", 0]));
+            inputs.insert("audio_vae".into(), json!(["AV", 0]));
         }
-        g["7"]["inputs"]["baseline"] = json!(["B7",1]);
-        for id in ["BSD", "SD", "PG"] { g.as_object_mut().unwrap().remove(id); }
+        g["7"]["inputs"]["baseline"] = json!(["B7", 1]);
+        for id in ["BSD", "SD", "PG"] {
+            g.as_object_mut().unwrap().remove(id);
+        }
     }
     g
 }

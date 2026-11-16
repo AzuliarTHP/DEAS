@@ -1,6 +1,6 @@
 # News
 
-## 0.2.38 BETA (unreleased)
+## 0.2.38 BETA
 
 - H3 Image can opt into the existing face-refinement stage, retaining Original and Processed images. It reuses the SAM/model settings and runs before optional learned latent upscale; real-model still-image quality acceptance remains open.
 

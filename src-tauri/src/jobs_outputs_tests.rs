@@ -57,7 +57,7 @@ fn png_bytes(width: u32, height: u32) -> Vec<u8> {
 
 #[test]
 fn h3_image_face_refine_pngs_keep_roles_and_exact_base_or_upscaled_sizes() {
-    for upscale in [false,true] {
+    for upscale in [false, true] {
         let mut i = super::super::tests::h3_still_intent();
         i["faceRefine"] = crate::jobs_face_refine::tests::block();
         if upscale {
@@ -73,11 +73,23 @@ fn h3_image_face_refine_pngs_keep_roles_and_exact_base_or_upscaled_sizes() {
         let job = session.job.as_mut().unwrap();
         job.plan.intent = i;
         job.plan.graph = graph;
-        let (w,h) = if upscale { (1536,1152) } else { (1024,768) };
-        assert_eq!(jobs.validate_png(job,&outputs[0],&png_bytes(w,h)).unwrap(),(w,h));
-        assert!(jobs.validate_png(job,&outputs[0],&png_bytes(w-1,h)).is_err());
-        assert_eq!(jobs.validate_png(job,&outputs[1],&png_bytes(1024,768)).unwrap(),(1024,768));
-        assert!(jobs.validate_png(job,&outputs[1],&png_bytes(1024,767)).is_err());
+        let (w, h) = if upscale { (1536, 1152) } else { (1024, 768) };
+        assert_eq!(
+            jobs.validate_png(job, &outputs[0], &png_bytes(w, h))
+                .unwrap(),
+            (w, h)
+        );
+        assert!(jobs
+            .validate_png(job, &outputs[0], &png_bytes(w - 1, h))
+            .is_err());
+        assert_eq!(
+            jobs.validate_png(job, &outputs[1], &png_bytes(1024, 768))
+                .unwrap(),
+            (1024, 768)
+        );
+        assert!(jobs
+            .validate_png(job, &outputs[1], &png_bytes(1024, 767))
+            .is_err());
     }
 }
 
@@ -153,24 +165,24 @@ fn completed(base: &str) -> Jobs {
 #[tokio::test]
 async fn stream_and_legacy_video_history_requires_encoded_pairs_and_retains_terminal_products() {
     for class_type in ["DaSiWa_EnhancedVideoCombine", "DEAS_H3StreamVideoSave"] {
-    for (status, present, expected) in [
-        ("success", "both", "succeeded"),
-        ("success", "frames", "failed"),
-        ("success", "7", "failed"),
-        ("success", "B7", "failed"),
-        ("error", "B7", "failed"),
-        ("interrupted", "B7", "cancelled"),
-        ("error", "7", "failed"),
-        ("interrupted", "7", "cancelled"),
-        ("error", "none", "failed"),
-        ("interrupted", "none", "cancelled"),
-    ] {
-        let graph = json!({
-            "7":{"class_type":class_type,"inputs":{}},
-            "B7":{"class_type":class_type,"inputs":{}}
-        });
-        let tuple = json!([0,"prompt-video",graph,{"client_id":"client"},["7","B7"]]);
-        let (base, task) = super::super::tests::server(move |path, _| {
+        for (status, present, expected) in [
+            ("success", "both", "succeeded"),
+            ("success", "frames", "failed"),
+            ("success", "7", "failed"),
+            ("success", "B7", "failed"),
+            ("error", "B7", "failed"),
+            ("interrupted", "B7", "cancelled"),
+            ("error", "7", "failed"),
+            ("interrupted", "7", "cancelled"),
+            ("error", "none", "failed"),
+            ("interrupted", "none", "cancelled"),
+        ] {
+            let graph = json!({
+                "7":{"class_type":class_type,"inputs":{}},
+                "B7":{"class_type":class_type,"inputs":{}}
+            });
+            let tuple = json!([0,"prompt-video",graph,{"client_id":"client"},["7","B7"]]);
+            let (base, task) = super::super::tests::server(move |path, _| {
             assert_eq!(path, "GET /comfy/history/prompt-video HTTP/1.1");
             let mut outputs = json!({});
             for node in ["7", "B7"] {
@@ -190,65 +202,65 @@ async fn stream_and_legacy_video_history_requires_encoded_pairs_and_retains_term
                 "completed":status=="success","status_str":if status=="success" {"success"} else {"error"},"messages":messages
             }}}).to_string())
         }).await;
-        let dir = tempfile::tempdir().unwrap();
-        let jobs = completed(&format!("{base}/"));
-        {
-            let mut session = jobs.lock().unwrap();
-            let job = session.job.as_mut().unwrap();
-            job.plan.graph = graph;
-            // Result handling uses the immutable graph, not current authoring settings.
-            job.plan.intent =
-                json!({"kind":"video","latentUpscale":{"model":"learned.safetensors"}});
-            job.plan.media_root = Some(MediaRoot::capture(dir.path().into()).unwrap());
-            job.prompt_id = Some("prompt-video".into());
-            job.state = "running";
-            job.outputs.clear();
-        }
-        let snapshot = jobs.status("job-a".into()).await.unwrap();
-        assert_eq!(
-            snapshot["state"], expected,
-            "{status}/{present}: {snapshot}"
-        );
-        let session = jobs.lock().unwrap();
-        let job = session.job.as_ref().unwrap();
-        let videos: Vec<_> = job
-            .outputs
-            .iter()
-            .filter(|o| o["format"] == "video/webm")
-            .collect();
-        assert_eq!(
-            videos.len(),
-            match present {
-                "both" => 2,
-                "7" | "B7" => 1,
-                _ => 0,
+            let dir = tempfile::tempdir().unwrap();
+            let jobs = completed(&format!("{base}/"));
+            {
+                let mut session = jobs.lock().unwrap();
+                let job = session.job.as_mut().unwrap();
+                job.plan.graph = graph;
+                // Result handling uses the immutable graph, not current authoring settings.
+                job.plan.intent =
+                    json!({"kind":"video","latentUpscale":{"model":"learned.safetensors"}});
+                job.plan.media_root = Some(MediaRoot::capture(dir.path().into()).unwrap());
+                job.prompt_id = Some("prompt-video".into());
+                job.state = "running";
+                job.outputs.clear();
             }
-        );
-        for video in videos {
+            let snapshot = jobs.status("job-a".into()).await.unwrap();
             assert_eq!(
-                video["role"],
-                if video["filename"] == "7.webm" {
-                    "processed"
-                } else {
-                    "original"
+                snapshot["state"], expected,
+                "{status}/{present}: {snapshot}"
+            );
+            let session = jobs.lock().unwrap();
+            let job = session.job.as_ref().unwrap();
+            let videos: Vec<_> = job
+                .outputs
+                .iter()
+                .filter(|o| o["format"] == "video/webm")
+                .collect();
+            assert_eq!(
+                videos.len(),
+                match present {
+                    "both" => 2,
+                    "7" | "B7" => 1,
+                    _ => 0,
                 }
             );
+            for video in videos {
+                assert_eq!(
+                    video["role"],
+                    if video["filename"] == "7.webm" {
+                        "processed"
+                    } else {
+                        "original"
+                    }
+                );
+            }
+            if present == "none" {
+                assert!(session.completed.is_empty());
+            } else {
+                assert_eq!(session.completed.len(), 1);
+                assert_eq!(session.completed[0].outputs, job.outputs);
+            }
+            if status == "error" {
+                assert!(job.error.as_deref().unwrap().contains("upscale failed"));
+            } else if status == "interrupted" {
+                assert!(job.error.is_none());
+            } else if expected == "failed" {
+                assert!(job.error.is_some());
+            }
+            task.abort();
         }
-        if present == "none" {
-            assert!(session.completed.is_empty());
-        } else {
-            assert_eq!(session.completed.len(), 1);
-            assert_eq!(session.completed[0].outputs, job.outputs);
-        }
-        if status == "error" {
-            assert!(job.error.as_deref().unwrap().contains("upscale failed"));
-        } else if status == "interrupted" {
-            assert!(job.error.is_none());
-        } else if expected == "failed" {
-            assert!(job.error.is_some());
-        }
-        task.abort();
-    }
     }
 }
 

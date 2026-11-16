@@ -113,7 +113,10 @@ pub(crate) fn insert(
     let strength = f["denoise"].as_f64().unwrap_or(1.0);
     let steps = g["Z"]["inputs"]["steps"].as_f64().unwrap_or(0.0);
     // A still i2i scheduler already starts at generation denoise; face strength cuts a full schedule.
-    let truncated = audio.is_none() && g["Z"]["inputs"]["denoise"].as_f64().is_some_and(|d| d < 1.0);
+    let truncated = audio.is_none()
+        && g["Z"]["inputs"]["denoise"]
+            .as_f64()
+            .is_some_and(|d| d < 1.0);
     let sigmas = if truncated || (steps > 0.0 && steps * strength < 1.5) {
         g["FRB"] = g["Z"].clone();
         g["FRB"]["inputs"]["steps"] = json!((2.0 / strength).ceil().max(steps) as u64);
@@ -208,7 +211,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         fps.clone(),
         model,
         &i["faceRefine"],
-        (json!(["C",0]), json!(["V",0])),
+        (json!(["C", 0]), json!(["V", 0])),
     );
     gate(&mut g, refined);
     crate::jobs_video::combine(
@@ -265,14 +268,22 @@ pub(crate) mod tests {
     #[test]
     fn insert_uses_explicit_clip_vae_without_changing_video_defaults() {
         let mut g = json!({"Z":{"class_type":"BasicScheduler","inputs":{"model":["SS",0],"scheduler":"simple","steps":8,"denoise":1.0}}});
-        insert(&mut g,json!(["F",0]),None,json!(24),json!(["SS",0]),&block(),(json!(["custom_clip",2]),json!(["custom_vae",3])));
-        assert_eq!(g["FRC"]["inputs"]["clip"],json!(["custom_clip",2]));
-        assert_eq!(g["FRC"]["inputs"]["vae"],json!(["custom_vae",3]));
-        assert_eq!(g["FR"]["inputs"]["vae"],json!(["custom_vae",3]));
+        insert(
+            &mut g,
+            json!(["F", 0]),
+            None,
+            json!(24),
+            json!(["SS", 0]),
+            &block(),
+            (json!(["custom_clip", 2]), json!(["custom_vae", 3])),
+        );
+        assert_eq!(g["FRC"]["inputs"]["clip"], json!(["custom_clip", 2]));
+        assert_eq!(g["FRC"]["inputs"]["vae"], json!(["custom_vae", 3]));
+        assert_eq!(g["FR"]["inputs"]["vae"], json!(["custom_vae", 3]));
         let video = compile(&intent()).unwrap();
         assert!(video["FR"]["inputs"].get("still_image").is_none());
-        assert_eq!(video["FR"]["inputs"]["vae"],json!(["V",0]));
-        assert_eq!(video["FRC"]["inputs"]["clip"],json!(["C",0]));
+        assert_eq!(video["FR"]["inputs"]["vae"], json!(["V", 0]));
+        assert_eq!(video["FRC"]["inputs"]["clip"], json!(["C", 0]));
     }
 
     #[test]
@@ -481,7 +492,7 @@ pub(crate) mod tests {
             json!(24),
             json!(["SS", 0]),
             &b,
-            (json!(["C",0]), json!(["V",0])),
+            (json!(["C", 0]), json!(["V", 0])),
         );
         assert!(g["FR"]["inputs"].get("min_face").is_none());
         assert!(
@@ -496,7 +507,7 @@ pub(crate) mod tests {
             json!(24),
             json!(["SS", 0]),
             &b,
-            (json!(["C",0]), json!(["V",0])),
+            (json!(["C", 0]), json!(["V", 0])),
         );
         assert_eq!(g["FR"]["inputs"]["min_face"], 96);
         assert!(g["FR"]["inputs"].get("subjects").is_none());
@@ -519,7 +530,7 @@ pub(crate) mod tests {
             json!(24),
             json!(["SS", 0]),
             &b,
-            (json!(["C",0]), json!(["V",0])),
+            (json!(["C", 0]), json!(["V", 0])),
         );
         assert_eq!(g["FR"]["inputs"]["subjects"], "primary");
         // Refine runs >= 2 steps: 4 steps at 0.35 (round(1.4) = 1) get a 6-step schedule (2 run),
@@ -533,7 +544,7 @@ pub(crate) mod tests {
                 json!(24),
                 json!(["SS", 0]),
                 &b,
-                (json!(["C",0]), json!(["V",0])),
+                (json!(["C", 0]), json!(["V", 0])),
             );
             match own {
                 Some(n) => {
@@ -560,7 +571,7 @@ pub(crate) mod tests {
             json!(24),
             json!(["1", 0]),
             &b,
-            (json!(["C",0]), json!(["V",0])),
+            (json!(["C", 0]), json!(["V", 0])),
         );
         assert_eq!(g["FRB"]["inputs"], json!({"model":["1",0],"steps":20}));
     }

@@ -82,8 +82,14 @@ fn absolute_path_valid(path: &Path) -> bool {
     path.is_absolute()
         && path.to_string_lossy().len() <= 32768
         && !path.to_string_lossy().chars().any(char::is_control)
-        && path.components().all(|part| matches!(part,
-            std::path::Component::Prefix(_) | std::path::Component::RootDir | std::path::Component::Normal(_)))
+        && path.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::Prefix(_)
+                    | std::path::Component::RootDir
+                    | std::path::Component::Normal(_)
+            )
+        })
 }
 
 fn preview_path_valid(model: &str, preview: &str) -> bool {
@@ -304,10 +310,7 @@ pub fn load(
     roots: Vec<PathBuf>,
     refresh: bool,
 ) -> Result<Vec<SnapshotModel>, String> {
-    if roots.is_empty()
-        || roots.len() > 32
-        || roots.iter().any(|p| !absolute_path_valid(p))
-    {
+    if roots.is_empty() || roots.len() > 32 || roots.iter().any(|p| !absolute_path_valid(p)) {
         return Err("Invalid model index roots".into());
     }
     let key = format!(
@@ -463,13 +466,27 @@ mod tests {
         std::fs::write(root.join("loras/a.pt"), b"fixture").unwrap();
         let cache = dir.path().join("index");
         load(&cache, vec![root.clone()], false).unwrap();
-        let file = std::fs::read_dir(&cache).unwrap().next().unwrap().unwrap().path();
+        let file = std::fs::read_dir(&cache)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
         for field in ["root", "model", "preview"] {
             let mut index = read(&file, std::slice::from_ref(&root)).unwrap();
             match field {
                 "root" => index.roots = vec![root.join("../models")],
-                "model" => index.records[0].model.path = root.join("../outside/a.pt").to_string_lossy().into_owned(),
-                _ => index.records[0].model.local_preview = Some(root.join("loras/../outside/a.png").to_string_lossy().into_owned()),
+                "model" => {
+                    index.records[0].model.path =
+                        root.join("../outside/a.pt").to_string_lossy().into_owned()
+                }
+                _ => {
+                    index.records[0].model.local_preview = Some(
+                        root.join("loras/../outside/a.png")
+                            .to_string_lossy()
+                            .into_owned(),
+                    )
+                }
             }
             let invalid = cache.join(format!("invalid-{field}.json"));
             publish(&invalid, &index).unwrap();

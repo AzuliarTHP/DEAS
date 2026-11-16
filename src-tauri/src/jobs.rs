@@ -644,8 +644,14 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     }
     let face_refine = object.get("faceRefine");
     if let Some(f) = face_refine {
-        if h3.is_none() || [object.get("family"), diffusion.and_then(|d| d.get("family"))]
-            .into_iter().flatten().any(|f| f != "minimax-h3")
+        if h3.is_none()
+            || [
+                object.get("family"),
+                diffusion.and_then(|d| d.get("family")),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|f| f != "minimax-h3")
         {
             return Err("faceRefine on images needs a MiniMax H3 edit".into());
         }
@@ -886,7 +892,8 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     }
     if !i["outputPrefix"].as_str().is_some_and(|prefix| {
         safe_output_prefix(prefix)
-            && ((refine.is_none() && face_refine.is_none()) || safe_output_prefix(&format!("{prefix}_original")))
+            && ((refine.is_none() && face_refine.is_none())
+                || safe_output_prefix(&format!("{prefix}_original")))
     }) {
         return Err("Unsafe output prefix".into());
     }
@@ -1394,23 +1401,33 @@ fn h3_edit(graph: &mut Value, i: &Value, h: &Value) -> Result<(), String> {
     if let Some(f) = i.get("faceRefine") {
         let images = graph["7"]["inputs"]["images"].clone();
         graph["B7"] = graph["7"].clone();
-        graph["B7"]["inputs"]["filename_prefix"] = json!(format!("{}_original", i["outputPrefix"].as_str().unwrap()));
-        let refined = crate::jobs_face_refine::insert(graph, images, None, json!(24), json!(["SS",0]), f, (clip, vae.clone()));
+        graph["B7"]["inputs"]["filename_prefix"] =
+            json!(format!("{}_original", i["outputPrefix"].as_str().unwrap()));
+        let refined = crate::jobs_face_refine::insert(
+            graph,
+            images,
+            None,
+            json!(24),
+            json!(["SS", 0]),
+            f,
+            (clip, vae.clone()),
+        );
         graph["FR"]["inputs"]["still_image"] = json!(true);
         let final_image = if i.get("latentUpscale").is_some() {
             graph["RE"] = json!({"class_type":"VAEEncode","inputs":{"pixels":refined,"vae":vae}});
             graph["RC"] = json!({"class_type":"LTXVConcatAVLatent","inputs":{"video_latent":["RE",0],"audio_latent":["SEP",1]}});
-            graph["U"]["inputs"]["latent"] = json!(["RC",0]);
-            graph["USEP"] = json!({"class_type":"LTXVSeparateAVLatent","inputs":{"av_latent":["U",0]}});
+            graph["U"]["inputs"]["latent"] = json!(["RC", 0]);
+            graph["USEP"] =
+                json!({"class_type":"LTXVSeparateAVLatent","inputs":{"av_latent":["U",0]}});
             graph["U6"] = graph["6"].clone();
-            graph["U6"]["inputs"]["samples"] = json!(["USEP",0]);
+            graph["U6"]["inputs"]["samples"] = json!(["USEP", 0]);
             graph["UF"] = json!({"class_type":"ImageFromBatch","inputs":{"image":["U6",0],"batch_index":0,"length":1}});
-            json!(["UF",0])
+            json!(["UF", 0])
         } else {
             refined
         };
         graph["PG"] = json!({"class_type":"DEAS_ImagePostprocessGate","inputs":{"baseline":["B7",0],"image":final_image}});
-        graph["7"]["inputs"]["images"] = json!(["PG",0]);
+        graph["7"]["inputs"]["images"] = json!(["PG", 0]);
     }
     Ok(())
 }

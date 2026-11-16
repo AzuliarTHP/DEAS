@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.38 BETA (unreleased)
+## 0.2.38 BETA
 
 - **H3 face refinement for still images.** Advanced H3 Image uses the existing default-OFF face-refinement settings and SAM checkpoint, without video-analysis or standalone-video controls. The existing adapter explicitly pads a still to H3's minimum clip, refines tracked face crops and returns one stitched image; short video shots keep their previous behavior. The native graph saves Original before refinement, preserves Processed separately, and composes reference/masked edits and optional latent upscale (face refinement before upscale). Capability discovery requires the new still-image ABI without disabling older video refinement. Runtime/model-quality acceptance remains separate.
 
