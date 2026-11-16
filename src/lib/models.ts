@@ -5,7 +5,7 @@ export interface CivitaiInfo { description?:string; modelId:number; versionId:nu
 export interface ModelInfo { sha256:string; size:number; fetchedAt:number; civitai:CivitaiInfo|null }
 /** `family` is effective (declaration or detection); metadataError blocks execution, even for unknown checkpoints. */
 export type FamilyEvidence = 'header' | 'filename' | 'unresolved' | 'conflict';
-export interface LocalModel { localPreview?:string; addedAt?:number; check?:import('./modelCheck').ModelCheck; category:string; name:string; path:string; size:number; info:ModelInfo|null; family?:string; detectedFamily?:string; /** ACE-Step automatic identity evidence, independent of manual declaration. */ familyEvidence?:FamilyEvidence; familyOverride?:string; metadataError?:string; /** Header-detected companion architecture; absent means unknown, not compatible. */ component?:string; /** `truncated` when the safetensors header covers payload the file does not hold. */ integrity?:string; /** ACE-Step all-in-one (embedded encoders + VAE) outside `checkpoints/`; ComfyUI loads it only from there. */ misplacedAllInOne?:boolean }
+export interface LocalModel { /** UI-only explicit refresh marker for local cover assets. */ previewRevision?:number; localPreview?:string; addedAt?:number; check?:import('./modelCheck').ModelCheck; category:string; name:string; path:string; size:number; info:ModelInfo|null; family?:string; detectedFamily?:string; /** ACE-Step automatic identity evidence, independent of manual declaration. */ familyEvidence?:FamilyEvidence; familyOverride?:string; metadataError?:string; /** Header-detected companion architecture; absent means unknown, not compatible. */ component?:string; /** `truncated` when the safetensors header covers payload the file does not hold. */ integrity?:string; /** ACE-Step all-in-one (embedded encoders + VAE) outside `checkpoints/`; ComfyUI loads it only from there. */ misplacedAllInOne?:boolean }
 /** Restores the native browsing index; explicit refresh checks file fingerprints. Run validates live files separately. */
 export const scanModels=(root:string,extraRoots:string[]=[],refresh=false)=>invoke<LocalModel[]>('native_models_scan',{root,...(extraRoots.length?{extraRoots}:{}),...(refresh?{refresh:true}:{})});
 /** Hashes the file once (cached), asks CivitAI by hash and writes `<file>.deas.json`. */
@@ -17,3 +17,6 @@ export interface ModelScanStatus { id:string; root:string; state:'idle'|'running
 /** Native task lifetime is independent of the Library view; one batch at a time app-wide. */
 export const startModelScan=(root:string,scope:ModelScanScope,authenticated:boolean,selection?:{paths:string[];missingOnly:boolean})=>invoke<ModelScanStatus>('native_model_scan_start',{root,scope,authenticated,...selection});
 export const readModelScanStatus=()=>invoke<ModelScanStatus>('native_model_scan_status');
+
+export interface FamilyBatchReport { updated:LocalModel[];failed:string[] }
+export const writeModelFamilies=(paths:string[],family:string|null)=>invoke<FamilyBatchReport>('native_model_family_write_many',{paths,family});

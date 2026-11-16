@@ -1,6 +1,57 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
-## Windows preview-handle media delete (unreleased) — 2026-11-16
+## Library/Studio PR #37 integration (0.2.39) — 2026-11-16
+
+Integrated contributor head `18770a4ddc6b2796ee1f9e06909dfe690b6d18c0`
+onto local baseline `2ba8b6c`, preserving the Windows preview/delete fix.
+The H3 reference-popup redesign is excluded. The initial integration checks did
+not publish source or binaries; release provenance is recorded separately.
+
+Independent review identified and regression-tested these integration fixes:
+
+- Deferred Library scans replay intervening single/bulk family updates before
+  caching, returning and broadcasting; superseded refreshes cannot broadcast.
+- Backend-only entries with an empty local path cannot alias local Favorites.
+- Global search finds Favorites and all selection actions in both Studio docks;
+  reveal opens selection idempotently without applying organization edits.
+- If the destination changes between the confirmed identity check and backup
+  rename, rollback restores the object actually moved, without overwriting a new
+  arrival. Backup cleanup refusal reports the retained recovery path.
+
+Fresh final gates on the settled executable sources:
+
+- Production frontend build/typecheck passed; core **166 passed**; UI **2,120
+  passed across 120 files** (`--maxWorkers=1`).
+- Serial native library suite **1,060 passed / 77 ignored / zero failed**;
+  strict Linux all-target Clippy and Windows MSVC all-target cross-check passed.
+  Changed Rust files pass rustfmt; `git diff --check` passed.
+- Chromium: shared viewport **467 checks**, Library/Studio gallery **33 check
+  groups**, paired-output **16 checks with zero product findings**, metadata
+  editor **22 checks**. Gallery screenshots were inspected for clipping/overlap.
+  These use synthetic media and strict simulated IPC, not native WebViews.
+- Native clean-export tests exercised disposable real files, replacement races,
+  recovery collisions, cleanup failure and real FFmpeg remux. New regressions
+  were observed failing before their fixes and passing afterwards.
+
+The first UI run overlapped deliberate RED tests and is not final evidence.
+The first native run failed two self-spawning probe tests while another compile
+used the same target directory (consistent with replacement of the running test
+executable); both pass in the frozen final suite. The final independent source
+review found no remaining actionable defect in the scoped integration fixes.
+The gallery's eight-second startup navigation timed out; its final runner uses
+an explicit 30-second DOM-content navigation followed by the existing control
+readiness assertions. Metadata browser checks now target the existing compact
+badge's accessible label and the explicit localized Edit meta menu item.
+
+Execution was resource-bounded without stopping services. No installed-model
+scan, provider fetch, generation, personal preference/media write, backend restart
+or native app capture was run. Windows cross-compilation does not prove native
+WebView2 behavior; Linux/WebKitGTK and Windows save-dialog/large-library runtime
+acceptance remain open in PLAN. Replacement is not crash-journaled: interruption
+between capture and publication can leave the old, metadata-bearing file under
+`.deas-replaced-*`; recovery is manual as documented in MEDIA.
+
+## Windows preview-handle media delete (0.2.39) — 2026-11-16
 
 - Reproduced on the live Windows PC with a handle-semantics probe compiled from the same `windows-sys 0.59` APIs as `media_delete.rs`: a share-delete-capable preview holder (WebView2-style) makes the disposition delete succeed while the name stays pending — `exists()` true, same-path `CreateFile` fails with ERROR_ACCESS_DENIED (5) until the holder closes; a non-share-delete holder (Rust/Python default) fails the delete open with ERROR_SHARING_VIOLATION (32).
 - Fix verified on the same probe: releasing the preview before the delete yields an immediately verified-gone name and same-path reuse succeeds; while a holder remains, the new native verification loop reports an actionable failure instead of phantom success.

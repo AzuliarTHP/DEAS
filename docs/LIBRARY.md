@@ -14,6 +14,25 @@ The Library sorts catalog cards and loaded file rows by version publication date
 
 Catalog offers source selection, provider browsing/search, category/base-model filters, sorting, file/version/quantization selection and Selected for download. Installed scans the configured models folder; opening a file shows path/size/hash, a **File check** row when a safetensors header covers payload the file does not hold (**Incomplete safetensors: … Download it again**), and an explicit CivitAI metadata fetch/cache action. Listing a file is not compatibility proof; a truncated safetensors is excluded from the Studio's automatic component selection, so a broken encoder is never picked silently.
 
+### Favorites and family organization
+
+**Favorites** is an entry in the left sidebar of Installed and the Studio Models/
+LoRAs browsers. It opens the shared saved favorites for that category, including
+cards in folders whose eye is off. It leaves folder visibility preferences intact;
+click a folder or its root to resume normal browsing. Star a Library card, or
+right-click a Studio card and choose **Add to favorites** / **Remove from favorites**.
+Favorites are local preferences and do not change the selected LoRAs or weights.
+
+Bulk family editing is available beside Search in Studio's Models and LoRAs dock.
+See [Studio](STUDIO.md#bulk-family-editing). Family edits update Library cards too.
+
+Explicit **Refresh models**, a successful per-file metadata fetch, and completed
+**Fetch** / **Scan Files** tasks update an already-open Studio from the same inventory.
+Completed jobs with per-file errors still publish the available results. Studio
+does not start a second folder walk for that update. Local cover URLs are refreshed
+so replaced previews can be retried. Simply returning to the app still uses the
+saved browsing snapshot; external file changes require an explicit refresh.
+
 ### Scan Files (Installed)
 
 Choose **All**, **Models** (all non-LoRA folders, including VAEs/encoders) or **LoRAs**, then **Scan Files**. This explicitly starts one native background task for the configured models root. A full scan can take a long time: model files are hashed and CivitAI is queried sequentially using the existing per-file metadata path. Hashing reads each file in 8 MiB slices, which measured 2,253 MiB/s here (a 24.4 GB model hashed in 10.32 s, digest identical to the one already cached); the ignored `hash_throughput_reference` test re-measures that rate against the largest model under the fixed path `F:\models` and skips itself when that drive is not mounted. A configured CivitAI token is used; otherwise lookup is anonymous. Valid cached hashes are reused, and metadata is safely written beside each model as `<file>.deas.json`; model contents are never modified.

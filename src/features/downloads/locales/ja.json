@@ -244,5 +244,22 @@
   "library.loadingMore": "追加のモデルを読み込み中…",
   "library.addLora": "Studio の LoRA に追加",
   "library.loraAdded": "Studio に LoRA を追加しました。",
-  "library.loraAddFailed": "LoRA を追加できませんでした。もう一度お試しください。"
+  "library.loraAddFailed": "LoRA を追加できませんでした。もう一度お試しください。",
+  "library.organizationFailed": "お気に入りやメモを保存できませんでした。再試行してください。",
+  "library.selectModels": "モデルを選択",
+  "library.endSelection": "選択を終了",
+  "library.selectedCount": "{count}件選択中",
+  "library.selectMatching": "同じラベルを選択",
+  "library.selectUnknown": "不明なモデルを選択",
+  "library.clearSelection": "選択を解除",
+  "library.bulkFamily": "ファミリーを設定…",
+  "library.chooseFamily": "ファミリーを選択",
+  "library.bulkHelp": "選択ファイルにローカルのファミリーを設定します。停止しても保存済みの変更は保持されます。",
+  "library.bulkProgress": "{done}/{total}件処理済み · {failed}件失敗",
+  "library.applyFamily": "ファミリーを適用",
+  "library.stopBatch": "停止",
+  "library.selectModel": "{name}を選択",
+  "library.favoriteAction": "お気に入りに追加",
+  "library.unfavoriteAction": "お気に入りから削除",
+  "library.noFavorites": "お気に入りはまだありません。ライブラリの星かStudioカードの右クリックから追加できます。"
 }

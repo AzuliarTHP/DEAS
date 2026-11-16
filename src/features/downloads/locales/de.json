@@ -244,5 +244,22 @@
   "library.loadingMore": "Weitere Modelle werden geladen…",
   "library.addLora": "Zu Studio-LoRAs hinzufügen",
   "library.loraAdded": "LoRA zu Studio hinzugefügt.",
-  "library.loraAddFailed": "Die LoRA konnte nicht hinzugefügt werden. Bitte erneut versuchen."
+  "library.loraAddFailed": "Die LoRA konnte nicht hinzugefügt werden. Bitte erneut versuchen.",
+  "library.organizationFailed": "Favoriten oder Notizen konnten nicht gespeichert werden. Bitte erneut versuchen.",
+  "library.selectModels": "Modelle auswählen",
+  "library.endSelection": "Auswahl beenden",
+  "library.selectedCount": "{count} ausgewählt",
+  "library.selectMatching": "Gleiche Bezeichnung auswählen",
+  "library.selectUnknown": "Unbekannte auswählen",
+  "library.clearSelection": "Auswahl leeren",
+  "library.bulkFamily": "Familie setzen…",
+  "library.chooseFamily": "Familie wählen",
+  "library.bulkHelp": "Lokale Familienzuordnung auf ausgewählte Dateien anwenden. Beim Stoppen bleiben gespeicherte Änderungen erhalten.",
+  "library.bulkProgress": "{done}/{total} bearbeitet · {failed} fehlgeschlagen",
+  "library.applyFamily": "Familie anwenden",
+  "library.stopBatch": "Stoppen",
+  "library.selectModel": "{name} auswählen",
+  "library.favoriteAction": "Zu Favoriten hinzufügen",
+  "library.unfavoriteAction": "Aus Favoriten entfernen",
+  "library.noFavorites": "Noch keine Favoriten. In der Library markieren oder eine Studio-Karte rechtsklicken."
 }

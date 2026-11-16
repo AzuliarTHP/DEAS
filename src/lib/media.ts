@@ -34,8 +34,8 @@ export async function starMedia(path:string,unstar=false):Promise<MediaRelocatio
  return result;
 }
 export interface CleanExport {path:string;size:number}
-/** Native save dialog → metadata-free copy of an owned output; null when the dialog is cancelled. The source is never changed. */
-export const exportWithoutMetadata=(path:string,title:string)=>invoke<CleanExport|null>('native_media_export_clean',{path,title});
+/** Native Save As strips metadata; replacing an existing file (including the source) needs separate confirmation. Null means cancelled. */
+export const exportWithoutMetadata=(path:string,title:string,replace?:{title:string;message:string})=>invoke<CleanExport|null>('native_media_export_clean',{path,title,...(replace?{replaceTitle:replace.title,replaceMessage:replace.message}:{})});
 export function relocatedMediaItem(item:MediaItem,move:MediaRelocation):MediaItem {
  return item.path===move.oldPath?{...item,path:move.path,name:move.path.split(/[\\/]/).at(-1)??item.name,src:isTauri()?convertFileSrc(move.path):move.path}:item;
 }

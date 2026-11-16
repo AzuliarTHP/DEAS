@@ -56,7 +56,7 @@ def verify(browser, url, shots):
         page.get_by_role('button', name='Save', exact=True).click()
         expect(dialog).not_to_be_visible()
         expect(tile).to_have_attribute('aria-disabled', 'false')
-        expect(tile).to_contain_text('User-declared family')
+        expect(tile.get_by_label('User-declared family: Anima', exact=True)).to_be_visible()
         checks.append('keyboard edit enables unknown model without submitting')
         # Library and Studio use the same metadata action and exact-path event updates.
         page.get_by_role('tab', name='Library', exact=True).click()
@@ -94,7 +94,7 @@ def verify(browser, url, shots):
             for width in (1440, 768, 320):
                 page.set_viewport_size({'width': width, 'height': 900})
                 ace_tile.press('Shift+F10')
-                page.get_by_role('menuitem').click()
+                page.get_by_role('menuitem', name=page.get_by_role('menu').get_attribute('aria-label'), exact=True).click()
                 expect(dialog).to_be_visible()
                 bounds = dialog.evaluate('e=>{const r=e.getBoundingClientRect();return {x:r.x,right:r.right,bottom:r.bottom,scroll:e.scrollWidth,client:e.clientWidth}}')
                 assert bounds['x'] >= 0 and bounds['right'] <= width + 1, (locale, width, bounds)

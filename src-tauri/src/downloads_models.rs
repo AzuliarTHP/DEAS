@@ -1374,6 +1374,92 @@ pub async fn native_model_family_write(
     Ok(model)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FamilyBatchReport {
+    updated: Vec<LocalModel>,
+    failed: Vec<String>,
+}
+
+fn write_family_batch(paths: &[String], family: Option<&str>) -> Result<FamilyBatchReport, String> {
+    if paths.is_empty()
+        || paths.len() > 500
+        || paths.iter().collect::<std::collections::HashSet<_>>().len() != paths.len()
+    {
+        return Err("Select between 1 and 500 unique model files".into());
+    }
+    // Validate the complete request before writes; per-file publication retains source checks.
+    for path in paths {
+        let path = Path::new(path);
+        if !path.is_absolute()
+            || !is_model(path)
+            || path.to_string_lossy().chars().any(char::is_control)
+            || path.components().any(|p| {
+                matches!(
+                    p,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            })
+        {
+            return Err("Invalid model path".into());
+        }
+        let (category, _) = model_category(path)?;
+        if !["checkpoints", "diffusion_models", "unet", "loras"].contains(&category) {
+            return Err("Family declarations require models or LoRAs".into());
+        }
+        if let Some(family) = family {
+            crate::model_families::validate_override(category, family)?;
+        }
+    }
+    let mut report = FamilyBatchReport {
+        updated: vec![],
+        failed: vec![],
+    };
+    for path in paths {
+        match write_family(Path::new(path), family) {
+            Ok(model) => report.updated.push(model),
+            Err(_) => report.failed.push(path.clone()),
+        }
+    }
+    Ok(report)
+}
+
+#[tauri::command]
+pub async fn native_model_family_write_many(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+    family: Option<String>,
+) -> Result<FamilyBatchReport, String> {
+    let directory = index::directory(&app)?;
+    let result = tokio::task::spawn_blocking(move || {
+        let report = write_family_batch(&paths, family.as_deref())?;
+        if !report.updated.is_empty() {
+            let paths: Vec<_> = report.updated.iter().map(|m| PathBuf::from(&m.path)).collect();
+            if index::update_many(&directory, &paths).is_err() {
+                crate::logs::push(crate::logs::Source::Deas, "WARN: Library index operation=family-batch metadata saved; browsing cache update failed");
+            }
+        }
+        Ok::<_, String>(report)
+    }).await.map_err(|_| "Model family batch task failed".to_string()).and_then(|r| r);
+    match &result {
+        Ok(report) => {
+            crate::logs::push(
+                crate::logs::Source::Deas,
+                &format!(
+                    "INFO: models operation=family-bulk updated={} failed={}",
+                    report.updated.len(),
+                    report.failed.len()
+                ),
+            );
+            if !report.failed.is_empty() {
+                crate::logs::native_logs_library_error("family".into());
+            }
+        }
+        Err(_) => crate::logs::native_logs_library_error("family".into()),
+    }
+    result
+}
+
 /// The webview payload carries its own cap; a listing that big already signals a misconfigured
 /// root, and silence about dropped files is worse than the cap.
 #[cfg(test)]
@@ -2340,6 +2426,33 @@ mod tests {
                 assert_eq!(std::fs::read(sidecar(&path)).unwrap(), bytes);
             }
         }
+    }
+
+    #[test]
+    fn bulk_families_validate_first_and_report_missing_files_without_hashing() {
+        let (_root, path) = family_fixture("loras");
+        let missing = path.with_file_name("missing.safetensors");
+        let paths = vec![
+            path.to_string_lossy().into_owned(),
+            missing.to_string_lossy().into_owned(),
+        ];
+        assert!(write_family_batch(&paths, Some("not-a-family")).is_err());
+        assert!(!sidecar(&path).exists());
+        let hashes = HASH_READS.with(|n| n.get());
+        let report = write_family_batch(&paths, Some("anima")).unwrap();
+        assert_eq!(report.updated.len(), 1);
+        assert_eq!(report.failed, [missing.to_string_lossy()]);
+        assert_eq!(report.updated[0].family_override.as_deref(), Some("anima"));
+        assert_eq!(HASH_READS.with(|n| n.get()), hashes);
+        assert!(write_family_batch(&[paths[0].clone(), paths[0].clone()], Some("anima")).is_err());
+        assert!(write_family_batch(&[], Some("anima")).is_err());
+        assert!(write_family_batch(&vec![paths[0].clone(); 501], Some("anima")).is_err());
+        assert!(write_family_batch(&paths[..1], None).unwrap().updated[0]
+            .family_override
+            .is_none());
+        assert!(include_str!("main.rs").contains("deas::native_model_family_write_many"));
+        assert!(include_str!("../permissions/downloads.toml")
+            .contains("native_model_family_write_many"));
     }
 
     #[test]

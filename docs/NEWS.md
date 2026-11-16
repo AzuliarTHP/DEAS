@@ -1,9 +1,14 @@
 # News
 
 
-## 0.2.39 BETA (unreleased)
+## 0.2.39 BETA
 
-Löschen und neue Ausgabe unter demselben Dateinamen schlägt auf Windows nicht mehr fehl, wenn das Video gerade in der Vorschau läuft: Die Vorschau wird vor dem Löschen freigegeben, und ein Löschen meldet nur noch Erfolg, wenn die Datei wirklich verschwunden ist.
+Library and Studio now share Favorites and explicit inventory updates. Studio's
+compact selection controls match a selected card's displayed family label and can
+bulk edit families or favorites. Clean exports support confirmed filename replacement.
+See [Library](LIBRARY.md), [Studio](STUDIO.md) and [Media](MEDIA.md).
+
+Windows preview handles are released before deletion; deletion reports success only after the filename has disappeared, allowing a new output at the same path.
 
 ## 0.2.38 BETA
 

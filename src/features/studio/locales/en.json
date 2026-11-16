@@ -1127,7 +1127,7 @@
   "studio.run.viewer.next": "Next picture",
   "studio.run.viewer.closed": "Open a generated picture in Full view first.",
   "studio.run.exportClean.label": "Export without metadata…",
-  "studio.run.exportClean.hint": "Saves a copy without prompt, workflow or settings; the original is unchanged.",
+  "studio.run.exportClean.hint": "Save without prompt, workflow or settings. Existing files, including the source, can be replaced after confirmation.",
   "studio.run.exportClean.title": "Export without metadata",
   "studio.run.exportClean.native": "Exporting without metadata requires a local file in the desktop app.",
   "studio.run.exportClean.done": "Saved a copy without metadata: {path}",
@@ -1252,5 +1252,7 @@
   "loraDetails.copySelected": "Copy selected ({count})",
   "studio.faceRefine.stillHint": "After H3 image generation, detect faces with SAM3.1, refine square crops and composite them back. Original and Processed are both kept. No video analysis or manual refinement action is needed.",
   "studio.faceRefine.stillUnavailable": "H3 still-image Face Refine requires a compatible adapter with BOOLEAN still_image support.",
-  "studio.faceRefine.h3Only": "Available for MiniMax H3 images and videos only."
+  "studio.faceRefine.h3Only": "Available for MiniMax H3 images and videos only.",
+  "studio.run.exportClean.replaceTitle": "Replace existing file?",
+  "studio.run.exportClean.replaceMessage": "Replace the selected file with a copy without metadata? Choosing the original file replaces it too."
 }

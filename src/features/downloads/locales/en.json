@@ -244,5 +244,22 @@
   "library.loadingMore": "Loading more models…",
   "library.addLora": "Add to Studio LoRAs",
   "library.loraAdded": "LoRA added to Studio.",
-  "library.loraAddFailed": "Could not add the LoRA. Please try again."
+  "library.loraAddFailed": "Could not add the LoRA. Please try again.",
+  "library.organizationFailed": "Could not save favorites or notes. Please try again.",
+  "library.selectModels": "Select models",
+  "library.endSelection": "Done selecting",
+  "library.selectedCount": "{count} selected",
+  "library.selectMatching": "Select matching label",
+  "library.selectUnknown": "Select unknown",
+  "library.clearSelection": "Clear selection",
+  "library.bulkFamily": "Set family…",
+  "library.chooseFamily": "Choose a family",
+  "library.bulkHelp": "Apply a local family declaration to the selected files. Stopping keeps changes already saved.",
+  "library.bulkProgress": "{done}/{total} processed · {failed} failed",
+  "library.applyFamily": "Apply family",
+  "library.stopBatch": "Stop",
+  "library.selectModel": "Select {name}",
+  "library.favoriteAction": "Add to favorites",
+  "library.unfavoriteAction": "Remove from favorites",
+  "library.noFavorites": "No favorites here yet. Add a star in Library or right-click a Studio card."
 }

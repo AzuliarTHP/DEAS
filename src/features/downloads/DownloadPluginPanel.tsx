@@ -1,3 +1,4 @@
+import { publishModelLibrary,patchModels,refreshModelPreviews } from '../../lib/modelLibrary';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SetStateAction } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
@@ -100,7 +101,7 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
  const [listingBusy,setListingBusy]=useState(false);const listingEpoch=useRef(0);
  useEffect(()=>{if(!io.native)return;const epoch=++listingEpoch.current;setModels(null);setScanError(false);setSelected('');setListingBusy(true);loadInstalledListing(root).then(v=>{if(listingEpoch.current===epoch)setModels(v);},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});return()=>{listingEpoch.current++;};},[root,io.native,setModels]);
  const refreshListing=()=>{const epoch=++listingEpoch.current;setScanError(false);setListingBusy(true);loadInstalledListing(root,true).then(v=>{if(listingEpoch.current===epoch){setModels(v);setSelected('');}},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});};
- const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),v=>setModels(old=>old?.map(x=>x.path===v.path?{...v,addedAt:x.addedAt,localPreview:x.localPreview}:x)??old));
+ const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured)),v=>{const updates=refreshModelPreviews([v]);setModels(old=>old?patchModels(old,updates):old);publishModelLibrary({root,updates});});
  const [scanScope,setScanScope]=useState<ModelScanScope>('all');
  const [scanStatus,setScanStatus]=useState<ModelScanStatus|null>(null);const [statusError,setStatusError]=useState(false);const scanEpoch=useRef(0);
  const scanning=scanStatus?.state==='running';

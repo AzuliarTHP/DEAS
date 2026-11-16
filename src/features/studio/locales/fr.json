@@ -1127,7 +1127,7 @@
   "studio.run.viewer.next": "Image suivante",
   "studio.run.viewer.closed": "Ouvrez d’abord une image générée en plein écran.",
   "studio.run.exportClean.label": "Exporter sans métadonnées…",
-  "studio.run.exportClean.hint": "Enregistre une copie sans prompt, workflow ni réglages ; l’original reste inchangé.",
+  "studio.run.exportClean.hint": "Enregistrer sans prompt, workflow ni réglages. Les fichiers existants, y compris la source, peuvent être remplacés après confirmation.",
   "studio.run.exportClean.title": "Exporter sans métadonnées",
   "studio.run.exportClean.native": "L’export sans métadonnées nécessite un fichier local dans l’application de bureau.",
   "studio.run.exportClean.done": "Copie sans métadonnées enregistrée : {path}",
@@ -1252,5 +1252,7 @@
   "loraDetails.copySelected": "Copier la sélection ({count})",
   "studio.faceRefine.stillHint": "Après la génération d’image H3, SAM3.1 détecte les visages, affine les recadrages carrés et les réintègre. L’original et le résultat sont conservés. Aucune analyse vidéo ni action manuelle d’affinage nécessaire.",
   "studio.faceRefine.stillUnavailable": "L’affinage H3 des images fixes nécessite un adaptateur compatible avec still_image de type BOOLEAN.",
-  "studio.faceRefine.h3Only": "Disponible uniquement pour les images et vidéos MiniMax H3."
+  "studio.faceRefine.h3Only": "Disponible uniquement pour les images et vidéos MiniMax H3.",
+  "studio.run.exportClean.replaceTitle": "Remplacer le fichier existant ?",
+  "studio.run.exportClean.replaceMessage": "Remplacer le fichier choisi par une copie sans métadonnées ? Choisir le fichier original le remplace également."
 }

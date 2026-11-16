@@ -15,3 +15,11 @@ it('uses indexed JPG previews, falls back on failure and logs only the operation
  view.rerender(<ModelPreview model={{...model,localPreview:'/previews/b.webp'}} fallback={<span>No preview</span>}/>);
  expect(view.container.querySelector('img')).toHaveProperty('src','asset:///previews/b.webp');
 });
+it('retries a previously failed cover after explicit refresh without changing provider URLs',()=>{
+ const view=render(<ModelPreview model={model} fallback={<span>No preview</span>}/>);
+ fireEvent.error(view.container.querySelector('img')!);fireEvent.error(view.container.querySelector('img')!);
+ expect(screen.getByText('No preview')).toBeTruthy();
+ view.rerender(<ModelPreview model={{...model,previewRevision:123}} fallback={<span>No preview</span>}/>);
+ expect(view.container.querySelector('img')).toHaveProperty('src','asset:///previews/a.jpg?deas_preview=123');
+ fireEvent.error(view.container.querySelector('img')!);expect(view.container.querySelector('img')).toHaveProperty('src','https://example.invalid/a.png');
+});

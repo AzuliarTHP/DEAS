@@ -244,5 +244,22 @@
   "library.loadingMore": "Chargement des modèles suivants…",
   "library.addLora": "Ajouter aux LoRAs de Studio",
   "library.loraAdded": "LoRA ajouté à Studio.",
-  "library.loraAddFailed": "Impossible d’ajouter le LoRA. Veuillez réessayer."
+  "library.loraAddFailed": "Impossible d’ajouter le LoRA. Veuillez réessayer.",
+  "library.organizationFailed": "Impossible d’enregistrer les favoris ou notes. Réessayez.",
+  "library.selectModels": "Sélectionner des modèles",
+  "library.endSelection": "Terminer la sélection",
+  "library.selectedCount": "{count} sélectionnés",
+  "library.selectMatching": "Sélectionner le même libellé",
+  "library.selectUnknown": "Sélectionner les inconnus",
+  "library.clearSelection": "Effacer la sélection",
+  "library.bulkFamily": "Définir la famille…",
+  "library.chooseFamily": "Choisir une famille",
+  "library.bulkHelp": "Appliquer une famille locale aux fichiers sélectionnés. L’arrêt conserve les modifications déjà enregistrées.",
+  "library.bulkProgress": "{done}/{total} traités · {failed} échecs",
+  "library.applyFamily": "Appliquer la famille",
+  "library.stopBatch": "Arrêter",
+  "library.selectModel": "Sélectionner {name}",
+  "library.favoriteAction": "Ajouter aux favoris",
+  "library.unfavoriteAction": "Retirer des favoris",
+  "library.noFavorites": "Aucun favori ici. Ajoutez une étoile dans la bibliothèque ou faites un clic droit sur une carte Studio."
 }
