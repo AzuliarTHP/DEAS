@@ -23,6 +23,14 @@ same components and native source/integrity validators.
 
 ## Current runtime and development foundations
 
+The bundled image Lying Sigma adapter adapts the sampler algorithm from
+[Jonseed/ComfyUI-Detail-Daemon](https://github.com/Jonseed/ComfyUI-Detail-Daemon)
+(MIT), credited there to [blepping](https://github.com/blepping). Detail Daemon's
+original concept is credited to [muerrilla](https://github.com/muerrilla/sd-webui-detail-daemon).
+The port includes only this sampler, registers `DEAS_LyingSigmaSampler` and retains
+the MIT license/copyright notice in its source. It does not require the full
+extension or Matplotlib and does not replace third-party registrations.
+
 The native Library gallery, horizontal categories, scoped Fetch, folder controls and detail popup take visual/interaction inspiration from
 [ComfyUI LoRA Manager by willmiao and contributors](https://github.com/willmiao/ComfyUI-Lora-Manager)
 (GPL-3.0). Its public README and interface screenshot were reviewed as design references;

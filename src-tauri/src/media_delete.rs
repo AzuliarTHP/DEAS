@@ -10,6 +10,8 @@ use std::{
 pub struct DeleteReport {
     deleted: Vec<String>,
     failed: Vec<String>,
+    #[serde(rename = "deletedVideoSourceIds")]
+    deleted_video_source_ids: Vec<String>,
     // Returned over IPC, never logged: recovery paths can contain private filenames.
     errors: Vec<String>,
 }
@@ -94,17 +96,18 @@ fn remove_checked(
         let folder = std::ffi::CString::new(folder).unwrap();
         let name = std::ffi::CString::new(name).map_err(|_| "Invalid media filename")?;
         let captured = c"media";
-        let rename = |from: &Anchor, source: &std::ffi::CStr, to: &Anchor, target: &std::ffi::CStr| {
-            (unsafe {
-                libc::renameat2(
-                    from.0.as_raw_fd(),
-                    source.as_ptr(),
-                    to.0.as_raw_fd(),
-                    target.as_ptr(),
-                    libc::RENAME_NOREPLACE,
-                )
-            }) == 0
-        };
+        let rename =
+            |from: &Anchor, source: &std::ffi::CStr, to: &Anchor, target: &std::ffi::CStr| {
+                (unsafe {
+                    libc::renameat2(
+                        from.0.as_raw_fd(),
+                        source.as_ptr(),
+                        to.0.as_raw_fd(),
+                        target.as_ptr(),
+                        libc::RENAME_NOREPLACE,
+                    )
+                }) == 0
+            };
         let cleanup = || {
             // Empty directories only; never recursively clean up retained recovery data.
             unsafe {
@@ -135,7 +138,8 @@ fn remove_checked(
                 || metadata.modified().ok().is_none()
                 || metadata.modified().ok() != candidate.metadata.modified().ok()
                 || Anchor::open(&candidate.root)?.identity()? != candidate.root_anchor.identity()?
-                || Anchor::open(candidate.path.parent().ok_or("Missing media parent")?)?.identity()?
+                || Anchor::open(candidate.path.parent().ok_or("Missing media parent")?)?
+                    .identity()?
                     != candidate.parent.identity()?
             {
                 return Err("Media changed during deletion; nothing was deleted".to_owned());
@@ -151,11 +155,17 @@ fn remove_checked(
                 cleanup();
                 let parent = std::fs::read_link(format!("/proc/self/fd/{}", candidate.parent.0.as_raw_fd()))
                     .map_err(|_| format!("{error}; restored into held parent; inspect {} and renamed parent directories", candidate.path.display()))?;
-                return Err(format!("{error}; retained at {}", parent.join(name.to_str().unwrap()).display()));
+                return Err(format!(
+                    "{error}; retained at {}",
+                    parent.join(name.to_str().unwrap()).display()
+                ));
             }
             let recovery = std::fs::read_link(format!("/proc/self/fd/{}", quarantine.0.as_raw_fd()))
                 .map_err(|_| format!("{error}; recovery directory path could not be resolved; inspect {} beneath the original or renamed parent of {}", folder.to_string_lossy(), candidate.path.display()))?;
-            return Err(format!("{error}; restore could not complete without overwrite; recovery: {}", recovery.join("media").display()));
+            return Err(format!(
+                "{error}; restore could not complete without overwrite; recovery: {}",
+                recovery.join("media").display()
+            ));
         }
         cleanup();
         Ok(())
@@ -201,12 +211,17 @@ fn delete(roots: &[PathBuf], paths: &[String]) -> Result<DeleteReport, String> {
     let mut report = DeleteReport {
         deleted: vec![],
         failed: vec![],
+        deleted_video_source_ids: vec![],
         errors: vec![],
     };
     for candidate in candidates {
         let path = candidate.path.to_string_lossy().into_owned();
-        match remove(&candidate) {
-            Ok(()) => report.deleted.push(path),
+        match crate::video_post_source::with_deleted_source(&candidate.file, || remove(&candidate))
+        {
+            Ok(source_id) => {
+                report.deleted.push(path);
+                report.deleted_video_source_ids.extend(source_id);
+            }
             Err(error) => {
                 report.errors.push(format!("{path}: {error}"));
                 report.failed.push(path);
@@ -275,6 +290,70 @@ mod tests {
         (dir, vec![root], paths)
     }
     #[test]
+    fn deletion_correlates_only_the_unchanged_retained_video_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Output");
+        let other = root.join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        let path = root.join("source.mp4");
+        let same_name = other.join("source.mp4");
+        for file in [&path, &same_name] {
+            std::fs::write(file, b"abcdefghijklmnop").unwrap();
+        }
+        let metadata = crate::video_post::VideoSourceInspection {
+            source_id: None,
+            name: "source.mp4".into(),
+            width: 512,
+            height: 256,
+            fps_numerator: 24,
+            fps_denominator: 1,
+            duration_seconds: Some(1.0),
+            pixel_format: "yuv420p".into(),
+            field_order: "progressive".into(),
+            color_transfer: "bt709".into(),
+            audio_streams: 0,
+            subtitle_streams: 0,
+            blockers: vec![],
+            timing_verified: false,
+            processing_ready: false,
+        };
+        let inspected = crate::video_post_source::retain_source(crate::video_post::test_retained(
+            &path,
+            metadata.clone(),
+        ))
+        .unwrap();
+        let id = inspected.source_id.unwrap();
+        let roots = [root];
+        let report = delete(&roots, &[same_name.to_str().unwrap().into()]).unwrap();
+        assert!(
+            report.deleted_video_source_ids.is_empty(),
+            "never correlate by basename"
+        );
+        assert!(crate::video_post_source::source(&id).is_ok());
+        let report = delete(&roots, &[path.to_str().unwrap().into()]).unwrap();
+        assert_eq!(report.deleted, [path.to_str().unwrap()]);
+        assert_eq!(
+            report.deleted_video_source_ids.as_slice(),
+            std::slice::from_ref(&id)
+        );
+        assert_eq!(
+            serde_json::to_value(report).unwrap()["deletedVideoSourceIds"],
+            serde_json::json!([id])
+        );
+        assert!(crate::video_post_source::source(&id).is_err());
+
+        std::fs::write(&path, b"abcdefghijklmnop").unwrap();
+        crate::video_post_source::retain_source(crate::video_post::test_retained(&path, metadata))
+            .unwrap();
+        std::fs::write(&path, b"changed identity, same path").unwrap();
+        let report = delete(&roots, &[path.to_str().unwrap().into()]).unwrap();
+        assert!(
+            report.deleted_video_source_ids.is_empty(),
+            "changed retained identities stay guarded"
+        );
+    }
+
+    #[test]
     fn removes_only_confirmed_regular_files_and_keeps_unselected_files() {
         let (_dir, roots, paths) = fixture();
         let report = crate::jobs::Jobs::default()
@@ -297,7 +376,8 @@ mod tests {
                 std::fs::write(&paths[0], b"replacement").unwrap();
             }
             Ok(())
-        }).unwrap_err();
+        })
+        .unwrap_err();
         assert!(error.contains("retained at"), "{error}");
         assert_eq!(std::fs::read(&paths[0]).unwrap(), b"replacement");
         assert_eq!(std::fs::read(held).unwrap(), b"fixture");
@@ -313,7 +393,8 @@ mod tests {
                 std::fs::write(&paths[0], b"replacement").unwrap();
             }
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(std::fs::read(&paths[0]).unwrap(), b"replacement");
         assert_eq!(candidates[0].file.metadata().unwrap().len(), 7);
     }
@@ -332,7 +413,8 @@ mod tests {
                     return Err("injected deletion failure".into());
                 }
                 Ok(())
-            }).unwrap_err();
+            })
+            .unwrap_err();
             if occupied {
                 assert_eq!(std::fs::read(&paths[0]).unwrap(), b"replacement");
                 let recovery = error.split("recovery: ").nth(1).unwrap();
@@ -351,14 +433,19 @@ mod tests {
     fn captured_content_change_is_preserved_and_rolled_back() {
         use std::os::unix::fs::FileExt;
         let (_dir, roots, paths) = fixture();
-        let writer = std::fs::OpenOptions::new().write(true).open(&paths[0]).unwrap();
+        let writer = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&paths[0])
+            .unwrap();
         let candidates = prepare(&roots, &paths[..1]).unwrap();
         assert!(remove_checked(&candidates[0], |captured| {
             if captured {
                 writer.write_all_at(b"unfinished writer", 0).unwrap();
             }
             Ok(())
-        }).unwrap_err().contains("retained at"));
+        })
+        .unwrap_err()
+        .contains("retained at"));
         assert_eq!(std::fs::read(&paths[0]).unwrap(), b"unfinished writer");
     }
 
@@ -413,7 +500,10 @@ mod tests {
         std::fs::write(Path::new(&paths[1]).with_extension("json"), b"{}").unwrap();
         assert!(remove(&candidates[0]).is_err());
         assert!(remove(&candidates[1]).is_err());
-        assert_eq!(std::fs::read(&paths[0]).unwrap(), b"unfinished replacement content");
+        assert_eq!(
+            std::fs::read(&paths[0]).unwrap(),
+            b"unfinished replacement content"
+        );
         assert!(Path::new(&paths[1]).exists());
     }
 
@@ -429,7 +519,11 @@ mod tests {
         symlink(&foreign, &linked).unwrap();
         symlink(outside.path(), roots[0].join("linked-folder")).unwrap();
         for path in [linked, roots[0].join("linked-folder/foreign.png")] {
-            assert!(delete(&roots, &[paths[0].clone(), path.to_string_lossy().into_owned()]).is_err());
+            assert!(delete(
+                &roots,
+                &[paths[0].clone(), path.to_string_lossy().into_owned()]
+            )
+            .is_err());
         }
         std::fs::set_permissions(&roots[0], std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(delete(&roots, &paths).is_err());

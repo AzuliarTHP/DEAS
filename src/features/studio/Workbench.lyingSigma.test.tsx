@@ -1,0 +1,88 @@
+import {evidence,heldJob,videoEvidence,ltxModels,choosePipe} from './Workbench.testHarness';
+import {fireEvent,render,screen,waitFor,within} from '@testing-library/react';
+import {expect,test,vi} from 'vitest';
+import {Workbench} from './Workbench';
+import {I18nProvider} from '../../i18n/I18nProvider';
+import {scanModels} from '../../lib/models';
+import {checkRecipePrerequisites} from '../../lib/recipePrerequisites';
+import {runWorkbenchJob} from '../../lib/jobs';
+import {captureStudioSettings,applyStudioSettings,resetStudioPreferences} from '../../lib/preferences';
+import {act} from '@testing-library/react';
+import {defaultLyingSigma,lyingSigmaSamplingNodes} from '../../lib/lyingSigma';
+const input=()=>document.querySelector<HTMLInputElement>('[data-lying-sigma-factor]')!;
+async function open(available=true){
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null}]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,nodes:[...evidence.allowlist.nodes,...(available?lyingSigmaSamplingNodes:[])]}});
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',false));
+}
+test('Lying Sigma appears between scheduler and seed, defaults to zero, persists and resets',async()=>{
+ await open();
+ expect(input().value).toBe('0');
+ expect(input().validity.stepMismatch).toBe(false);
+ expect(input().step).toBe('0.01');
+ const control=document.querySelector('[data-lying-sigma]')!;
+ expect(document.querySelector('[data-pick="studio.recipe.scheduler"]')!.compareDocumentPosition(control)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ expect(control.compareDocumentPosition(document.querySelector('[data-seed]')!)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ expect(control.textContent).toContain('0 = Off');
+ expect(control.querySelector('.wb-lying-sigma-heading')!.textContent).toContain('0 = Off');
+ expect(screen.getByRole('spinbutton',{name:'Lying Sigma'})).toBe(input());
+ fireEvent.change(input(),{target:{value:'-0.05'}});
+ expect(document.querySelector('[data-lying-sigma-start]')).toHaveProperty('value','25');
+ expect(document.querySelector('[data-lying-sigma-end]')).toHaveProperty('value','90');
+ fireEvent.change(document.querySelector('[data-lying-sigma-start]')!,{target:{value:'20'}});
+ expect(captureStudioSettings()['studio.run.lyingSigma']).toEqual({factor:-0.05,startPercent:0.2,endPercent:0.9});
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.lyingSigma')!)).toEqual({factor:-0.05,startPercent:0.2,endPercent:0.9});
+ act(()=>resetStudioPreferences());expect(input().value).toBe('0');
+ expect(captureStudioSettings()['studio.run.lyingSigma']).toEqual({factor:0,startPercent:0.25,endPercent:0.9});
+ act(()=>{expect(applyStudioSettings({'studio.run.lyingSigma':{factor:-0.03,startPercent:0.3,endPercent:0.8}})).toBe(true);});
+ expect(input().value).toBe('-0.03');expect(runWorkbenchJob).not.toHaveBeenCalled();
+ act(()=>{expect(applyStudioSettings({'studio.run.lyingSigma':{factor:-0.005,startPercent:0.105,endPercent:0.895}})).toBe(true);});
+ expect(input().value).toBe('-0.005');
+ expect(document.querySelector('[data-lying-sigma-start]')).toHaveProperty('value','10.5');
+ expect(document.querySelector('[data-lying-sigma-end]')).toHaveProperty('value','89.5');
+});
+test('zero omits the intent field, while nonzero snapshots the exact selected values',async()=>{
+ await open();
+ vi.mocked(runWorkbenchJob).mockResolvedValue({...heldJob('lying-off','failed'),error:'fixture'});
+ fireEvent.click(screen.getByRole('button',{name:'Run'}));
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).not.toHaveProperty('lyingSigma');
+ fireEvent.change(input(),{target:{value:'-0.05'}});
+ vi.mocked(runWorkbenchJob).mockResolvedValue({...heldJob('lying-on','failed'),error:'fixture'});
+ fireEvent.click(screen.getByRole('button',{name:'Run'}));
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(2));
+ expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).toHaveProperty('lyingSigma',{factor:-0.05,startPercent:0.25,endPercent:0.9});
+});
+test('missing node blocks only enabled Lying Sigma and changing settings never executes',async()=>{
+ await open(false);fireEvent.change(input(),{target:{value:'-0.05'}});
+ expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',true);
+ expect(document.querySelector('[data-lying-sigma]')!.textContent).toContain('DEAS Lying Sigma backend adapter');
+ fireEvent.change(input(),{target:{value:'0'}});
+ expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',false);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+test('image-only controls and intent do not leak into video',async()=>{
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null},...ltxModels]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue(videoEvidence);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(input()).not.toBeNull());
+ fireEvent.change(input(),{target:{value:'-0.05'}});
+ choosePipe('Text → Video');
+ await waitFor(()=>expect(document.querySelector('[data-lying-sigma]')).toBeNull());
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+ expect(defaultLyingSigma.factor).toBe(0);
+});
+test('seed actions share the label row above the seed field and keep their behavior',async()=>{
+ await open();
+ const heading=document.querySelector('.wb-seed-heading')!;
+ const actions=within(heading as HTMLElement),seed=screen.getByRole('spinbutton',{name:'Seed'});
+ expect(actions.getAllByRole('button')).toHaveLength(5);
+ expect(heading.compareDocumentPosition(seed)&Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+ fireEvent.change(seed,{target:{value:'42'}});
+ fireEvent.click(actions.getByRole('button',{name:'Increase seed'}));expect(seed).toHaveProperty('value','43');
+ fireEvent.click(actions.getByRole('button',{name:'Decrease seed'}));expect(seed).toHaveProperty('value','42');
+ fireEvent.click(actions.getByRole('button',{name:'Random'}));expect(actions.getByRole('button',{name:'Random'})).toHaveProperty('ariaPressed','true');
+ fireEvent.click(actions.getByRole('button',{name:'Fixed'}));expect(actions.getByRole('button',{name:'Fixed'})).toHaveProperty('ariaPressed','true');
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+});

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { isLyingSigma } from './lyingSigma.ts';
 import type { WildcardRules } from './wildcard';
 
 export type ImageMetadata = [string,string][];
@@ -69,6 +70,8 @@ export function imageMetadataRows(entries:ImageMetadata):ImageMetadata {
 
 /** Settings an image's metadata can put back into the generation controls; absent keys were not found. */
 export interface GenerationSettings {
+ lyingSigma?:import('./lyingSigma').LyingSigmaSettings;
+ skipLayers?:string;
  wildcard?:WildcardRules;
  /** Partial video graph settings are not an executable/restorable DEAS video intent. */
  media?:'video';frames?:number;frameRate?:number;sigmas?:number[];
@@ -123,6 +126,15 @@ function comfy(graph:Record<string,unknown>):GenerationSettings|null {
  const sampler=nodes.find(n=>['KSampler','KSamplerAdvanced','SamplerCustomAdvanced'].includes(String(n.class_type)));if(!sampler)return null;
  const i=inputs(sampler),custom=sampler.class_type==='SamplerCustomAdvanced';
  const guider=node(i.guider),g=inputs(guider),schedule=node(i.sigmas),z=inputs(schedule);
+ let samplerNode=node(i.sampler),lyingSigma:import('./lyingSigma').LyingSigmaSettings|undefined;
+ const lyingSigmaSkipped:string[]=[];
+ if(custom&&(kind(samplerNode)==='DEAS_LyingSigmaSampler'||kind(samplerNode)==='LyingSigmaSampler')){
+  const p=inputs(samplerNode),inner=node(p.sampler);
+  const candidate={factor:p.dishonesty_factor,startPercent:p.start_percent,endPercent:p.end_percent};
+  if(Array.isArray(i.sampler)&&i.sampler[1]===0&&Array.isArray(p.sampler)&&p.sampler[1]===0&&kind(inner)==='KSamplerSelect'&&isLyingSigma(candidate))lyingSigma=candidate;
+  else lyingSigmaSkipped.push('lyingSigma');
+  samplerNode=inner;
+ }
  const positive=custom?g.positive??g.conditioning:i.positive,negative=custom?g.negative:i.negative;
  const textOf=(link:unknown,depth=0):string|undefined=>{
   if(depth>=64)return undefined;
@@ -137,7 +149,8 @@ function comfy(graph:Record<string,unknown>):GenerationSettings|null {
   // ZeroOut and wildcard outputs are computed, not the original/realized prompt strings.
   return undefined;
  };
- let checkpoint:string|undefined;
+ let checkpoint:string|undefined,skipLayers:string|undefined;
+ const slgSkipped:string[]=[];let slgSeen=false;
  const loras:NonNullable<GenerationSettings['loras']>=[];let completeLoras=true;
  let model=custom?g.model:i.model;
  const seen=new Set<unknown>();
@@ -145,6 +158,12 @@ function comfy(graph:Record<string,unknown>):GenerationSettings|null {
   const n=node(model),p=inputs(n),type=kind(n);if(!n)break;
   if(seen.has(n)){loras.length=0;break;}seen.add(n);
   if(['CheckpointLoaderSimple','UNETLoader','UnetLoaderGGUF'].includes(String(type))){checkpoint=str(p.ckpt_name??p.unet_name);break;}
+  if(type==='SkipLayerGuidanceDiTSimple'){
+   // DEAS can represent only one full-schedule, single-block uncond SLG patch.
+   if(!slgSeen&&Array.isArray(model)&&model[1]===0&&p.double_layers===''&&p.start_percent===0&&p.end_percent===1&&typeof p.single_layers==='string'&&(p.single_layers===''||/^\s*\d+(?:\s*,\s*\d+)*\s*$/.test(p.single_layers)))skipLayers=p.single_layers;
+   else {skipLayers=undefined;slgSkipped.push('skipLayers');}
+   slgSeen=true;
+  }
   if(type==='LoraLoader'||type==='LoraLoaderModelOnly'){
    const name=str(p.lora_name),strength=num(p.strength_model);
    if(name&&strength!==undefined)loras.unshift({name,strength});else completeLoras=false;
@@ -165,13 +184,15 @@ function comfy(graph:Record<string,unknown>):GenerationSettings|null {
   const values=z.sigmas.split(',').map(num);
   if(values.length>=2&&values.every((v):v is number=>v!==undefined&&v>=0)&&values.at(-1)===0&&values.every((v,n)=>n===0||values[n-1]!>v))sigmas=values;
  }
- return {positive:textOf(positive),negative:textOf(negative),checkpoint,
+ if(slgSeen&&!checkpoint)slgSkipped.push('skipLayers');
+ const skipped=[...lyingSigmaSkipped,...slgSkipped];
+ return {positive:textOf(positive),negative:textOf(negative),checkpoint,skipLayers:checkpoint?skipLayers:undefined,
   seed:num(custom?inputs(node(i.noise)).noise_seed:i.seed??i.noise_seed),
   steps:custom?(sigmas?sigmas.length-1:['BasicScheduler','Flux2Scheduler'].includes(String(kind(schedule)))?num(z.steps):undefined):num(i.steps),
   cfg:custom?(kind(guider)==='CFGGuider'?num(g.cfg):undefined):num(i.cfg),
-  sampler:str(custom?inputs(node(i.sampler)).sampler_name:i.sampler_name),scheduler:str(custom?kind(schedule)==='BasicScheduler'?z.scheduler:undefined:i.scheduler),sigmas,
+  sampler:str(custom?inputs(samplerNode).sampler_name:i.sampler_name),scheduler:str(custom?kind(schedule)==='BasicScheduler'?z.scheduler:undefined:i.scheduler),sigmas,lyingSigma,
   width:num(latent.width??director.width),height:num(latent.height??director.height),loras:checkpoint&&completeLoras?loras:undefined,
-  ...(video?{media:'video' as const,frames:num(latent.length),frameRate,skipped:['video.intent']}:{}),
+  ...(video?{media:'video' as const,frames:num(latent.length),frameRate,skipped:['video.intent',...skipped]}:skipped.length?{skipped}:{}),
  };
 }
 /** SwarmUI `sui_image_params`. */

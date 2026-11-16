@@ -35,6 +35,8 @@ struct Family {
     forge: Option<String>,
     #[serde(default, rename = "clipType")]
     clip_type: Option<String>,
+    #[serde(default, rename = "skipLayerCount")]
+    skip_layer_count: Option<u64>,
     #[serde(default)]
     multiple: Option<u64>,
     #[serde(default, rename = "temporalLatent")]
@@ -104,6 +106,7 @@ struct Patch {
 /// plain checkpoint graph every unknown architecture keeps.
 #[derive(Default)]
 pub(crate) struct ImageRecipe {
+    pub(crate) skip_layer_count: Option<u64>,
     pub(crate) latent: Option<&'static str>,
     pub(crate) temporal_latent: bool,
     pub(crate) zero_negative: bool,
@@ -127,6 +130,7 @@ pub(crate) fn image_recipe_by_id(id: &str) -> Option<ImageRecipe> {
 
 fn recipe_of(f: &'static Family) -> ImageRecipe {
     ImageRecipe {
+        skip_layer_count: f.skip_layer_count,
         latent: f.latent.as_deref(),
         temporal_latent: f.temporal_latent,
         zero_negative: f.negative.as_deref() == Some("zero"),

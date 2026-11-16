@@ -9,6 +9,8 @@ use std::{
 mod audio_post;
 #[path = "jobs_auto_refine.rs"]
 mod auto_refine;
+#[path = "jobs_lying_sigma.rs"]
+mod lying_sigma;
 pub use auto_refine::native_auto_refine;
 #[path = "jobs_outputs.rs"]
 mod job_outputs;
@@ -589,17 +591,27 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     }
     // Skip Layer Guidance (MOSS only): comma-separated layer numbers; empty means the unchanged graph.
     if let Some(sl) = skip_layers {
-        let s = sl.as_str().ok_or("Invalid skipLayers: use a comma-separated layer list or an empty string")?;
+        let s = sl
+            .as_str()
+            .ok_or("Invalid skipLayers: use a comma-separated layer list or an empty string")?;
         if diffusion.is_none_or(|d| d["clipType"] != "moss_image") {
             return Err("skipLayers is only supported on MOSS-Image".into());
         }
+        let layer_count = crate::model_families::image_recipe("moss_image")
+            .skip_layer_count
+            .unwrap_or(0);
         if !s.is_empty()
             && !s.split(',').all(|p| {
                 let p = p.trim();
-                !p.is_empty() && p.len() <= 3 && p.bytes().all(|b| b.is_ascii_digit())
+                !p.is_empty()
+                    && p.len() <= 3
+                    && p.bytes().all(|b| b.is_ascii_digit())
+                    && p.parse::<u64>()
+                        .ok()
+                        .is_some_and(|index| index < layer_count)
             })
         {
-            return Err("Invalid skipLayers: comma-separated layer numbers such as \"22, 24, 26\"; empty disables Skip Layer Guidance".into());
+            return Err(format!("Invalid skipLayers: comma-separated layer indices below {layer_count}; empty disables Skip Layer Guidance"));
         }
     }
     // `h3Edit` (MiniMax H3 sigma shifts) marks the H3 image edit; it belongs exactly to the `minimax` text encoder.
@@ -648,6 +660,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     if options.is_some_and(|o| !valid_options(o)) {
         return Err("Invalid options".into());
     }
+    lying_sigma::validate(object.get("lyingSigma"))?;
     // `sigmas` is a model-fixed schedule (steps + 1 values, descending to 0): ManualSigmas → SamplerCustomAdvanced replaces KSampler.
     let sigmas = object.get("sigmas");
     if sigmas.is_some_and(|s| !valid_sigmas(s, i["steps"].as_f64())) {
@@ -688,6 +701,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             + usize::from(reference.is_some())
             + usize::from(native_reference.is_some())
             + usize::from(resize.is_some())
+            + usize::from(object.contains_key("lyingSigma"))
             + usize::from(sigmas.is_some())
             + usize::from(mask.is_some())
             + usize::from(blur.is_some())
@@ -1256,6 +1270,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             }
         }
     }
+    lying_sigma::apply(&mut graph, object.get("lyingSigma"))?;
     Ok(graph)
 }
 
@@ -2426,7 +2441,10 @@ pub(crate) fn job_outputs(entry: &Value, graph: &Value) -> Result<Vec<Value>, St
     for output in &mut originals {
         output["role"] = json!("original");
     }
-    if matches!(graph["7"]["class_type"].as_str(), Some("DaSiWa_EnhancedVideoCombine" | "DEAS_H3StreamVideoSave")) {
+    if matches!(
+        graph["7"]["class_type"].as_str(),
+        Some("DaSiWa_EnhancedVideoCombine" | "DEAS_H3StreamVideoSave")
+    ) {
         for outputs in [&mut final_outputs, &mut originals] {
             outputs.sort_by_key(|o| {
                 !o["format"]
@@ -2622,10 +2640,12 @@ async fn poll_present(job: &mut Job) -> Result<bool, String> {
                     && !["original", "processed"].iter().all(|role| {
                         images.iter().any(|o| {
                             o["role"] == *role
-                                && (!matches!(job.plan.graph["7"]["class_type"].as_str(), Some("DaSiWa_EnhancedVideoCombine" | "DEAS_H3StreamVideoSave"))
-                                    || o["format"]
-                                        .as_str()
-                                        .is_some_and(|f| f.starts_with("video/")))
+                                && (!matches!(
+                                    job.plan.graph["7"]["class_type"].as_str(),
+                                    Some("DaSiWa_EnhancedVideoCombine" | "DEAS_H3StreamVideoSave")
+                                ) || o["format"]
+                                    .as_str()
+                                    .is_some_and(|f| f.starts_with("video/")))
                         })
                     })
                 {

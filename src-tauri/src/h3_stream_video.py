@@ -15,7 +15,7 @@ class CodecFailure(RuntimeError):
     """Only failures originating in codec operations may trigger a fresh decode."""
 
 
-def _codec(call, *args, **kwargs):
+def _codec(call, *args, configuration=False, **kwargs):
     import av
     try:
         return call(*args, **kwargs)
@@ -24,6 +24,11 @@ def _codec(call, *args, **kwargs):
                              ('out of memory', 'cannot allocate memory', 'not enough memory',
                               'no space left', 'disk quota', 'input/output error'))
         if resource_error or abs(error.errno or 0) in {errno.ENOMEM, errno.ENOSPC, errno.EDQUOT, errno.EIO, errno.EINTR, errno.EACCES}:
+            raise
+        raise CodecFailure(str(error)) from error
+    except ValueError as error:
+        # PyAV rejects unsupported container/codec pairs before FFmpeg is called.
+        if not configuration:
             raise
         raise CodecFailure(str(error)) from error
 
@@ -138,11 +143,11 @@ def encode_stream(decode, shape, output_path, helper, *, container_name, encoder
             options = {'movflags': '+faststart+use_metadata_tags', 'movie_timescale': '48000'} if container_name == 'MP4' else {'loop': '0'} if container_name == 'Animated WebP' else {}
             output = _codec(av.open, str(stage), 'w', format=helper.FORMAT_NAMES[container_name], options=options)
             helper._metadata(output, metadata)
-            video = _codec(helper._configure_video_stream, output, encoder, shape[4], shape[3], frame_rate, bit_depth, quality)
+            video = _codec(helper._configure_video_stream, output, encoder, shape[4], shape[3], frame_rate, bit_depth, quality, configuration=True)
             video.codec_context.thread_count = 1
             audio_stream = None
             if audio is not None and audio_encoder:
-                audio_stream, audio_rate = _codec(helper._configure_audio_stream, output, audio_encoder, audio[1], audio[0].shape[0], audio_bitrate)
+                audio_stream, audio_rate = _codec(helper._configure_audio_stream, output, audio_encoder, audio[1], audio[0].shape[0], audio_bitrate, configuration=True)
             encoded = 0
             def consume(frame):
                 nonlocal encoded
@@ -185,8 +190,11 @@ def encode_stream(decode, shape, output_path, helper, *, container_name, encoder
             interrupt()
             for source in [*exports, stage]:
                 destination = target.parent / source.name
-                # Hard-link publication is atomic and fails instead of replacing an Original.
-                os.link(source, destination)
+                # Windows rename and POSIX links atomically refuse existing destinations.
+                if os.name == 'nt':
+                    os.rename(source, destination)
+                else:
+                    os.link(source, destination)
                 published.append(destination)
             return [str(path) for path in published[:-1]]
         except BaseException:

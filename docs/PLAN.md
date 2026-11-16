@@ -10,6 +10,22 @@ This is the **single current plan** for DEAS: what is in place, what is still op
 
 Current working-tree source: 0.2.38 BETA (unreleased). Latest published release: **0.2.37 BETA** (`v0.2.37`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
 
+## Image Lying Sigma contribution — remaining acceptance
+
+- [ ] Bundled sampler deployment through real owned-backend startup on Linux
+  and Windows. Adapter filesystem/numerical fixtures and the real ComfyUI core
+  with CPU tensor/model doubles pass; native startup/real-model acceptance stays
+  separate. No extra installer option or full Detail Daemon package is required.
+- [ ] Native WebView2 narrow-pane/history interaction and Linux/WebKitGTK
+  interaction with the new default-zero control, missing-node recovery and
+  real-backend node coexistence. Browser/component fixtures do not close these gates.
+- [ ] Explicit real-model comparisons with identical seeds/settings (including
+  Anima), plus quality, cancellation and RAM/VRAM/runtime measurements. No model
+  execution is started by this contribution's automated checks.
+- [ ] Linux/Windows native desktop build/runtime evidence for the contribution.
+  Windows cross-target checks, Rust/TypeScript graph parity and synthetic browser
+  evidence are recorded in [verification](VERIFICATION.md).
+
 ## Local Notes and Media deletion
 
 Manual prompt notes and nested folders are implemented as personal profile data,
@@ -318,8 +334,8 @@ Constraints kept from the implementation plan: signatures from one checkpoint do
 - **Steps and CFG editable in Beginner — landed in 0.2.22 (fixture-verified).** Shared `samplingFields` in both modes; entering Beginner keeps current values, Beginner edits carry back into Advanced, automatic family values never overwrite Advanced ones. Open: native WebKitGTK/WebView2 keyboard/narrow-layout acceptance and one real Beginner run with edited values.
 
 - **Sampler coverage and MOSS-Image defaults. Status: partially implemented.** Owner request.
-  - **MOSS Skip-Layer Guidance (SLG) — implemented CPU-side (2026-11-16, unreleased).** The MOSS field **Skip layers** (comma-separated list, default **`22`**, empty = unchanged graph) is sent as intent `skipLayers` and emitted as the core `SkipLayerGuidanceDiTSimple` node (`single_layers` = field, `double_layers` empty, start 0.0/end 1.0) chained after the model/sampling patch and before `KSampler`. Core Simple SLG patches only the uncond branch — the ComfyUI-graph equivalent of the Python API's `uncond_skip_layers`; the official ComfyUI template wires the same node. TS compiler, `jobs.rs` preflight, prerequisites catalog, Workbench field, MOSS Run gate, global search and six locales are covered; invalid lists and non-MOSS families are refused with concrete reasons. Real-run acceptance stays open below.
-  - **MOSS negative prompt — implemented CPU-side (2026-11-16, unreleased).** The family defaults carry the recommended general-generation prompt `nsfw, worst quality, bad anatomy, watermark, jpeg artifact`; a new MOSS model selection prefills it only into an empty Negative field, stays editable, and travels through the normal intent path (no silent compiler injection). The Python API default remains empty.
+  - **MOSS Skip-Layer Guidance (SLG) — implemented CPU-side (2026-11-16, unreleased).** The MOSS field **Skip layers** (comma-separated list, default **`22`**, empty = unchanged graph) is sent as intent `skipLayers` and emitted as the core `SkipLayerGuidanceDiTSimple` node (`single_layers` = field, `double_layers` empty, start 0.0/end 1.0) chained after the model/sampling patch and before `KSampler`. Core Simple SLG patches only the uncond branch — the ComfyUI-graph equivalent of the Python API's `uncond_skip_layers`; the official ComfyUI template wires the same node. TS compiler, `jobs.rs` preflight, prerequisites catalog, Workbench field, MOSS Run gate, global search and six locales are covered; invalid lists, nonexistent layer indices (the shared family declares 42 layers, indices 0–41) and non-MOSS families are refused with concrete reasons. History/recognized graph reuse restores SLG, with absence clearing it. Real-run acceptance stays open below.
+  - **MOSS negative prompt — implemented CPU-side (2026-11-16, unreleased).** The family defaults carry the recommended general-generation prompt `nsfw, worst quality, bad anatomy, watermark, jpeg artifact`; genuine initial/default MOSS setup prefills it into an empty Negative field, while same-kind model switches preserve the exact authored prompt, including empty text. It stays editable and travels through the normal intent path (no silent compiler injection). The Python API default remains empty.
   - **Turbo/speed variants — still open.** Support the 8-step DMD LoRA (CFG 1, 8 steps) and the 4-step `rapid-moss` adapter (no negative prompt, no SLG) as labelled MOSS variants with matching defaults. Blocked honestly: no MOSS turbo/rapid-moss LoRA file exists in the owned environment to header-verify key layout against, and the MOSS LoRA guard stays closed until that verification plus a labelled-variant defaults design exist — a silently no-op LoRA is the known trap to avoid.
   - [x] Add the SLG field to the MOSS adapter path (TS compiler + `jobs.rs` preflight + prerequisites), the recommended negative prompt, six locales, global search and the `docs/STUDIO.md` family text; CPU fixtures prove the emitted node, both compilers' refusals and the prefill.
   - [ ] One real MOSS run per default set (base 50/3.0/euler/sgm_uniform with SLG 22, turbo 8-step) recorded in `docs/VERIFICATION.md`. GPU backlog: the SLG-22 base run becomes runnable when the GPU is free; the turbo run additionally needs the open variant implementation above.

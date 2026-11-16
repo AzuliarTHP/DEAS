@@ -15,13 +15,17 @@ export function VideoPostProcessing({ onInspected, disabled = false, acquire, re
   const pending = useRef(false);
   const epoch = useRef(0);
   const sourcePath = useRef<string | undefined>(undefined);
-  const inspecting = useRef<{ path?: string; deleted: boolean } | null>(null);
+  const sourceId = useRef<string | undefined>(undefined);
+  const inspecting = useRef<{ path?: string; deleted: boolean; deletedIds: Set<string> } | null>(null);
   useEffect(() => {
     const removed = (event: Event) => {
       const paths = new Set((event as CustomEvent<MediaDeletion>).detail.deleted.map(normalizedMediaPath));
       if (inspecting.current?.path && paths.has(normalizedMediaPath(inspecting.current.path))) inspecting.current.deleted = true;
-      if (sourcePath.current && paths.has(normalizedMediaPath(sourcePath.current))) {
+      const deletedIds = (event as CustomEvent<MediaDeletion>).detail.deletedVideoSourceIds ?? [];
+      deletedIds.forEach(id => inspecting.current?.deletedIds.add(id));
+      if ((sourcePath.current && paths.has(normalizedMediaPath(sourcePath.current))) || (sourceId.current && deletedIds.includes(sourceId.current))) {
         sourcePath.current = undefined;
+        sourceId.current = undefined;
         setSource(null);
         onInspected?.(null);
       }
@@ -36,13 +40,13 @@ export function VideoPostProcessing({ onInspected, disabled = false, acquire, re
     if (pending.current || disabled || !isTauri() || (acquire && !acquire())) return;
     pending.current = true;
     const current = epoch.current;
-    const inspection = { path, deleted: false };
+    const inspection = { path, deleted: false, deletedIds: new Set<string>() };
     inspecting.current = inspection;
     setError(null);
     setBusy(true);
     try {
       const selected = path ? await inspectVideoPostPath(path) : await inspectVideoPost(t('studio.videoPost.dialog'));
-      if (epoch.current === current && !inspection.deleted && selected) { sourcePath.current = path; setSource(selected); onInspected?.(selected); }
+      if (epoch.current === current && !inspection.deleted && selected && !inspection.deletedIds.has(selected.sourceId ?? '')) { sourcePath.current = path; sourceId.current = selected.sourceId; setSource(selected); onInspected?.(selected); }
     } catch (failure) {
       if (epoch.current === current && !inspection.deleted) {
         const detail = failure && typeof failure === 'object' && 'message' in failure ? String(failure.message) : String(failure);

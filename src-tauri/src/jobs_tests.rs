@@ -1968,28 +1968,68 @@ fn h3_regenerate_prepare_nodes(intent: &Value) -> Value {
 async fn h3_stream_prepare_requires_its_actual_lazy_saver_not_the_rgb_gate() {
     let mut intent = crate::jobs_video::tests::h3();
     intent["streamDecode"] = json!(true);
-    intent["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
+    intent["latentUpscale"] =
+        json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
     let mut all = h3_regenerate_prepare_nodes(&intent);
-    all.as_object_mut().unwrap().remove("DEAS_VideoPostprocessGate");
+    all.as_object_mut()
+        .unwrap()
+        .remove("DEAS_VideoPostprocessGate");
     let mut required = json!({"samples":["LATENT",{"lazy":true}],"vae":["VAE"],"audio_vae":["VAE"],"frame_rate":["FLOAT"],"quality":["INT"],"filename_prefix":["STRING"]});
-    for key in ["save_metadata","save_output","crop_to_audio","save_first_frame","save_last_frame"] { required[key] = json!(["BOOLEAN"]); }
-    for (key,choices) in [("codec",json!(crate::jobs_video::CODECS)),("container",json!(crate::jobs_video::CONTAINERS)),("bit_depth",json!(crate::jobs_video::BIT_DEPTHS)),("audio_codec",json!(crate::jobs_video::AUDIO_CODECS)),("audio_bitrate",json!(crate::jobs_video::AUDIO_BITRATES)),("log_level",json!(["Standard","Verbose"]))] { required[key] = json!([choices]); }
+    for key in [
+        "save_metadata",
+        "save_output",
+        "crop_to_audio",
+        "save_first_frame",
+        "save_last_frame",
+    ] {
+        required[key] = json!(["BOOLEAN"]);
+    }
+    for (key, choices) in [
+        ("codec", json!(crate::jobs_video::CODECS)),
+        ("container", json!(crate::jobs_video::CONTAINERS)),
+        ("bit_depth", json!(crate::jobs_video::BIT_DEPTHS)),
+        ("audio_codec", json!(crate::jobs_video::AUDIO_CODECS)),
+        ("audio_bitrate", json!(crate::jobs_video::AUDIO_BITRATES)),
+        ("log_level", json!(["Standard", "Verbose"])),
+    ] {
+        required[key] = json!([choices]);
+    }
     all["DEAS_H3StreamVideoSave"] = json!({"input":{"required":required,"optional":{"baseline":["STRING",{"default":""}],"seed":["INT"]}},"output":["IMAGE","STRING"],"output_node":true});
-    for case in ["compatible","missing","eager samples","lazy baseline"] {
+    for case in ["compatible", "missing", "eager samples", "lazy baseline"] {
         let mut info = all.clone();
         match case {
-            "missing" => { info.as_object_mut().unwrap().remove("DEAS_H3StreamVideoSave"); },
-            "eager samples" => info["DEAS_H3StreamVideoSave"]["input"]["required"]["samples"][1]["lazy"] = json!(false),
-            "lazy baseline" => info["DEAS_H3StreamVideoSave"]["input"]["optional"]["baseline"][1]["lazy"] = json!(true),
-            _ => {},
+            "missing" => {
+                info.as_object_mut()
+                    .unwrap()
+                    .remove("DEAS_H3StreamVideoSave");
+            }
+            "eager samples" => {
+                info["DEAS_H3StreamVideoSave"]["input"]["required"]["samples"][1]["lazy"] =
+                    json!(false)
+            }
+            "lazy baseline" => {
+                info["DEAS_H3StreamVideoSave"]["input"]["optional"]["baseline"][1]["lazy"] =
+                    json!(true)
+            }
+            _ => {}
         }
-        let (base,task) = server(move |path,_| {
-            assert_eq!(path,"GET /comfy/object_info HTTP/1.1","prepare must never execute");
-            (200,info.to_string())
-        }).await;
-        let result = Jobs::default().prepare(base,intent.clone()).await;
-        if case == "compatible" { assert!(result.is_ok(),"{result:?}"); }
-        else { assert!(result.unwrap_err().contains("DEAS_H3StreamVideoSave"),"{case}"); }
+        let (base, task) = server(move |path, _| {
+            assert_eq!(
+                path, "GET /comfy/object_info HTTP/1.1",
+                "prepare must never execute"
+            );
+            (200, info.to_string())
+        })
+        .await;
+        let result = Jobs::default().prepare(base, intent.clone()).await;
+        if case == "compatible" {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            assert!(
+                result.unwrap_err().contains("DEAS_H3StreamVideoSave"),
+                "{case}"
+            );
+        }
         task.abort();
     }
 }
@@ -4722,14 +4762,30 @@ fn moss_skip_layers_chains_simple_slg_before_the_sampler() {
     assert_eq!(g["5"]["inputs"]["model"], json!(["S", 0]));
     value["skipLayers"] = json!("");
     assert!(compile(&value).unwrap().get("S").is_none());
-    for bad in [json!(22), json!("22,,24"), json!("a22"), json!("1234"), json!("22 24")] {
+    value["skipLayers"] = json!("0, 41");
+    assert!(compile(&value).is_ok());
+    for bad in [
+        json!(22),
+        json!("22,,24"),
+        json!("a22"),
+        json!("1234"),
+        json!("22 24"),
+        json!("42"),
+        json!("999"),
+        json!("22, 42"),
+    ] {
         let mut wrong = value.clone();
         wrong["skipLayers"] = bad.clone();
-        assert!(compile(&wrong).unwrap_err().contains("Invalid skipLayers"), "{bad}");
+        assert!(
+            compile(&wrong).unwrap_err().contains("Invalid skipLayers"),
+            "{bad}"
+        );
     }
     let mut plain = intent();
     plain["skipLayers"] = json!("22");
-    assert!(compile(&plain).unwrap_err().contains("only supported on MOSS-Image"));
+    assert!(compile(&plain)
+        .unwrap_err()
+        .contains("only supported on MOSS-Image"));
 }
 
 #[tokio::test]

@@ -3,6 +3,66 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { I18nProvider, LOCALE_STORAGE_KEY } from '../../i18n/I18nProvider';
 import { VideoPostProcessing } from './VideoPostProcessing';
+import { deleteMedia } from '../../lib/media';
+
+const sourceId = 'f8b47672-7951-43ad-9b25-4948c5dd11a1';
+const otherSourceId = 'c68cb7d8-a141-4b38-8488-a0d120beec35';
+
+test('chooser source survives unrelated/failed Media deletes and cancellation, but its successful delete clears the card and parent', async () => {
+  const onInspected = vi.fn();
+  const inspected = { ...source, sourceId };
+  vi.mocked(invoke).mockResolvedValueOnce(inspected).mockResolvedValueOnce(null);
+  render(<I18nProvider><VideoPostProcessing onInspected={onInspected}/></I18nProvider>);
+  await act(async () => choose());
+  await act(async () => choose());
+  vi.mocked(invoke).mockResolvedValueOnce({ deleted: ['/other/source.mp4'], failed: ['/out/source.mp4'], deletedVideoSourceIds: [otherSourceId] });
+  await act(async () => { await deleteMedia(['/other/source.mp4', '/out/source.mp4']); });
+  expect(screen.getByText('source.mp4')).toBeTruthy();
+  expect(onInspected).toHaveBeenCalledExactlyOnceWith(inspected);
+  vi.mocked(invoke).mockResolvedValueOnce({ deleted: ['/out/source.mp4'], failed: [], deletedVideoSourceIds: [sourceId] });
+  await act(async () => { await deleteMedia(['/out/source.mp4']); });
+  expect(document.querySelector('[data-video-post-source]')).toBeNull();
+  expect(onInspected.mock.calls).toEqual([[inspected], [null]]);
+});
+
+test('a delayed deletion report for the previous chooser identity cannot clear its replacement', async () => {
+  const onInspected = vi.fn(), replacement = { ...source, sourceId: otherSourceId };
+  vi.mocked(invoke).mockResolvedValueOnce({ ...source, sourceId }).mockResolvedValueOnce(replacement);
+  render(<I18nProvider><VideoPostProcessing onInspected={onInspected}/></I18nProvider>);
+  await act(async () => choose());
+  await act(async () => choose());
+  vi.mocked(invoke).mockResolvedValueOnce({ deleted: ['/out/source.mp4'], failed: [], deletedVideoSourceIds: [sourceId] });
+  await act(async () => { await deleteMedia(['/out/source.mp4']); });
+  expect(screen.getByText('source.mp4')).toBeTruthy();
+  expect(onInspected).toHaveBeenLastCalledWith(replacement);
+  expect(onInspected).toHaveBeenCalledTimes(2);
+});
+
+test.each([{ deletedVideoSourceIds: ['invalid'] }, { deletedVideoSourceIds: [sourceId, otherSourceId] }])('malformed deletion correlations fail closed: %j', async ({ deletedVideoSourceIds }) => {
+  vi.mocked(invoke).mockResolvedValueOnce({ deleted: ['/out/source.mp4'], failed: [], deletedVideoSourceIds });
+  const removed = vi.fn();
+  window.addEventListener('deas-media-deleted', removed);
+  try {
+    await expect(deleteMedia(['/out/source.mp4'])).rejects.toThrow('Invalid native media deletion response');
+    expect(removed).not.toHaveBeenCalled();
+  } finally {
+    window.removeEventListener('deas-media-deleted', removed);
+  }
+});
+
+test('Media deletion before a chooser response prevents late publication and releases admission', async () => {
+  const pending = deferred(), onInspected = vi.fn(), release = vi.fn();
+  vi.mocked(invoke).mockReturnValueOnce(pending.promise);
+  render(<I18nProvider><VideoPostProcessing onInspected={onInspected} release={release}/></I18nProvider>);
+  choose();
+  vi.mocked(invoke).mockResolvedValueOnce({ deleted: ['/out/source.mp4'], failed: [], deletedVideoSourceIds: [sourceId] });
+  await act(async () => { await deleteMedia(['/out/source.mp4']); });
+  await act(async () => pending.resolve({ ...source, sourceId }));
+  expect(document.querySelector('[data-video-post-source]')).toBeNull();
+  expect(onInspected).not.toHaveBeenCalled();
+  expect(release).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button')).toHaveProperty('disabled', false);
+});
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: vi.fn(() => true) }));
 beforeEach(() => { localStorage.setItem(LOCALE_STORAGE_KEY, 'en'); vi.mocked(isTauri).mockReturnValue(true); });

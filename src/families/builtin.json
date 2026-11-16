@@ -26,7 +26,7 @@
   {
     "id": "moss-image", "imagePrompting": "moss-image", "multiple": 16, "name": "MOSS-Image", "forge": "MOSS", "loader": "diffusion", "pipelines": ["t2i", "i2i"],
     "components": {"textEncoders": ["qwen3.5-9b"], "vaes": ["flux2-vae"]},
-    "clipType": "moss_image", "textEncoders": ["qwen3.5_9b", "qwen3.5-9b", "qwen35_9b"], "vaes": ["flux2-vae", "flux2_vae"],
+    "clipType": "moss_image", "skipLayerCount": 42, "textEncoders": ["qwen3.5_9b", "qwen3.5-9b", "qwen35_9b"], "vaes": ["flux2-vae", "flux2_vae"],
     "latent": "EmptyFlux2LatentImage",
     "architectures": [], "bases": [],
     "model": [["shared.block.modulation.weight", "layers.0.proj.ffn.up.gate.weight"]], "lora": [],

@@ -60,7 +60,9 @@
 .wb-aspect-swatch > span { border: 1px solid var(--copper); border-radius: 1px; }
 .wb-resolution-hint { margin: 0; font-size: .65rem; color: var(--muted); line-height: 1.4; }
 .wb-seed-row { display: flex; gap: 3px; min-width: 0; }
-.wb-seed > label { display: flex; flex-direction: column; gap: 3px; }
+.wb-seed-heading { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.wb-seed-heading > span { flex-shrink: 0; }
+.wb-seed-heading > .wb-seed-row { justify-content: flex-end; flex-wrap: wrap; margin-left: auto; }
 .wb-seed > button { font-size: .7rem; padding: 4px 7px; }
 .wb-seed-history { text-transform: none; letter-spacing: 0; }
 .wb-seed-history summary { cursor: pointer; padding: 4px 0; }
@@ -384,3 +386,11 @@
 .wb-post-overlay .wb-options{grid-template-columns:repeat(auto-fill,minmax(min(100%,15rem),1fr))}
 .wb-post-overlay select{width:100%;min-width:0;max-width:100%}
 @media (max-width:640px){.wb-post-cards{grid-template-columns:1fr}}
+
+/* Optional image sampling modifier: inherits pane height and scrolling. */
+.wb-lying-sigma { min-width: 0; display: grid; gap: 4px; }
+.wb-lying-sigma-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.wb-lying-sigma-heading small { text-transform: none; letter-spacing: 0; white-space: nowrap; }
+.wb-lying-sigma > small { font-size: .65rem; color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+.wb-lying-sigma > details { font-size: .68rem; color: var(--muted); }
+.wb-lying-sigma-timing { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 8px; margin-top: 5px; }

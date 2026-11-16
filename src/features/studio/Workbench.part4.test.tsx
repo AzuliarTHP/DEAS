@@ -633,18 +633,18 @@ test.each([...mossNodes.filter(n=>!['LoadImage','VAEEncode','ImageScale','LoadIm
  fireEvent.click(screen.getByRole('button',{name:'Run'}));expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
-test('MOSS fresh model draft prefills the card negative and sends default skip layers; empty omits them',async()=>{
+test('MOSS model switch preserves empty negative and sends default skip layers; empty omits them',async()=>{
  await mountMoss();
  dock('Models');
  fireEvent.click(await screen.findByRole('button',{name:/moss\.safetensors/}));
- // Family defaults: card sampling values, card negative prompt and SLG layers 22.
+ // Family defaults update sampling and keep SLG layers 22, but preserve authored prompts.
  expect((screen.getByLabelText('Steps') as HTMLInputElement).value).toBe('50');
- expect(document.querySelector<HTMLTextAreaElement>('[data-run-negative]')!.value).toContain('jpeg artifact');
+ expect(document.querySelector<HTMLTextAreaElement>('[data-run-negative]')!.value).toBe('');
  const skip=document.querySelector<HTMLInputElement>('[data-moss-skip-layers]')!;
  expect(skip.value).toBe('22');
  fireEvent.click(screen.getByRole('button',{name:'Run'}));
  await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
- expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).toMatchObject({checkpoint:'moss.safetensors',skipLayers:'22',negativePrompt:expect.stringContaining('jpeg artifact')});
+ expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).toMatchObject({checkpoint:'moss.safetensors',skipLayers:'22',negativePrompt:''});
  // Empty field means the unchanged graph without the SLG node.
  fireEvent.change(skip,{target:{value:''}});
  fireEvent.click(screen.getByRole('button',{name:'Run'}));

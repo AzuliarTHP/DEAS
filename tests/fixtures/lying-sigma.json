@@ -1,0 +1,17 @@
+{
+  "intent": {"recipeId":"checkpoint-text-to-image-diagnostic","version":1,"positivePrompt":"a cat","negativePrompt":"","checkpoint":"sd/model.safetensors","seed":123,"width":512,"height":768,"steps":20,"cfg":7,"sampler":"euler","scheduler":"normal","outputPrefix":"DEAS_test","lyingSigma":{"factor":-0.05,"startPercent":0.1,"endPercent":0.9}},
+  "graph": {
+    "1":{"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"sd/model.safetensors"}},
+    "2":{"class_type":"CLIPTextEncode","inputs":{"text":"a cat","clip":["1",1]}},
+    "3":{"class_type":"CLIPTextEncode","inputs":{"text":"","clip":["1",1]}},
+    "4":{"class_type":"EmptyLatentImage","inputs":{"width":512,"height":768,"batch_size":1}},
+    "5":{"class_type":"SamplerCustomAdvanced","inputs":{"noise":["LSN",0],"guider":["LSG",0],"sampler":["LS",0],"sigmas":["LSZ",0],"latent_image":["4",0]}},
+    "6":{"class_type":"VAEDecode","inputs":{"samples":["5",0],"vae":["1",2]}},
+    "7":{"class_type":"SaveImage","inputs":{"images":["6",0],"filename_prefix":"DEAS_test"}},
+    "LSN":{"class_type":"RandomNoise","inputs":{"noise_seed":123}},
+    "LSG":{"class_type":"CFGGuider","inputs":{"model":["1",0],"positive":["2",0],"negative":["3",0],"cfg":7}},
+    "LSQ":{"class_type":"KSamplerSelect","inputs":{"sampler_name":"euler"}},
+    "LSZ":{"class_type":"BasicScheduler","inputs":{"model":["1",0],"scheduler":"normal","steps":20,"denoise":1}},
+    "LS":{"class_type":"DEAS_LyingSigmaSampler","inputs":{"sampler":["LSQ",0],"dishonesty_factor":-0.05,"start_percent":0.1,"end_percent":0.9}}
+  }
+}

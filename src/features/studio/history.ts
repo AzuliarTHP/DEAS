@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { isImageIntent, type JobIntent, type JobStatus } from '../../lib/jobs';
+import { lyingSigmaNode } from '../../lib/lyingSigma';
 import { safeOutputPrefix } from '../../lib/outputNaming';
 import type { RecipeAllowlist } from '../../lib/execution';
 import { defaultVideoOutput, isVideoEnhanceIntent, isVideoIntent, videoFrames } from '../../lib/videoIntent';
@@ -152,6 +153,7 @@ export function historyRestore(record:HistoryRecord,context:RestoreContext):Hist
   }
  }else if(image){
   pipeline=intent.inputImage?'i2i':'t2i';
+  if(intent.lyingSigma?.factor&&!context.allow?.nodes.includes(lyingSigmaNode))unavailable.push(lyingSigmaNode);
   if(intent.inputImage)source=resolve(intent.inputImage);
   if(intent.imageReference){references=intent.imageReference.images.map(r=>resolve(r.image,r.strength));if(!context.allow?.visionModels?.includes(intent.imageReference.visionModel))unavailable.push(`visionModel: ${intent.imageReference.visionModel}`);}
   if(intent.nativeImageReference)references=intent.nativeImageReference.images.map(name=>resolve(name));

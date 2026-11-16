@@ -2,11 +2,31 @@
 
 ## 0.2.38 BETA (unreleased)
 
+- **PR #36 integration review.** Lying Sigma remains an initial-image-pass modifier; independent manual/chained SAM Auto Refine removes it before native validation and compilation. MOSS settings reuse restores the submitted SLG choice (absent means disabled), same-kind model switches preserve deliberately empty negative prompts, and both compilers reject nonexistent MOSS layers using the shared 42-layer family declaration.
+- **Earlier readiness and source invalidation.** Studio reports the native eight-active-LoRA limit before Run while retaining larger saved collections; deleting a chooser-selected TVE source invalidates its retained inspection too.
+- **Streaming export compatibility.** Unsupported WebM audio encoder configuration follows the house codec fallback rather than aborting on PyAV ValueError. Windows publishes private staged exports with no-replace rename instead of requiring filesystem hard-link support.
+
 - **MOSS Skip Layer Guidance and card negative prefill.** A new **Skip layers** field in the settings column (default **`22`**, comma-separated layer numbers such as `22, 24, 26`) chains the core `SkipLayerGuidanceDiTSimple` node (single-layer patches on the negative branch — the ComfyUI-graph form of the official adapter's `uncond_skip_layers`) between the model and the sampler; an empty field keeps the unchanged graph. The TS compiler, the native `jobs.rs` preflight and the prerequisites catalog admit the field only on MOSS with a well-formed list, and the Run gate blocks a backend without the core SLG node while it is set. New MOSS drafts prefill the recommended card negative prompt (`nsfw, worst quality, bad anatomy, watermark, jpeg artifact`) into an empty Negative field and stay fully editable. Turbo/DMD speed variants are not part of this slice. Real-MOSS run acceptance on a live backend is recorded pending in PLAN and VERIFICATION.
 - **Opt-in streaming H3 decode/export.** A new default-OFF **Stream decode (lower RAM)** checkbox in the H3 latent-upscale/Hi-Res group replaces both full-frame decode+saver paths with a DEAS-owned fused node that decodes through the stock H3 VAE output buffer and encodes each finished chunk immediately, so the complete RGB frame batch never sits in RAM. Original is streamed before Processed (lazy ordering keeps the existing naming and Continuity publication), house codecs/audio/metadata/Stop semantics are kept, and incompatible setups are refused with a concrete reason: segment-only continuity, full-IMAGE post (TVE/De-rope/Seamless/Face Refine), animated-image containers or a missing backend adapter. It bounds decode/export memory only, not sampling or upscaler latent staging; real-VAE/GPU acceptance is recorded in VERIFICATION and PLAN.
 - **Autotune is opt-in.** Backend Speed+ and Compatibility presets no longer enable cuDNN kernel autotuning by default. Supported Speed+ attention/fp16 choices remain; explicitly saved Custom settings and manual autotune selection are preserved. No running backend is restarted by this source change.
 
 - **Manual H3 face refinement targets the whole source.** The action no longer copies the face-mask analysis start/duration (default two seconds) into the refinement job. Analysis settings remain unchanged and only trim the diagnostic mask preview; the standalone refinement requests exact full-source timing at the backend boundary. Explicit legacy window jobs keep their meaning. Audio preservation and actual model-quality acceptance are recorded separately in VERIFICATION and PLAN.
+
+- **Optional image Lying Sigma.** Advanced Image settings expose the signed factor
+  immediately below Sampler/Scheduler, defaulting to **0 = Off**, with expandable
+  start/end percentages (default **25%–90%**) and a strength stepper of **0.01**.
+  Nonzero settings wrap the selected sampler through the
+  bundled DEAS Lying Sigma adapter; missing/incompatible capabilities block only
+  enabled image sampling. Exact settings survive preferences, presets, recent-job
+  history and recognized embedded graph reuse. The main pass retains its seed,
+  conditioning, model patches, LoRAs, masks and denoise; separate refinement stays
+  unchanged. See [usage, installation and supported schedules](LYING-SIGMA.md).
+- **Compact sampling controls.** The Lying Sigma **0 = Off** status sits beside
+  its label; the seed action buttons sit on the Seed heading row above the field.
+- **Bundled Lying Sigma sampler.** The owned backend receives the small sampler
+  adapter automatically on startup. No full Detail Daemon/Matplotlib installation
+  or extra upgrade option is required. Existing sampler/inpaint options remain
+  intact and third-party registrations coexist.
 
 ## 0.2.37 BETA
 
