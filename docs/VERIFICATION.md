@@ -1,5 +1,12 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## H3 Join smooth-seams: owner listening approval and node pack 0.5.57 release/installation — 2026-11-16
+
+- **Listening (owner, explicit approval).** A/B audition built from the retained 2026-11-15 evidence joins only; nothing regenerated, no backend or GPU touched. Files under `artifacts/verification/audio-seam-listening-20261116/`: T3-join seam 1 (OFF boundary step 0.4242 vs ON 0.0027 at 1.75 s) zoom clip, full 3 s T3 joins both policies, and both full dungeon joins (`preserve` vs `smooth-seams`). The owner listened and authorized publication/installation. No further blind test was requested; objective seam metrics unchanged from the 2026-11-15 record.
+- **Publication.** The accepted worktree change (`a76fbdb` on `e1bc5b4`) conflicted with upstream by version number only: 0.5.53–0.5.56 shipped meanwhile. Rebased onto `307355b` (0.5.56) and renumbered **0.5.57**; published `ba3d4be` to `main` on both remotes (gitea and GitHub). Targeted pack tests: `test_h3_audio_seams.py`, `test_h3_clip_assembly.py`, `test_h3_transition.py`, `test_h3_transition_ram.py` — **146 passed** (CPU). `preserve` remains the default and byte-identical; only internal-boundary 5 ms fades change.
+- **Owned environment.** `/data/GitHub/deas-environment/ComfyUI/custom_nodes/ComfyUI-DaSiWa-Nodes` fast-forwarded to `ba3d4be`; `pyproject.toml` reports 0.5.57 and the `smooth-seams` policy check is present in `nodes/h3_continuity/assembly.py`. The owned backend was not running and was not started; the pack loads at the next explicit backend start, after which DEAS 0.2.35 preflight admits **Smooth audio seams** instead of refusing.
+- **Not established:** a real GPU join executed with the option ON through the native UI, the sequential memory admission retest, and Windows. None of those are closed by this entry.
+
 ## Opt-in streaming H3 decode/export (0.2.38, unreleased)
 
 - Adapter `src-tauri/src/h3_stream_video.py` CPU suite against the installed Core: **11 passed**, including the stock H3 temporal decoder oracle (identical output through a full tensor versus the bounded sink, covering out-of-range blends and tails), real CPU codec/audio/metadata readback, cgroup-proportional admission, invalid model/layout rejection, scoped cancellation, disk-failure and no-clobber Original survival, and resource errors never becoming codec retries.
