@@ -1,5 +1,21 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.2.37 (published)
+
+- Published [v0.2.37](https://github.com/darksidewalker/DEAS/releases/tag/v0.2.37) from source commit `a41aa55de7af3230aef1ef8cb342d9020573701e`, tree `b942c94e9c54b8431db2a692900f789a7055f9b3`. Both main remotes contain the source; both tag refs point to the built source commit. Later provenance-only documentation does not change the binaries.
+- Four unsigned local-build assets: Linux x86-64 executable, MSVC cross-built Windows executable, build manifest and checksums. Downloaded all four from GitHub and verified the published set with `sha256sum -c SHA256SUMS`.
+- Linux direct glibc minimum: **2.39**; `ldd` resolved every dependency on the build host. Both binaries contain `index-qRTx41lA.js`. Windows linking completed with benign LNK4099 missing-debug-info warnings. No NSIS/ZIP/deb/AppImage is included. GitHub Verify/Release workflows remain disabled; native Windows GUI/exFAT and real-model acceptance are separate from these builds.
+- Gates: 159 core tests, 2,040 UI tests, 467 Chromium layout checks, 1,027 Rust library tests (74 ignored), 3 binary tests, production frontend build, strict Linux release Clippy, Windows all-target check/Clippy. Native build/gates ran in a bounded user scope alongside Strata without stopping services.
+
+Published asset SHA-256 values (computed from the downloaded bytes):
+
+```text
+d38583987e7a2db774cea1ef558f58503e62225d3589e8a0d5eb3bedcf3ad7be  BUILD-MANIFEST.json
+47d7c67d97fb33acbd94323d654453a4d2b74153d395a9e9231c82b9acc6f40d  SHA256SUMS
+5d511dd09dcd32a0bf521b3fe0ed58c82dcaffa88ce922ec568f0bc8437d862c  deas-linux-amd64
+eb39f5cdbaca0e29c0a5f8a9dcd24c7f8cb621b83984da76e5f20c6aee26a599  deas.exe
+```
+
 ## Release gates — 0.2.37
 
 - Native full serial `cargo test --locked -- --test-threads=1`: **1,027 library tests passed / 74 ignored**, **3 binary tests passed**, doctests passed. The new Linux deletion capture/rollback, cache bounds/path/FIFO and RefMod ownership regressions executed against disposable fixtures. The first run exposed one old assertion that rejected an explicitly selected other-family LoRA; the test now pins the approved advisory-label policy and exact emitted adapter/strength. No production validation was weakened to make that assertion pass.
