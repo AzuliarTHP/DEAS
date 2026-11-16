@@ -10,6 +10,7 @@ Top-level tabs: Studio · Library · Prompt Forge · Chat · TVE · Comfy on the
 
 | Feature, tab or action | Guide |
 | --- | --- |
+| Optional image sampling detail control, default 0 = Off | [Lying Sigma](LYING-SIGMA.md) |
 | Clean/Deep/Smule audio enhancement, automatic post-processing and TVE audio-only | [Audio enhancement](AUDIO-ENHANCEMENT.md) |
 | Installation, Windows/Linux build, launch and first setup | [Getting started](GETTING-STARTED.md) |
 | Backend tab: install review, foreign-installation takeover, lifecycle, startup settings, folders and language | [Backend and settings](BACKEND.md) |

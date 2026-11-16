@@ -2,8 +2,19 @@
 
 ## 0.2.38 BETA (unreleased)
 
+- Integration review fixes preserve exact MOSS history/prompt choices, keep Lying Sigma out of independent SAM refinement, show the eight-active-LoRA execution limit before Run, invalidate deleted TVE sources, and retain streaming audio fallback and Windows no-overwrite publication.
+
 - H3 latent upscale/Hi-Res gained an opt-in **Stream decode (lower RAM)** mode: Original and Processed are decoded and encoded chunk-by-chunk instead of holding the full pixel batch. Off by default; unsupported combinations show a concrete reason instead of silently falling back.
 - Manual H3 **Refine faces** processes the whole selected source video rather than the short mask-analysis preview window. The original and processed products remain separate.
+
+An optional **Lying Sigma** control is available below Sampler/Scheduler in the
+advanced Image pipeline. It starts at **0 = Off**. Nonzero settings use the bundled
+sampler wrapper and expose the sampling interval; this is a
+detail adjustment with model-dependent results. Strength steps by 0.01; new timing
+defaults are 25%–90%. DEAS bundles just this sampler and deploys it through the
+owned backend's normal startup; no extra upgrade option or full node pack is
+required.
+[Guide](LYING-SIGMA.md).
 
 ## 0.2.37 BETA — Library and Studio workflow
 

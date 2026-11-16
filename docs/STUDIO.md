@@ -2,6 +2,12 @@
 
 [Documentation index](README.md) · [Plan](PLAN.md)
 
+**Image detail during sampling:** [Lying Sigma](LYING-SIGMA.md) adds an optional
+control below Sampler/Scheduler. Its default is **0 = Off**; nonzero settings
+use the bundled DEAS sampler adapter. The strength stepper uses 0.01 and new
+timing defaults are **25%–90%**. The adapter is deployed through normal owned
+backend startup, without an extra installer choice or full node-pack dependency.
+
 ## Output naming on external drives
 
 The owned-backend adapter publishes readable names with a no-overwrite rename on
@@ -48,6 +54,8 @@ and **Add LoRAs** button stay in place, and Saved sets scrolls independently. Dr
 the grip beside a row to reorder it. Holding near the list's top/bottom edge scrolls
 that list automatically. On a focused grip, Up/Down arrows move the entry; Escape
 during a drag restores its starting order without closing the popup.
+
+Image/video execution accepts at most eight active LoRAs. Larger selections and saved sets remain intact; disable entries until eight or fewer are active to enable Run.
 
 The power icon enables/disables a selected entry. Disabled entries are greyed out
 and retain their weight and position; they are omitted from generation and Run Plan
@@ -347,7 +355,7 @@ Node readiness follows the selected conditioning path: without prompt-picture re
 
 The header-detected **MOSS-Image** family supports **Text → Image** and ordinary denoise-based **Image → Image** through the shared image recipe. Select the diffusion model in Checkpoint, then choose its dedicated Qwen3.5-9B text encoder (`moss_image` loader type) and Flux2 VAE under **Model files**. Text-to-image uses the core `EmptyFlux2LatentImage` node; image-to-image encodes the chosen source with that VAE and retains the selected denoise. Canvas edges must be multiples of 16. This is not instruction-edit/reference conditioning, and MOSS control adapters are not enabled.
 
-Starting sampling values follow the official MOSS-Image USERGUIDE (50 steps, CFG 3.0, `euler`, `sgm_uniform`); the template's prompt-upsample stage remains omitted and these are starting values, not verified equivalent image quality. A **Skip layers** field in the settings column (default **22**, comma-separated layer numbers such as `22, 24, 26`) chains the core **Skip Layer Guidance** node (`SkipLayerGuidanceDiTSimple`, single-layer patches on the negative branch — the ComfyUI-graph form of the official adapter's `uncond_skip_layers`) between the model and the sampler; an empty field keeps the unchanged graph, and a backend without the core SLG node blocks Run while layers are set. A new MOSS draft prefills the recommended card negative prompt (`nsfw, worst quality, bad anatomy, watermark, jpeg artifact`) into an empty Negative field; it stays editable and clearable. LoRAs, inpaint/masks, inserted image layers, refine/post-processing, custom sigmas, padding/upscale and model-patch options are not supported by this first MOSS adapter and are rejected rather than silently ignored. Disable those options before Run. Remembered unsupported choices remain visible with a per-feature **Restore … defaults** action; selecting MOSS does not silently erase them. The Run button also checks the selected variant’s nodes and the backend’s `moss_image` CLIP type. A source image not aligned to /16 stays blocked with Off or unchanged Auto scaling; explicitly choose a visible resize such as Fit, Crop or Target rather than letting VAE encoding crop pixels implicitly.
+Starting sampling values follow the official MOSS-Image USERGUIDE (50 steps, CFG 3.0, `euler`, `sgm_uniform`); the template's prompt-upsample stage remains omitted and these are starting values, not verified equivalent image quality. A **Skip layers** field in the settings column (default **22**, comma-separated indices **0–41**, such as `22, 24, 26`) chains the core **Skip Layer Guidance** node (`SkipLayerGuidanceDiTSimple`, single-layer patches on the negative branch — the ComfyUI-graph form of the official adapter's `uncond_skip_layers`) between the model and the sampler; an empty field keeps the unchanged graph, and a backend without the core SLG node blocks Run while layers are set. Genuine initial/default MOSS setup can prefill the recommended card negative prompt (`nsfw, worst quality, bad anatomy, watermark, jpeg artifact`); same-kind checkpoint switches preserve the current Negative exactly, including deliberately empty or whitespace-only text. History and recognized embedded graph reuse restore the submitted SLG choice; absent SLG clears it. LoRAs, inpaint/masks, inserted image layers, refine/post-processing, custom sigmas, padding/upscale and model-patch options are not supported by this first MOSS adapter and are rejected rather than silently ignored. Disable those options before Run. Remembered unsupported choices remain visible with a per-feature **Restore … defaults** action; selecting MOSS does not silently erase them. The Run button also checks the selected variant’s nodes and the backend’s `moss_image` CLIP type. A source image not aligned to /16 stays blocked with Off or unchanged Auto scaling; explicitly choose a visible resize such as Fit, Crop or Target rather than letting VAE encoding crop pixels implicitly.
 
 Header detection identifies the MOSS diffusion model and supported full-width Qwen3.5-9B/Flux2 companion signatures. The locally inspected packed `mossImage_sft_txt_int4.safetensors` encoder remains **unknown**: Matching does not claim compatibility. An explicit category-scoped **All files** choice can select it, but selection is not successful loading. Required nodes/components are checked against the final emitted graph; an unused checkpoint loader or generic empty latent is not a MOSS requirement. Later fixed-seed 512x512 GPU reference-effect runs provide narrow MOSS execution evidence; see [the recorded model/settings limits](VERIFICATION.md#unified-image-reference-wiring-0147). Other variants, ordinary i2i quality, Windows runtime and broad image-quality/resource acceptance remain open.
 
@@ -652,6 +660,9 @@ History is optional local metadata in one versioned app-data JSON file. It store
 The Studio checkpoint selector is a compact native dropdown, using the same theme skin as the other selectors. It shows only the selected checkpoint while closed; opening it uses the platform menu rather than inserting a list into the settings pane. Normal platform keyboard selection remains available. There is no extra filter field, custom list or filter preference. Candidates follow the chosen pipeline through the existing compatibility checks. A remembered missing or incompatible selection remains visible but disabled with its reason; it is not silently replaced. Selecting another checkpoint preserves the current positive and negative prompts, including deliberately empty fields, while restoring that model’s other draft settings. Filtering does not bypass native execution validation.
 
 ## Seed controls
+
+The decrease/increase, Random/Fixed and New seed buttons share the **Seed** label
+row above the number field. Use last and the submitted-seed history remain below.
 
 Random/Fixed, New, exact wrapping ±1, Use last and ten submitted seeds with restore/copy persist across restarts. Manual edits/restores select Fixed. Failed preparation/submission adds no history. Seeds are exact within 0–9007199254740991, not full uint64.
 

@@ -346,6 +346,10 @@ fn image_prompting_installed_before_owned_child_start() {
         include_bytes!("image_postprocess.py")
     );
     assert_eq!(
+        fs::read(directory.join("deas_lying_sigma.py")).unwrap(),
+        include_bytes!("lying_sigma.py")
+    );
+    assert_eq!(
         fs::read(directory.join("deas_sam3_video_window.py")).unwrap(),
         include_bytes!("sam3_video_window.py")
     );
@@ -364,6 +368,7 @@ fn image_prompting_installed_before_owned_child_start() {
             "deas_h3_stream_video.py",
             "deas_image_postprocess.py",
             "deas_image_prompting.py",
+            "deas_lying_sigma.py",
             "deas_output_naming.py",
             "deas_sam3_video_window.py"
         ]

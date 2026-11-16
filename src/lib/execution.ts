@@ -1,3 +1,4 @@
+import { applyLyingSigma, isLyingSigma, lyingSigmaScheduleIssue, type LyingSigmaSettings } from './lyingSigma.ts';
 import families from '../families/builtin.json' with { type: 'json' };
 import {checkModel} from './modelCheck.ts';
 import type {LocalModel} from './models';
@@ -23,6 +24,7 @@ export interface DiagnosticImageIntentV1 {
   /** Any sampler/scheduler the backend lists in object_info. */
   readonly sampler: string;
   readonly scheduler: string;
+  readonly lyingSigma?: LyingSigmaSettings;
   readonly outputPrefix: string;
   /** Optional LoRA chain applied after the checkpoint; strength feeds both model and CLIP. */
   readonly loras?: readonly { readonly name: string; readonly strength: number }[];
@@ -172,8 +174,9 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
     throw new RecipeCompileError('INVALID_INPUT', field, message, remedy);
   };
   for (const key of Object.keys(input)) {
-    if (!fields.includes(key) && !['loras', 'inputImage', 'denoise', 'diffusion', 'family', 'inputResize', 'inputMask', 'maskBlur', 'inpaintCrop', 'inputLayers', 'options', 'sigmas', 'wildcard', 'upscaleModel', 'refine', 'imageFormat', 'imageCompression', 'imageReference', 'nativeImageReference', 'skipLayers'].includes(key)) invalid(key, 'Unknown domain intent field.', 'Remove unsupported fields; do not pass widget or canvas state.');
+    if (!fields.includes(key) && !['lyingSigma', 'loras', 'inputImage', 'denoise', 'diffusion', 'family', 'inputResize', 'inputMask', 'maskBlur', 'inpaintCrop', 'inputLayers', 'options', 'sigmas', 'wildcard', 'upscaleModel', 'refine', 'imageFormat', 'imageCompression', 'imageReference', 'nativeImageReference', 'skipLayers'].includes(key)) invalid(key, 'Unknown domain intent field.', 'Remove unsupported fields; do not pass widget or canvas state.');
   }
+  if (Object.hasOwn(input,'lyingSigma')&&!isLyingSigma(input.lyingSigma)) invalid('lyingSigma','Invalid Lying Sigma settings.','Use factor -0.999..1 and 0 <= startPercent < endPercent <= 1.');
   for (const field of fields) {
     if (!Object.hasOwn(input, field)) invalid(field, 'Missing required intent field.', 'Supply this explicit DEAS-owned intent field; no defaults are inferred.');
   }
@@ -264,7 +267,8 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
   }
   // Skip Layer Guidance belongs to MOSS-Image only; empty string means the unchanged graph.
   if (input.skipLayers !== undefined) {
-    if (typeof input.skipLayers !== 'string' || (input.skipLayers !== '' && !/^\s*[0-9]{1,3}(?:\s*,\s*[0-9]{1,3})*\s*$/u.test(input.skipLayers))) invalid('skipLayers', 'Invalid skip layers.', 'Use comma-separated layer numbers such as "22, 24, 26", or an empty string to disable Skip Layer Guidance.');
+    const layerCount = families.find(f => f.clipType === 'moss_image')?.skipLayerCount ?? 0;
+    if (typeof input.skipLayers !== 'string' || (input.skipLayers !== '' && (!/^\s*[0-9]{1,3}(?:\s*,\s*[0-9]{1,3})*\s*$/u.test(input.skipLayers) || !input.skipLayers.split(',').every(p => Number(p.trim()) < layerCount)))) invalid('skipLayers', 'Invalid skip layers.', `Use comma-separated layer indices below ${layerCount}, or an empty string to disable Skip Layer Guidance.`);
     if (!(isRecord(d) && d.clipType === 'moss_image')) invalid('skipLayers', 'Skip Layer Guidance is only supported on MOSS-Image.', 'Clear skip layers for this family.');
   }
   // Same grammar as native `safe_option`: option enums may carry spaces and `+` (`pytorch attention`, `…fp8_cuda++`).
@@ -587,6 +591,11 @@ export function compileRecipe(input: unknown, verified: unknown, models:readonly
       graph[id] = { ...node, inputs: rewired };
     }
   }
+  if(intent.lyingSigma?.factor){
+    const issue=lyingSigmaScheduleIssue(intent.sampler,intent.steps,intent.denoise??1,result.graph['5'].class_type!=='KSampler');
+    if(issue)throw new RecipeCompileError('INVALID_INPUT','lyingSigma',issue==='sampler'?'Lying Sigma requires an explicit sigma schedule for this sampler.':'Lying Sigma derived scheduler steps exceed 10000.','Set Lying Sigma to 0 or use a supported schedule.');
+  }
+  applyLyingSigma(result.graph as Record<string,ApiNode>,intent.lyingSigma);
   const emitted = Object.freeze([...new Set(Object.values(result.graph).map(node => node.class_type))]);
   for (const node of emitted) {
     if (checkModel(undefined,{loaders:allowlist.nodes,requiredLoaders:[node]}).availability==='missing') throw new RecipeCompileError('MISSING_CAPABILITY', node, node === 'DEAS_ImagePostprocessGate' ? 'Refine requires the DEAS lazy gate and a compatible post-save saver output; update the owned backend or disable post-processing.' : 'Required built-in node is unavailable.', 'Verify a compatible backend with this built-in node before compiling.');

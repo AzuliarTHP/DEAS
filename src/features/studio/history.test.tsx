@@ -10,6 +10,14 @@ const record=(intent:JobIntent=image):HistoryRecord=>({id:'history-1',clientId:'
 const context:RestoreContext={endpoint:'http://127.0.0.1:7801/',inputRoot:'/selected/input',models:[{name:'exact.safetensors',family:'sdxl'},{name:'style.safetensors',family:'sdxl'}],allow:{nodes:['VAEDecodeTiled','EasyCache'],checkpoints:['exact.safetensors'],samplers:['euler'],schedulers:['normal'],images:['first.png','second.png'],loras:['style.safetensors'],visionModels:['vision.safetensors'],attention:['sdpa'],compile:['inductor'],textEncoders:['clip.safetensors'],vaes:['vae.safetensors']}};
 beforeEach(()=>{vi.clearAllMocks();vi.mocked(invoke).mockResolvedValue(null);});
 
+test('image history retains exact Lying Sigma settings and reports an unavailable wrapper',()=>{
+ const lyingSigma={factor:-0.05,startPercent:0.2,endPercent:0.8};
+ const saved=record({...image,lyingSigma});
+ expect(historyRestore(saved,context)).toMatchObject({intent:{lyingSigma},unavailable:expect.arrayContaining(['DEAS_LyingSigmaSampler'])});
+ expect(historyRestore(saved,{...context,allow:{...context.allow!,nodes:[...context.allow!.nodes,'DEAS_LyingSigmaSampler']}}).unavailable).not.toContain('DEAS_LyingSigmaSampler');
+ expect(historyRestore(record({...image,lyingSigma:{...lyingSigma,factor:0}}),context).unavailable).not.toContain('DEAS_LyingSigmaSampler');
+});
+
 test('exact historical output reuse requires unique root/path and native current availability',async()=>{
  const output={filename:'film.mp4',subfolder:'starred/video/date',type:'output' as const};
  const saved={...record(),outputRoot:'/output',outputs:[output]};

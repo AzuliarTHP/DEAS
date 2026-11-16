@@ -191,6 +191,80 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(result['ui']['gifs'][0]['filename'], Path(result['result'][1]).name)
             self.assertEqual(original.read_bytes(), b'published baseline')
 
+    def test_webm_explicit_audio_falls_back_to_opus(self):
+        import datetime
+        import re
+        import sys
+        import numpy as np
+        import torch
+        from unittest.mock import patch
+        source = Path(os.environ.get('DEAS_TEST_DASIWA_ROOT', '/data/GitHub/ComfyUI-DaSiWa-Nodes')) / 'nodes/nodes_enhanced_video_combine.py'
+        namespace = dict(torch=torch, os=os, datetime=datetime, re=re, helper_pyav_video=self.helper)
+        parsed = ast.parse(source.read_text())
+        selected = [n for n in parsed.body if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.Assign))]
+        exec(compile(ast.Module(body=selected, type_ignores=[]), str(source), 'exec'), namespace)
+        house = types.SimpleNamespace(**namespace)
+        house._available_encoders = lambda: {'libvpx-vp9', 'aac', 'libmp3lame', 'libopus'}
+        house._audio_file = lambda value: ((np.zeros((1, 12000), dtype='float32'), 48000), .25)
+        shape = (1, 3, 6, 16, 16)
+        prepared = []
+        def decode(latent, output_buffer):
+            output_buffer.copy_(torch.full(shape, .4))
+            return output_buffer
+        model = types.SimpleNamespace(decode=decode)
+        vae = types.SimpleNamespace(first_stage_model=model, device=torch.device('cpu'), vae_dtype=torch.float32,
+            throw_exception_if_invalid=lambda: None, prepare_decode=lambda shape: prepared.append(shape))
+        mm = types.ModuleType('comfy.model_management')
+        mm.throw_exception_if_processing_interrupted = lambda: None
+        mm.cuda_device_context = lambda device: __import__('contextlib').nullcontext()
+        comfy = types.ModuleType('comfy')
+        comfy.model_management = mm
+        for requested, rejected in (('AAC', 'aac'), ('MP3', 'libmp3lame')):
+            with self.subTest(audio=requested), tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+                prepared.clear()
+                module = owned()
+                folder = types.SimpleNamespace(get_output_directory=lambda: directory,
+                    get_temp_directory=lambda: directory,
+                    get_save_image_path=lambda *args: (directory, 'stream', 1, '', None))
+                modules = {'folder_paths': folder, 'comfy': comfy, 'comfy.model_management': mm,
+                    'comfy_extras.nodes_audio': types.SimpleNamespace(vae_decode_audio=lambda *args: None)}
+                with patch.dict(sys.modules, modules), patch.object(module, '_pack', return_value=house), \
+                     patch.object(module, 'validate_h3', return_value=shape), \
+                     patch.object(self.helper, '_configure_audio_stream', wraps=self.helper._configure_audio_stream) as configure:
+                    result = module.DEAS_H3StreamVideoSave().combine({'samples': torch.zeros(1)}, vae, None,
+                        frame_rate=24, codec='VP9', container='WebM', bit_depth='8-bit', quality=20,
+                        filename_prefix='stream', save_output=True, save_metadata=False, audio_codec=requested)
+                self.assertEqual([call.args[1] for call in configure.call_args_list], [rejected, 'libopus'])
+                self.assertEqual(len(prepared), 1, 'configuration rejection must happen before decode')
+                path = Path(result['result'][1])
+                self.assertEqual(result['ui']['gifs'][0]['container'], 'WebM')
+                with self.av.open(str(path)) as media:
+                    self.assertEqual(media.streams.audio[0].codec_context.name, 'opus')
+                    self.assertEqual(len(list(media.decode(video=0))), 6)
+                self.assertEqual(list(Path(directory).iterdir()), [path])
+
+    def test_nonconfiguration_value_errors_do_not_become_codec_failures(self):
+        import torch
+        from unittest.mock import patch
+        for phase in ('decoder', 'validation', 'publication'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+                module = owned()
+                error = ValueError(phase)
+                def fail(*args, **kwargs):
+                    raise error
+                def decode(sink):
+                    if phase == 'decoder':
+                        fail()
+                    sink.copy_(torch.full((1, 3, 6, 16, 16), .4))
+                with patch.object(module, '_validate_video', side_effect=fail if phase == 'validation' else module._validate_video), \
+                     patch.object(module.os, 'link', side_effect=fail if phase == 'publication' else os.link), \
+                     patch.object(module.os, 'rename', side_effect=fail if phase == 'publication' else os.rename):
+                    with self.assertRaises(ValueError) as caught:
+                        module.encode_stream(decode, (1, 3, 6, 16, 16), Path(directory) / 'result.mp4', self.helper,
+                            container_name='MP4', encoder='libx264', frame_rate=24, bit_depth=8, quality=20)
+                self.assertIs(caught.exception, error)
+                self.assertEqual(list(Path(directory).iterdir()), [])
+
     def test_resource_errors_never_become_codec_retries(self):
         module = owned()
         import errno
@@ -200,8 +274,9 @@ class ExportTests(unittest.TestCase):
                 error = self.av.error.ExternalError(number, message)
                 def fail():
                     raise error
-                with self.assertRaises(self.av.FFmpegError):
-                    module._codec(fail)
+                for configuration in (False, True):
+                    with self.assertRaises(self.av.FFmpegError):
+                        module._codec(fail, configuration=configuration)
 
     def test_cpu_container_codec_readback_matrix(self):
         import torch
@@ -268,6 +343,57 @@ class ExportTests(unittest.TestCase):
                 self.assertEqual(original.read_bytes(), b'baseline survives')
                 self.assertEqual(set(Path(directory).iterdir()), {original, collision} if phase == 'endpoint-collision' else {original})
 
+    def test_platform_publication_no_clobber_and_group_rollback(self):
+        import torch
+        from unittest.mock import Mock, patch
+        for platform in ('nt', 'posix'):
+            for phase in ('success', 'endpoint-collision', 'video-collision', 'publish-failure'):
+                with self.subTest(platform=platform, phase=phase), tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+                    module = owned()
+                    target = Path(directory) / 'result.mp4'
+                    original = Path(directory) / 'Original.mp4'
+                    original.write_bytes(b'baseline')
+                    collision = target if phase == 'video-collision' else target.with_name('result-last-frame.png')
+                    validate = module._validate_video
+                    def validated(*args):
+                        validate(*args)
+                        if phase.endswith('collision'):
+                            collision.write_bytes(b'concurrent original')
+                    def publish(source, destination, move=False):
+                        if phase == 'publish-failure' and destination == target:
+                            raise OSError('publication failed')
+                        # Simulate Windows rename's no-replace contract on this Linux host.
+                        if move:
+                            if destination.exists():
+                                raise FileExistsError(destination)
+                            return os.rename(source, destination)
+                        return os.link(source, destination)
+                    link = Mock(side_effect=publish)
+                    rename = Mock(side_effect=lambda source, destination: publish(source, destination, move=True))
+                    system = types.SimpleNamespace(name=platform, link=link, rename=rename)
+                    def decode(sink):
+                        sink.copy_(torch.full((1, 3, 6, 16, 16), .4))
+                    with patch.object(module, 'os', system), patch.object(module, '_validate_video', side_effect=validated):
+                        def export():
+                            return module.encode_stream(decode, (1, 3, 6, 16, 16), target, self.helper,
+                                container_name='MP4', encoder='libx264', frame_rate=24, bit_depth=8,
+                                quality=20, save_first_frame=True, save_last_frame=True)
+                        if phase == 'success':
+                            endpoints = export()
+                            self.assertEqual(len(endpoints), 2)
+                            expected = {original, target, *(Path(path) for path in endpoints)}
+                        else:
+                            with self.assertRaises(FileExistsError if phase.endswith('collision') else OSError):
+                                export()
+                            expected = {original, collision} if phase.endswith('collision') else {original}
+                    self.assertEqual(original.read_bytes(), b'baseline')
+                    self.assertEqual(set(Path(directory).iterdir()), expected)
+                    if phase.endswith('collision'):
+                        self.assertEqual(collision.read_bytes(), b'concurrent original')
+                    active, unused = (rename, link) if platform == 'nt' else (link, rename)
+                    self.assertGreaterEqual(active.call_count, 2)
+                    unused.assert_not_called()
+
     def test_real_cpu_codec_audio_metadata_and_endpoints(self):
         self.assertTrue(hasattr(owned(), 'encode_stream'), 'fused writer is not implemented')
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
@@ -309,6 +435,29 @@ class ExportTests(unittest.TestCase):
 
 
 class NodeTests(unittest.TestCase):
+    def test_codec_configuration_boundary_without_optional_dependencies(self):
+        import errno
+        import sys
+        from unittest.mock import patch
+        module = owned()
+        class FFmpegError(ValueError):
+            def __init__(self, number, message):
+                super().__init__(message)
+                self.errno = number
+        errors = [ValueError('unsupported codec'), MemoryError('allocation failed'),
+                  OSError(errno.ENOSPC, 'disk full'), FFmpegError(errno.ENOMEM, 'allocation failed'),
+                  FFmpegError(123456, 'Cannot allocate memory'), FFmpegError(22, 'bad codec')]
+        with patch.dict(sys.modules, {'av': types.SimpleNamespace(FFmpegError=FFmpegError)}):
+            for configuration in (False, True):
+                for error in errors:
+                    retry = (type(error) is ValueError and configuration) or (isinstance(error, FFmpegError) and error.errno == 22)
+                    with self.subTest(configuration=configuration, error=repr(error)):
+                        def fail():
+                            raise error
+                        with self.assertRaises(module.CodecFailure if retry else type(error)) as caught:
+                            module._codec(fail, configuration=configuration)
+                        self.assertIs(caught.exception.__cause__ if retry else caught.exception, error)
+
     def test_schema_and_lazy_gate(self):
         from unittest.mock import patch
         module = owned()

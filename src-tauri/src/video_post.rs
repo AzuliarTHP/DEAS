@@ -251,6 +251,9 @@ impl RetainedSource {
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
+    pub(crate) fn matches_file(&self, file: &File) -> bool {
+        identity(file).is_ok_and(|id| id == self.identity)
+    }
     pub(crate) fn recheck(&self) -> Result<(), String> {
         if identity(&self.file)? != self.identity
             || identity(&open_source(&self.path)?)? != self.identity

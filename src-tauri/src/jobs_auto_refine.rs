@@ -224,6 +224,7 @@ fn pass_intent(
         "audioEnhance",
         "latentUpscale",
         "autoRefine",
+        "lyingSigma",
     ] {
         object.remove(key);
     }
@@ -448,6 +449,7 @@ impl Jobs {
             "inpaintCrop",
             "maskBlur",
             "autoRefine",
+            "lyingSigma",
         ] {
             check_object.remove(key);
         }
@@ -762,6 +764,29 @@ mod tests {
                 .text
                 .contains(&format!("operation={operation} {context} job={id}"))));
         }
+    }
+
+    #[test]
+    fn auto_refine_keeps_lying_sigma_on_the_initial_pass_only() {
+        let mut base = super::super::tests::intent();
+        base["lyingSigma"] = json!({"factor":-0.05,"startPercent":0.25,"endPercent":0.9});
+        assert!(compile(&base).unwrap().get("LS").is_some());
+        let pass = pass_intent(
+            &base,
+            "source.png",
+            "deas-masks/12345678-1234-1234-1234-123456789abc.png",
+            (512, 512),
+            json!({"x":0,"y":0,"width":512,"height":512,"targetWidth":512,"targetHeight":512}),
+            &settings(0),
+            false,
+        )
+        .unwrap();
+        assert!(pass.get("lyingSigma").is_none());
+        let graph = compile(&pass).unwrap();
+        assert!(graph.get("LS").is_none());
+        assert_eq!(graph["5"]["class_type"], "KSampler");
+        assert_eq!(graph["5"]["inputs"]["denoise"], 0.25);
+        assert!(compile(&base).unwrap().get("LS").is_some());
     }
 
     #[test]

@@ -28,6 +28,8 @@ import { ReferencesOverlay } from './ReferencesOverlay';
 import { ReferenceThumbnail } from './ReferenceThumbnail';
 import { videoRoles, videoRoleBlock, videoRolePipeline, type VideoRole, type VideoRoles } from './videoRoles';
 import { defaultPlan, isContinuityPlan, nextStep, resolveClip, continuitySource, type ContinuityPlan } from '../../lib/continuity';
+import { defaultLyingSigma, isLyingSigma, lyingSigmaSamplingNodes, lyingSigmaScheduleIssue } from '../../lib/lyingSigma';
+import { LyingSigmaControls } from './LyingSigmaControls';
 import { checkRecipePrerequisites } from '../../lib/recipePrerequisites';
 import { scanModels, type LocalModel } from '../../lib/models';
 import { ModelFolderTree } from '../../components/ModelFolderTree';
@@ -294,6 +296,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [cfg,setCfg]=usePref('studio.run.cfg',5,isNumber);
  const [sampler,setSampler]=usePref('studio.run.sampler','euler',isString);
  const [scheduler,setScheduler]=usePref('studio.run.scheduler','normal',isString);
+ const [lyingSigma,setLyingSigma]=usePref('studio.run.lyingSigma',defaultLyingSigma,isLyingSigma);
  const [textEncoderPref,setTextEncoder]=usePref('studio.run.textEncoder','',isString);
  const [textEncoder2Pref,setTextEncoder2]=usePref('studio.run.textEncoder2','',isString);
  const [vaePref,setVae]=usePref('studio.run.vae','',isString);
@@ -655,6 +658,11 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const beginnerLoraDraft=useRef<BeginnerLoraDraft|null>(readPref('beginner.loras',null,isBeginnerLoraDraft));
  const changeBeginnerLoras=(next:BeginnerLora[])=>{if(!model)return;const allowed=new Set(beginnerLoraModels.map(m=>m.name));const safe=next.filter(l=>allowed.has(l.name));setLoras(safe);beginnerLoraDraft.current={model:identity(model),loras:safe};writePref('beginner.loras',beginnerLoraDraft.current);};
 
+ const lyingSigmaActive=!isVideo&&!isMusic&&lyingSigma.factor!==0;
+ const lyingSigmaCustom=!!sigmas||h3Image||!!(family as (Family&{sigmaNode?:string})|undefined)?.sigmaNode;
+ const lyingSigmaIssue=lyingSigmaActive?lyingSigmaScheduleIssue(sampler,steps,pipeline==='i2i'?strength:1,lyingSigmaCustom):undefined;
+ const lyingSigmaMissing=lyingSigmaActive&&choices?(lyingSigmaCustom?lyingSigmaSamplingNodes.slice(0,1):lyingSigmaSamplingNodes).filter(n=>!choices.nodes.includes(n)):[];
+ const lyingSigmaUnavailable=lyingSigmaIssue?t(`studio.run.lyingSigma.${lyingSigmaIssue}`):lyingSigmaMissing.length?t('studio.run.lyingSigma.missing'):undefined;
  const options=runOptions(optionsPref,choices);
  const moss=family?.id==='moss-image';
  const mossIssues:{name:string;reset:()=>void}[]=!moss?[]:[
@@ -677,6 +685,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   ...(!choices?[]:[...(aceProfile?(aceSplit?[...(!choices.diffusionModels?.includes(checkpoint)?[checkpoint]:[]),...(!choices.dualTextEncoders?.includes(textEncoder)||!choices.dualTextEncoders?.includes(textEncoder2)?[t('studio.components.title')]:[]),...(!choices.dualClipTypes?.includes('ace')?['DualCLIPLoader: ace']:[]),...(!choices.vaes?.includes(vae)?[vae||t('studio.run.vae')]:[])]:!choices.checkpoints.includes(checkpoint)?[checkpoint]:[]):[]),...musicNodes.filter(n=>!choices.nodes.includes(n)),...(!choices.samplers.includes(sampler)?[sampler]:[]),...(!choices.schedulers.includes(scheduler)?[scheduler]:[]),
    ...(pipeline==='cover'&&!musicEncoders.includes(musicEncoder)?[musicEncoder||t('studio.music.needsEncoder')]:[])]),
  ]:[
+  ...(activeLoras.length>8?[t('studio.run.loras.limit',{count:String(activeLoras.length)})]:[]),
   ...latentProblems,
   ...imageRefs.filter(r=>!r.item.path).map(r=>t('studio.history.missingInput',{name:r.item.name})),
   ...refs.filter(r=>!r.item.path).map(r=>t('studio.history.missingInput',{name:r.item.name})),
@@ -713,6 +722,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    ...(optionsPref.cache&&!options?.cache?[optionsPref.cache]:[]),...(optionsPref.compile&&!options?.compile?[optionsPref.compile]:[]),
    ...(optionsPref.vae==='tiled'&&!options?.vaeTile?['VAEDecodeTiled']:[])]:[])
  ];
+ if(lyingSigmaUnavailable)unavailable.push(lyingSigmaUnavailable);
  if((isMusic||isVideo&&videoFamily!=='wan')&&!audioEnhance.ready)unavailable.push(t('studio.audioEnhance.notReady'));
  // A chained refinement that cannot run blocks Run instead of being silently dropped.
  if(streamRequested&&streamReason)unavailable.push(streamReason);
@@ -889,7 +899,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   const inputLayers=visibleImages(layers);
   const refineSigmas=only?.upscaleOnly?null:tail(refineDenoise); // Upscale alone: no diffusion tail, the pass is resize + model upscale.
   const wiredWildcard:typeof wildcard=wildcardEnabled?{...wildcard,...(Object.keys(wildcardVars.lib).length?{variables_json:JSON.stringify(wildcardVars.lib),variable_selections:JSON.stringify(prunePins(negative,wildcardVars.lib,prunePins(positive,wildcardVars.lib,parsePins(wildcard.variable_selections))))}:{})}:wildcard;
-  const common={recipeId:'checkpoint-text-to-image-diagnostic',version:1,...(Object.values(componentOverrides).some(Boolean)?{componentOverrides:{...componentOverrides}}:{}),positivePrompt:positive,negativePrompt:negative,checkpoint,seed,cfg,sampler,scheduler,outputPrefix:naming,...(wildcardEnabled?{wildcard:wiredWildcard}:{}),...(activeLoras.length?{loras:activeLoras}:{}),...(split&&family?.clipType?{diffusion:{textEncoder,...(dualClip&&textEncoder2?{textEncoder2}:{}),clipType:family.clipType,vae,family:family.id}}:{}),...(family?{family:family.id}:{}),...(family?.id==='moss-image'&&mossSkip.trim()?{skipLayers:mossSkip.trim()}:{}),...(h3Image?{h3Edit:{shiftVideo:video.shiftVideo,shiftAudio:video.shiftAudio},...(latentEnabled&&!only?{latentUpscale:{model:latentModel,scale:latentPref.scale,steps:latentPref.steps,denoise:latentPref.denoise,...(latentAdvanced?{advanced:latentAdvanced}:{})}}:{})}:{}),...(imageRefs.length&&referenceMethod?(referenceMethod==='revision'?{imageReference:{visionModel:refVision,images:imageRefs.map(r=>({image:comfyName(r.item)||r.item.path!,strength:r.strength}))}}:{nativeImageReference:{method:referenceMethod,images:imageRefs.map(r=>comfyName(r.item)||r.item.path!)}}):{}),...(options?{options}:{}),...(out.imageFormat!=='png'||out.imageCompression!==44?{imageFormat:out.imageFormat,imageCompression:out.imageCompression}:{})} as const;
+  const common={recipeId:'checkpoint-text-to-image-diagnostic',version:1,...(lyingSigmaActive&&!only?{lyingSigma:{...lyingSigma}}:{}),...(Object.values(componentOverrides).some(Boolean)?{componentOverrides:{...componentOverrides}}:{}),positivePrompt:positive,negativePrompt:negative,checkpoint,seed,cfg,sampler,scheduler,outputPrefix:naming,...(wildcardEnabled?{wildcard:wiredWildcard}:{}),...(activeLoras.length?{loras:activeLoras}:{}),...(split&&family?.clipType?{diffusion:{textEncoder,...(dualClip&&textEncoder2?{textEncoder2}:{}),clipType:family.clipType,vae,family:family.id}}:{}),...(family?{family:family.id}:{}),...(family?.id==='moss-image'&&mossSkip.trim()?{skipLayers:mossSkip.trim()}:{}),...(h3Image?{h3Edit:{shiftVideo:video.shiftVideo,shiftAudio:video.shiftAudio},...(latentEnabled&&!only?{latentUpscale:{model:latentModel,scale:latentPref.scale,steps:latentPref.steps,denoise:latentPref.denoise,...(latentAdvanced?{advanced:latentAdvanced}:{})}}:{})}:{}),...(imageRefs.length&&referenceMethod?(referenceMethod==='revision'?{imageReference:{visionModel:refVision,images:imageRefs.map(r=>({image:comfyName(r.item)||r.item.path!,strength:r.strength}))}}:{nativeImageReference:{method:referenceMethod,images:imageRefs.map(r=>comfyName(r.item)||r.item.path!)}}):{}),...(options?{options}:{}),...(out.imageFormat!=='png'||out.imageCompression!==44?{imageFormat:out.imageFormat,imageCompression:out.imageCompression}:{})} as const;
   const resized=!!upscaleModel||target.width!==only?.size.width||target.height!==only?.size.height;
   return Object.freeze(only
    ?{...common,width:target.width,height:target.height,steps:refineSigmas?refineSigmas.length-1:steps,...(refineSigmas?{sigmas:refineSigmas}:{}),inputImage:only.image,denoise:only.upscaleOnly?0:refineDenoise,...(resized?{inputResize:{...target,crop:'disabled' as const}}:{}),...(upscaleModel?{upscaleModel}:{})}
@@ -902,7 +912,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   if(!native||stopLock.current||admissionBlocked||samBusy||nativeRefining||scanning||((step||autoPlan||planRun.current||resolving)&&(!step||serialBlocked))||(moss&&only))return;
   if(step&&!continuityOn)return;
   if(!checkpoint){setError(t('studio.run.noModels'));return;}
-  if(backendPending||unavailable.length||musicNeedsStyle||historyProblems.length)return; // The overlay derives dependency warnings from the current selections.
+  if(backendPending||(only?unavailable.filter(issue=>issue!==lyingSigmaUnavailable):unavailable).length||musicNeedsStyle||historyProblems.length)return; // The overlay derives dependency warnings from the current selections.
   const editing=!only&&inpaint;
   if(!only&&!chat?.size&&(step?continuitySizeError:sizeError)){setError(t(step?continuitySizeError:sizeError,{multiple:String(grid)}));return;}
   if(editing&&!masked){setError(t('studio.run.edit.needsMask'));return;}
@@ -1014,7 +1024,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    const png=sourcePng??await flattenImages([{id:'source',name:picked!.name,src:picked!.src,x:0,y:0,...sourceSize,visible:true}],sourceSize.width,sourceSize.height);
    const sourceImage=await uploadMask(endpoint,png);
    Object.assign(intent,{width:sourceSize.width,height:sourceSize.height,inputImage:sourceImage,denoise:settings.denoise});
-   for(const key of ['inputResize','inputLayers','inputMask','maskBlur','inpaintCrop','upscaleModel','refine'] as const)delete intent[key];
+   for(const key of ['inputResize','inputLayers','inputMask','maskBlur','inpaintCrop','upscaleModel','refine','lyingSigma'] as const)delete intent[key];
    if(refs.length&&method){const uploaded=await Promise.all(refs.map(r=>uploadInput(endpoint,r.item.path!)));if(method==='revision')intent.imageReference={visionModel:vision,images:uploaded.map((image,i)=>({image,strength:refs[i].strength}))};else intent.nativeImageReference={method,images:uploaded};}
    if(!activeRun(ticket))return;
    admitted=true;const result=await autoRefine(endpoint,intent,settings,ticket.admissionEpoch,null,selectedMasks.map(m=>({name:m.name,png:Array.from(m.png)})));
@@ -1597,11 +1607,11 @@ const promptTools=forgeContext&&<>
   if(model)outgoingDraft.current={scope,pipeline,model,capture:captureDraft};
   else if(outgoingDraft.current?.scope===scope)outgoingDraft.current.capture=captureDraft;
  });
- const startingSettings=(m:LocalModel)=>{setResolution('model');const profile=aceMusicProfile(m.family);if(profile){setAceProfilePref(JSON.stringify([m.path,m.family]));setMusicAce({...defaultAceSettings,shift:profile.shift});setAceDuration(normalizeAceDuration(120,m.family));}const d=profile??familyOf(m)?.defaults;if(d){if('width' in d){setWidth(d.width);setHeight(d.height);}setSteps(d.steps);setCfg(d.cfg);setSampler(d.sampler);setScheduler(d.scheduler);if('negative' in d&&typeof d.negative==='string'&&!negative.trim())setNegative(d.negative);}};
+ const startingSettings=(m:LocalModel,seedNegative=false)=>{setLyingSigma({...defaultLyingSigma});setResolution('model');const profile=aceMusicProfile(m.family);if(profile){setAceProfilePref(JSON.stringify([m.path,m.family]));setMusicAce({...defaultAceSettings,shift:profile.shift});setAceDuration(normalizeAceDuration(120,m.family));}const d=profile??familyOf(m)?.defaults;if(d){if('width' in d){setWidth(d.width);setHeight(d.height);}setSteps(d.steps);setCfg(d.cfg);setSampler(d.sampler);setScheduler(d.scheduler);if(seedNegative&&'negative' in d&&typeof d.negative==='string'&&!negative.trim())setNegative(d.negative);}};
  // A new or corrected variant gets its own profile; persisted overrides keep their binding.
  useLayoutEffect(()=>{if(aceProfile&&model&&aceProfilePref!==JSON.stringify([model.path,model.family])){startingSettings(model);setCheckpoint(model.name);setModelIdentity(identity(model));}},[aceProfile?.version,model?.path,model?.family,aceProfilePref]);
  const switchDraft=(p:Pipeline,m:LocalModel,defaults=false,keepSource=false,keepPrompts=false)=>{
-  if(draftPipe(p)===draftPipe(pipeline)&&model&&identity(m)===identity(model)){if(p!==pipeline)setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));if(!checkpointPref&&defaults)startingSettings(m);return;}
+  if(draftPipe(p)===draftPipe(pipeline)&&model&&identity(m)===identity(model)){if(p!==pipeline)setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));if(!checkpointPref&&defaults)startingSettings(m,true);return;}
   rememberDraft();draftEpoch.current++;setPipeline(p);setCheckpoint(m.name);setModelIdentity(identity(m));setBrowsed(null);setSelectedJob('');
   const saved=drafts.current.get(draftKey(p,m));
   if(!saved)setLoras(loras.map(l=>l.enabled===true?{name:l.name,strength:l.strength}:l));
@@ -1609,7 +1619,7 @@ const promptTools=forgeContext&&<>
   // First visit to another checkpoint of the SAME family keeps the current settings instead of family defaults, so models can be compared side by side; family defaults still apply when the family (or pipeline) changes.
   if(!saved&&isMusicPipeline(p)){setMusicSource(null);if(!blocked(m,'t2m'))setPipeline('t2m');}
   if(!saved&&videoPipelines.includes(p)&&!isVideo&&!keepSource){sourceEpoch.current++;setMedia(null);setMediaSize(null);setLastFrame(null);setLastOnlySrc(null);setSourceVideo(null);setRefs([]);setRefmods([]);setLayers([]);setMasked(false);}
-  if(saved)applyDraft(keepPrompts?{...saved,settings:{...saved.settings,'studio.run.positive':positive,'studio.run.negative':negative,[musicPromptPreferenceKeys[0]]:musicStyle,[musicPromptPreferenceKeys[1]]:musicLyrics}}:saved,keepSource);else if(defaults&&!(p===pipeline&&model&&identity(m)!==identity(model)&&familyOf(m)&&familyOf(m)===familyOf(model)))startingSettings(m);
+  if(saved)applyDraft(keepPrompts?{...saved,settings:{...saved.settings,'studio.run.positive':positive,'studio.run.negative':negative,[musicPromptPreferenceKeys[0]]:musicStyle,[musicPromptPreferenceKeys[1]]:musicLyrics}}:saved,keepSource);else if(defaults&&!(p===pipeline&&model&&identity(m)!==identity(model)&&familyOf(m)&&familyOf(m)===familyOf(model)))startingSettings(m,!keepPrompts);
  };
  const applyDraft=(saved:ReturnType<typeof captureDraft>,keepSource=false)=>{
   if(!applyStudioSettings(saved.settings))return;
@@ -1643,7 +1653,7 @@ const promptTools=forgeContext&&<>
    advancedSettings.current=saved;beginnerSamplingEdited.current=false;beginnerMusicEdited.current.clear();
    advancedReferences.current={imageRefs,refs,refmods,lastFrame,lastOnlySrc,sourceVideo,framePeople,plan};
    setSourceVideo(null);setImageRefs([]);setRefs([]);setRefmods([]);setFramePeople({});setLastFrame(null);setLastOnlySrc(null);setPlan(p=>({...p,enabled:false}));
-   setLoras(model&&beginnerLoraDraft.current?.model===identity(model)?beginnerLoraDraft.current.loras:[]);setNegative('');setPost(false);setTve(defaultTve);setDerope(defaultDerope);setH3Latent(defaultLatent);setLtxLatent(defaultLatent);setWildcardEnabled(false);setOptions(defaultOptions);setSeedMode('random');setEdit('resample');setTextEncoder('');setVae('');setComponentOverrides(defaultComponentOverrides);
+   setLoras(model&&beginnerLoraDraft.current?.model===identity(model)?beginnerLoraDraft.current.loras:[]);setNegative('');setPost(false);setTve(defaultTve);setDerope(defaultDerope);setH3Latent(defaultLatent);setLtxLatent(defaultLatent);setWildcardEnabled(false);setOptions(defaultOptions);setLyingSigma({...defaultLyingSigma});setSeedMode('random');setEdit('resample');setTextEncoder('');setVae('');setComponentOverrides(defaultComponentOverrides);
    // Entering Beginner keeps the user's Steps/CFG; only a model change resets them to family starting values.
    if(model&&!isMusic){startingSettings(model);setSteps(steps);setCfg(cfg);}beginnerModelKey.current=model?identity(model):'';
   }else if(advancedSettings.current){
@@ -1672,7 +1682,7 @@ const promptTools=forgeContext&&<>
  useEffect(()=>{if(!isImagePipe(pipeline)||!model)return;const want=media?.media==='image'||blocked(model,'t2i')?'i2i':'t2i';if(want!==pipeline)setPipeline(want);},[beginner,pipeline,media,model]);
  useEffect(()=>{
   const layout=()=>{dragCleanup.current();setSettingsWidth(defaultLayout.settings);setQueueWidth(defaultLayout.queue);setDockHeight(defaultLayout.dock);setSettingsHidden(false);setDockHidden(false);setPromptHeight(110);setPromptHidden(false);};
-  const defaults=()=>setAsk({message:t(project?'studio.quick.confirmProject':'studio.quick.confirm'),run:()=>{if(beginner){beginnerLoraDraft.current=null;writePref('beginner.loras',null);}drafts.current.clear();pipelineModels.current.clear();draftEpoch.current++;resetStudioPreferences();setResolution('model');const first=allModels.find(m=>!blocked(m,'t2i'));if(first){setCheckpoint(first.name);setModelIdentity(identity(first));startingSettings(first);}}});
+  const defaults=()=>setAsk({message:t(project?'studio.quick.confirmProject':'studio.quick.confirm'),run:()=>{if(beginner){beginnerLoraDraft.current=null;writePref('beginner.loras',null);}drafts.current.clear();pipelineModels.current.clear();draftEpoch.current++;resetStudioPreferences();setResolution('model');const first=allModels.find(m=>!blocked(m,'t2i'));if(first){setCheckpoint(first.name);setModelIdentity(identity(first));startingSettings(first,true);}}});
   window.addEventListener('deas:reset-studio-layout',layout);window.addEventListener('deas:request-studio-defaults',defaults);
   return()=>{window.removeEventListener('deas:reset-studio-layout',layout);window.removeEventListener('deas:request-studio-defaults',defaults);};
  });
@@ -1701,6 +1711,8 @@ const promptTools=forgeContext&&<>
  };
  const applySettings=(s:GenerationSettings):string[]=>{
   rememberDraft();
+  setLyingSigma(s.lyingSigma&&isLyingSigma(s.lyingSigma)?{...s.lyingSigma}:{...defaultLyingSigma});
+  setMossSkip(s.skipLayers??'');
   const skipped=(s.skipped??[]).map(item=>item==='video.intent'?t('studio.run.metadata.videoPartial'):item);
   const restoredModel=s.checkpoint?resolveMetadataModel(allModels,s.checkpoint):undefined;
   const restoredFamily=familyOf(restoredModel);
@@ -1793,6 +1805,8 @@ const promptTools=forgeContext&&<>
   setPositive(intent.positivePrompt);setNegative(intent.negativePrompt);
   fixedSeed(intent.seed);setCheckpoint(isVideoIntent(intent)?intent.model:intent.checkpoint);
   setSteps(intent.steps);setCfg(intent.cfg);setSampler(intent.sampler);setScheduler(intent.scheduler);
+  setLyingSigma(isImageIntent(intent)&&intent.lyingSigma?{...intent.lyingSigma}:{...defaultLyingSigma});
+  setMossSkip(isImageIntent(intent)?intent.skipLayers??'':'');
   setWidth(intent.width);setHeight(intent.height);setResolution('fixed');setAspect('auto');
   setLoras((intent.loras??[]).map(l=>({...l,enabled:true})));setOptions(value.options);
   setPipeline(value.pipeline);setComponentOverrides({textEncoders:true,vaes:true,audioVaes:true,textProjections:true});
@@ -1873,6 +1887,7 @@ const promptTools=forgeContext&&<>
   rememberDraft();outgoingDraft.current=null;explicitScopeRestore.current=true;draftEpoch.current++;setModelIdentity('');setEditorSnapshot(undefined);
   setHistoryDraft(null);
   const d=next?.draft??{positivePrompt:readPref('studio.run.positive','',isString),negativePrompt:readPref('studio.run.negative','',isString),checkpoint:readPref('studio.run.checkpoint','',isString),width:readPref('studio.run.width',1024,isNumber),height:readPref('studio.run.height',1024,isNumber),steps:readPref('studio.run.steps',20,isNumber),cfg:readPref('studio.run.cfg',5,isNumber),sampler:readPref('studio.run.sampler','euler',isString),scheduler:readPref('studio.run.scheduler','normal',isString),seed:readPref('studio.run.seed',0,isSeed),denoise:readPref('studio.run.denoise',0.6,isNumber),pipeline:readPref('studio.run.pipeline','t2i',oneOf(...pipelines))};
+  setLyingSigma({...defaultLyingSigma});
   onProject(next);setPositive(d.positivePrompt);setNegative(d.negativePrompt);setCheckpoint(d.checkpoint);setWidth(d.width);setHeight(d.height);setSteps(d.steps);setCfg(d.cfg);setSampler(d.sampler);setScheduler(d.scheduler);setSeed(d.seed);setDenoise(d.denoise);setPipeline(d.pipeline);
   setSeedMode(next?'fixed':readPref('studio.run.seedMode','random',oneOf('random','fixed')));
   setResolution(next?'fixed':readPref('studio.run.resolution','fixed',oneOf('fixed','model','custom',...Object.keys(resolutions))));
@@ -2101,9 +2116,10 @@ const promptTools=forgeContext&&<>
       {samplerField}
       {sigmas?<label className="wb-field"><span>{t('studio.recipe.scheduler')}</span><select value="custom" disabled title={t('studio.run.customSchedule.hint')}><option value="custom">{t('studio.run.customSchedule')}</option></select></label>
        :pick('studio.recipe.scheduler',scheduler,choices?.schedulers??[],setScheduler,loadChoices)}
+      {!isVideo&&!isMusic&&<LyingSigmaControls value={lyingSigma} onChange={setLyingSigma} unavailable={lyingSigmaUnavailable}/>}
       <div className="wb-field wb-seed">
-       <label><span>{t('studio.run.seed')}</span><input data-seed aria-label={t('studio.run.seed')} type="number" inputMode="numeric" value={seed} min={0} max={Number.MAX_SAFE_INTEGER} step={1} onChange={e=>{const n=Number(e.target.value);if(isSeed(n))fixedSeed(n);}}/></label>
-       <div className="wb-seed-row"><button type="button" aria-label={t('studio.run.seedDecrease')} title={t('studio.run.seedDecrease')} onClick={()=>fixedSeed(seed===0?Number.MAX_SAFE_INTEGER:seed-1)}>−</button><button type="button" aria-label={t('studio.run.seedIncrease')} title={t('studio.run.seedIncrease')} onClick={()=>fixedSeed(seed===Number.MAX_SAFE_INTEGER?0:seed+1)}>+</button>{(['random','fixed'] as const).map(mode=><button key={mode} type="button" aria-pressed={seedMode===mode} onClick={()=>setSeedMode(mode)}>{t(`studio.run.seedMode.${mode}`)}</button>)}<button type="button" aria-label={t('studio.run.newSeed')} title={t('studio.run.newSeed')} onClick={()=>setSeed(randomSeed())}>⟳</button></div>
+       <div className="wb-seed-heading"><span>{t('studio.run.seed')}</span><div className="wb-seed-row" data-seed-actions><button type="button" aria-label={t('studio.run.seedDecrease')} title={t('studio.run.seedDecrease')} onClick={()=>fixedSeed(seed===0?Number.MAX_SAFE_INTEGER:seed-1)}>−</button><button type="button" aria-label={t('studio.run.seedIncrease')} title={t('studio.run.seedIncrease')} onClick={()=>fixedSeed(seed===Number.MAX_SAFE_INTEGER?0:seed+1)}>+</button>{(['random','fixed'] as const).map(mode=><button key={mode} type="button" aria-pressed={seedMode===mode} onClick={()=>setSeedMode(mode)}>{t(`studio.run.seedMode.${mode}`)}</button>)}<button type="button" aria-label={t('studio.run.newSeed')} title={t('studio.run.newSeed')} onClick={()=>setSeed(randomSeed())}>⟳</button></div></div>
+       <input data-seed aria-label={t('studio.run.seed')} type="number" inputMode="numeric" value={seed} min={0} max={Number.MAX_SAFE_INTEGER} step={1} onChange={e=>{const n=Number(e.target.value);if(isSeed(n))fixedSeed(n);}}/>
        <button type="button" disabled={!recentSeeds.length} onClick={()=>fixedSeed(recentSeeds[0])}>{t('studio.run.seedLast')}</button>
        <details className="wb-seed-history"><summary>{t('studio.run.seedHistory')}</summary>{recentSeeds.map(value=><div className="wb-seed-row" key={value}><button type="button" aria-label={t('studio.run.seedUse',{seed:String(value)})} title={t('studio.run.seedUse',{seed:String(value)})} onClick={()=>fixedSeed(value)}>{value}</button><button type="button" aria-label={t('studio.run.seedCopy',{seed:String(value)})} title={t('studio.run.seedCopy',{seed:String(value)})} onClick={()=>void copySeed(value)}>⧉</button></div>)}</details>
        {copyStatus&&<span role="status">{copyStatus}</span>}

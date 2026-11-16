@@ -40,6 +40,21 @@ pub(crate) fn source(id: &str) -> Result<Arc<RetainedSource>, String> {
     SESSION.lock().map_err(|_| INVALID)?.source(id)
 }
 
+/// Hold admission across removal so a concurrent inspection cannot retain the deleted file.
+pub(crate) fn with_deleted_source(
+    file: &std::fs::File,
+    remove: impl FnOnce() -> Result<(), String>,
+) -> Result<Option<String>, String> {
+    let session = SESSION.lock().map_err(|_| INVALID)?;
+    let source_id = session
+        .source
+        .as_ref()
+        .filter(|source| source.recheck().is_ok() && source.matches_file(file))
+        .and_then(|source| source.metadata.source_id.clone());
+    remove()?;
+    Ok(source_id)
+}
+
 pub(crate) fn strict_id(id: &str) -> Result<(), String> {
     let parsed = uuid::Uuid::parse_str(id).map_err(|_| INVALID)?;
     if parsed.get_version_num() != 4 || parsed.to_string() != id {
@@ -174,6 +189,27 @@ mod tests {
             state.source(second.source_id.as_deref().unwrap()).is_err(),
             "a changed source fails the recheck"
         );
+    }
+
+    #[test]
+    fn deletion_holds_admission_and_failed_removal_keeps_the_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.mp4");
+        fs::write(&path, b"abcdefghijklmnop").unwrap();
+        let inspected = retain_source(crate::video_post::test_retained(
+            &path,
+            metadata("source.mp4"),
+        ))
+        .unwrap();
+        let result = with_deleted_source(&fs::File::open(&path).unwrap(), || {
+            assert!(
+                SESSION.try_lock().is_err(),
+                "inspection admission must wait for removal"
+            );
+            Err("removal failed".into())
+        });
+        assert_eq!(result, Err("removal failed".into()));
+        assert!(source(inspected.source_id.as_deref().unwrap()).is_ok());
     }
 
     #[test]

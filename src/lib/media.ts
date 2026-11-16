@@ -5,11 +5,12 @@ export interface MediaEntry {name:string;path:string;kind:'directory'|'file';sym
 export interface MediaListing {path:string;parent:string|null;entries:MediaEntry[];truncated:boolean}
 /** What a tab can show: a browsable URL plus its kind. Browser drops use revocable blob URLs. */
 export interface MediaItem {name:string;src:string;media:MediaKind;path?:string}
-export interface MediaDeletion {deleted:string[];failed:string[];errors?:string[]}
+export interface MediaDeletion {deleted:string[];failed:string[];errors?:string[];deletedVideoSourceIds?:string[]}
 /** Explicit confirmation is owned by the caller. Native code authorizes every path. */
 export async function deleteMedia(paths:string[]):Promise<MediaDeletion> {
  const report=await invoke<MediaDeletion>('native_media_delete',{paths});
  if(!report||!Array.isArray(report.deleted)||!Array.isArray(report.failed)||
+  (report.deletedVideoSourceIds!==undefined&&(!Array.isArray(report.deletedVideoSourceIds)||report.deletedVideoSourceIds.length>report.deleted.length||report.deletedVideoSourceIds.some(id=>typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))))||
   (report.errors!==undefined&&(!Array.isArray(report.errors)||report.errors.length>report.failed.length||report.errors.some(error=>typeof error!=='string'||error.length>131072)))||
   [...report.deleted,...report.failed].length!==paths.length||
   new Set([...report.deleted,...report.failed]).size!==paths.length||
