@@ -29,5 +29,21 @@
   "media.intake.label": "Coller ou déposer ici",
   "media.intake.hint": "Cliquez ici et appuyez sur Ctrl+V pour enregistrer une image du presse-papiers dans Input, ou déposez ici une image/vidéo depuis Médias ou le gestionnaire de fichiers pour l’y copier. L’original reste à sa place.",
   "media.intake.done": "Copié dans Input : {name}",
-  "media.intake.ignored": "Seules les images et les vidéos peuvent être copiées."
+  "media.intake.ignored": "Seules les images et les vidéos peuvent être copiées.",
+  "media.select.start": "Sélectionner des fichiers",
+  "media.select.cancel": "Terminer la sélection",
+  "media.select.title": "Sélectionner les médias à supprimer",
+  "media.select.count": "{count} sélectionné(s)",
+  "media.select.all": "Tout sélectionner",
+  "media.select.clear": "Effacer la sélection",
+  "media.select.limit": "Limitez le filtre à 500 fichiers maximum.",
+  "media.select.file": "Sélectionner {name}",
+  "media.delete.selected": "Supprimer la sélection…",
+  "media.delete.one": "Supprimer…",
+  "media.delete.owned": "Seuls les fichiers des dossiers Entrée/Sortie gérés peuvent être supprimés.",
+  "media.delete.confirm": "Supprimer définitivement {count} fichier(s) ?",
+  "media.delete.warning": "Les fichiers originaux seront supprimés du disque. Cette action est irréversible.",
+  "media.delete.busy": "Suppression des fichiers…",
+  "media.delete.done": "{count} fichier(s) supprimé(s).",
+  "media.delete.failed": "{count} fichier(s) n’ont pas pu être supprimés. Vérifiez les détails et tout emplacement de récupération avant de réessayer."
 }

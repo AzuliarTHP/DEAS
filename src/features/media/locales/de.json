@@ -29,5 +29,21 @@
   "media.intake.label": "Hier einfügen oder ablegen",
   "media.intake.hint": "Hier klicken und Strg+V drücken, um ein Bild aus der Zwischenablage in Input zu speichern, oder ein Bild/Video aus Medien oder dem Dateimanager hier ablegen, um es dorthin zu kopieren. Das Original bleibt, wo es ist.",
   "media.intake.done": "Nach Input kopiert: {name}",
-  "media.intake.ignored": "Nur Bilder und Videos können hineinkopiert werden."
+  "media.intake.ignored": "Nur Bilder und Videos können hineinkopiert werden.",
+  "media.select.start": "Dateien auswählen",
+  "media.select.cancel": "Auswahl beenden",
+  "media.select.title": "Medien zum Löschen auswählen",
+  "media.select.count": "{count} ausgewählt",
+  "media.select.all": "Alle auswählen",
+  "media.select.clear": "Auswahl aufheben",
+  "media.select.limit": "Filter auf höchstens 500 Dateien eingrenzen.",
+  "media.select.file": "{name} auswählen",
+  "media.delete.selected": "Auswahl löschen…",
+  "media.delete.one": "Löschen…",
+  "media.delete.owned": "Nur Dateien in den verwalteten Eingabe-/Ausgabeordnern können gelöscht werden.",
+  "media.delete.confirm": "{count} Datei(en) endgültig löschen?",
+  "media.delete.warning": "Die Originaldateien werden unwiderruflich vom Datenträger entfernt.",
+  "media.delete.busy": "Dateien werden gelöscht…",
+  "media.delete.done": "{count} Datei(en) gelöscht.",
+  "media.delete.failed": "{count} Datei(en) konnten nicht gelöscht werden. Prüfen Sie vor einem erneuten Versuch die Details und einen gegebenenfalls genannten Wiederherstellungsort."
 }

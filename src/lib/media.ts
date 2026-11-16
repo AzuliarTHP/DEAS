@@ -5,6 +5,18 @@ export interface MediaEntry {name:string;path:string;kind:'directory'|'file';sym
 export interface MediaListing {path:string;parent:string|null;entries:MediaEntry[];truncated:boolean}
 /** What a tab can show: a browsable URL plus its kind. Browser drops use revocable blob URLs. */
 export interface MediaItem {name:string;src:string;media:MediaKind;path?:string}
+export interface MediaDeletion {deleted:string[];failed:string[];errors?:string[]}
+/** Explicit confirmation is owned by the caller. Native code authorizes every path. */
+export async function deleteMedia(paths:string[]):Promise<MediaDeletion> {
+ const report=await invoke<MediaDeletion>('native_media_delete',{paths});
+ if(!report||!Array.isArray(report.deleted)||!Array.isArray(report.failed)||
+  (report.errors!==undefined&&(!Array.isArray(report.errors)||report.errors.length>report.failed.length||report.errors.some(error=>typeof error!=='string'||error.length>131072)))||
+  [...report.deleted,...report.failed].length!==paths.length||
+  new Set([...report.deleted,...report.failed]).size!==paths.length||
+  [...report.deleted,...report.failed].some(path=>typeof path!=='string'||!paths.includes(path)))throw new Error('Invalid native media deletion response');
+ if(report.deleted.length)window.dispatchEvent(new CustomEvent<MediaDeletion>('deas-media-deleted',{detail:report}));
+ return report;
+}
 export interface MediaRelocation {oldPath:string;path:string;starred?:boolean}
 /** Fired only after native move/reference repair succeeds; hosts repair their retained selections/jobs. */
 export async function starMedia(path:string,unstar=false):Promise<MediaRelocation> {

@@ -4,6 +4,7 @@ Run: uv run --no-project --with playwright python tools/verify_workspace_layout.
 Owns its Vite/browser children; never accesses real models, media or backend services.
 """
 import json
+from pathlib import Path
 from playwright.sync_api import expect
 import verify_postprocessing as runner
 import verify_workbench_collection as collection
@@ -159,4 +160,4 @@ def verify(browser, url, shots):
 
 if __name__ == '__main__':
     runner.verify = verify
-    runner.main()
+    runner.main(artifact_root=Path(__file__).resolve().parents[1]/'output/playwright')

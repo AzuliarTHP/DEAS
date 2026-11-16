@@ -117,6 +117,17 @@ The wider folder column wraps long names and keeps counts and eye controls visib
 Folders/filters and model cards have independent scroll areas in the Library
 workspace. Scrolling cards keeps the folder column in place.
 
+LoRA cards have a **+** action, also available as **Add to Studio LoRAs** in details
+and the right-click card menu (keyboard: Shift+F10).
+It adds a draft selection at weight 1 and briefly confirms the action with a floating
+notice that leaves buttons aligned and stays visible above scrolled panes/dialogs.
+Cached optional null metadata fields are accepted. Storage failures show a failure notice. It preserves
+an existing weight and leaving the current page/popup in place. It neither changes
+the main model nor starts generation. Use the LoRAs button below Studio's model
+picker to manage selected weights, order, on/off switches and named sets. Adding
+a retained disabled LoRA re-enables it with its previous weight and position. Click the dark backdrop outside
+the model-details popup to close it; tags commit before closing.
+
 ### Folder visibility
 
 Click the eye beside a folder to hide its files and descendants from cards,

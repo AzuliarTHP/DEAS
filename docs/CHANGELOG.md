@@ -1,9 +1,9 @@
 # Changelog
 
-## 0.2.37 BETA (unreleased)
+## 0.2.37 BETA
 
 - **SAM Auto Refine uses Mask Blur.** The SAM panel shares Inpaint's saved 0–31 Mask Blur value (default 4; explicit saved 0 remains off). Automatic, manual-source and imported-mask passes send it to the existing native sampling/composite blur chain, with context padding expanded by the blur radius. Legacy settings without the field keep zero blur; invalid values and explicit-mask geometry are rejected before uploads. This corrects mask feathering, not a proven fix for KREA2 detail loss.
-- **Switching model architecture no longer gets blocked by a hidden LoRA.** Installed adapters from another architecture remain saved but inactive and are omitted from the submitted intent. Missing adapters still block, compatible adapters remain active, and native validation still rejects actually applied incompatible LoRAs.
+- **Switching model architecture no longer gets blocked by a hidden LoRA.** Installed adapters from another architecture remain saved but inactive and are omitted from the submitted intent. Missing enabled adapters still block and compatible adapters remain active. Explicitly selected other-family adapters are allowed in the current model draft; native file/source/format/integrity validation is unchanged.
 
 - **Image upscalers in Post-Processing.** The Upscale model card now exposes the existing learned image upscaler for supported image pipelines, separately from video settings. Selecting an image upscaler enables the existing Refine / Upscale pass; choosing Lanczos removes the learned upscaler without disabling refinement. The image upscale factor defaults to 2× for fresh/reset settings, preserving explicit saved 1× and history ratios. H3 image and MOSS retain their existing unsupported-state validation.
 
@@ -14,6 +14,44 @@
 - **No stale result/export status after changing models.** Switching pipeline/model drafts clears the selected preview, not the queue or history. Metadata-free export feedback clears with its context, and a late dialog response cannot restore the old message.
 
 - **Quieter model settings.** Generic “Suitable for this context” and unknown-compatibility hints are omitted when they contain no actionable reason. Structural conflicts, missing components and file-format safety warnings remain visible; execution validation is unchanged.
+
+- Restore the native model browsing index across restarts; explicit Refresh checks
+  changes. Library/Studio share collapsible folders, visibility controls, sorting,
+  independent scrolling and View all. Library adds scoped metadata/previews Fetch,
+  Favorites, personal tags/notes and detail dialogs. Local JPG/JPEG, PNG, WebP,
+  GIF, AVIF and BMP previews use a shared fallback path.
+- Manage selected LoRA weights and named sets from the model-picker button. Add
+  LoRAs from Library cards, details or the right-click menu, without changing tabs
+  or opening a popup. A floating notice keeps action buttons aligned. Pending
+  additions survive asynchronous Studio loading and Windows folder spelling
+  differences; retries preserve weights and storage failures report failure. Native
+  index null metadata fields are accepted and normalized. Both success/error
+  notices use the browser top layer to escape pane and dialog clipping.
+  The larger selection dialog includes thumbnails and nested read-only details
+  with cached trigger words. The selection list scrolls independently, uses compact
+  thumbnails and supports pointer/keyboard reordering with edge auto-scroll.
+  Power icons retain disabled, greyed-out entries and weights; saved sets preserve
+  order and switches. Only enabled entries enter Run/Run Plan, in displayed order.
+  Trigger-word chips support Copy selected alongside Copy all. Outside clicks/Escape
+  close only the active dialog; Escape during a drag cancels that reorder.
+- Treat selected LoRA family labels as advisory in Studio, history and native
+  admission. Submit every active, present LoRA with its exact weight; retain
+  file/source, metadata binding, format, loader and integrity validation. Genuine
+  backend loading errors remain visible. Family declarations use a compact badge.
+- Add a personal prompt notebook with nested folders, a separate note-list pane,
+  positive/negative prompts and manual seeds. Explicit Save, unsaved-draft guards,
+  write-failure recovery and confirmed deletion keep it separate from generation.
+  Folder action icons sit beside All notes; note actions and fields stay compact.
+- Add confirmed single/bulk Media deletion within owned Input/Output roots, with
+  whole-batch preflight, job-idle checks, file-identity guards and partial-failure
+  feedback. Deletion is permanent and restricted to regular media files.
+- Returning to Studio no longer scans models or briefly disables Run. Windows
+  output publication uses no-overwrite rename for exFAT, with grouped rollback;
+  the POSIX hard-link path is unchanged.
+- **Integration review fixes.** Library actions honor busy/locked state and keyboard menus focus an enabled action. Media deletion also fences RefMod exports, captures Linux files before identity-checked deletion, and displays no-clobber recovery locations after failures. Deleted sources clear Studio, Forge and TVE selections, including delayed inspections. Model-index traversal/cache reads are bounded and reject unsafe paths. Output filename repair keeps identical basenames in different subfolders independent.
+- Extend six locales, shared diagnostics, documentation and disposable/synthetic
+  fixtures. Runtime caches, personal notes/sets, models and credentials are not
+  included in source changes.
 
 ## 0.2.36 BETA
 

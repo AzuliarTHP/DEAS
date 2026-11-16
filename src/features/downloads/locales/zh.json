@@ -241,5 +241,8 @@
   "library.folderHiddenByParent": "被父文件夹隐藏",
   "library.viewAll": "查看全部",
   "library.viewAllHelp": "滚动时自动显示后续匹配卡片，不重新扫描文件夹。",
-  "library.loadingMore": "正在加载更多模型…"
+  "library.loadingMore": "正在加载更多模型…",
+  "library.addLora": "添加到 Studio LoRA",
+  "library.loraAdded": "已将 LoRA 添加到 Studio。",
+  "library.loraAddFailed": "无法添加 LoRA，请重试。"
 }

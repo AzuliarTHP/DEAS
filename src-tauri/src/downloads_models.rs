@@ -14,9 +14,8 @@ use std::{
 };
 
 const EXTENSIONS: [&str; 7] = ["safetensors", "sft", "ckpt", "pt", "pth", "gguf", "bin"];
-// The walk guard is a runaway guard for a misconfigured root, not a real library; the UI payload
-// has its own cap and says so when it cuts. shortcut: listing describes every found file before
-// capping; revisit when someone actually walks 100k.
+// Bound visited entries as well as models: empty directories and sidecars must not bypass the walk guard.
+// The separate UI payload cap remains below the runaway guard.
 const MAX_WALK: usize = 100_000;
 const MAX_LISTING: usize = 25_000;
 const MAX_DEPTH: usize = 8;
@@ -801,9 +800,16 @@ pub(crate) fn validate_selected_context(
             if model
                 .check
                 .as_ref()
-                .is_some_and(|c| c.compatibility == "blocked")
+                .is_some_and(|c| c.blocks_execution(field))
             {
                 return Err(format!("MODEL_EVIDENCE_CONFLICT: {name}"));
+            }
+            // Explicitly selected LoRAs may have incorrect provider, header-label or
+            // declaration families. Keep source/integrity/sidecar checks above and
+            // let the backend loader apply the exact selected file and strength.
+            if field == "loras" {
+                selected_source.verify()?;
+                return Ok(());
             }
             if let Some(expected) = family {
                 if let Some(slot) = slot {
@@ -818,14 +824,7 @@ pub(crate) fn validate_selected_context(
                     selected_source.verify()?;
                     return Ok(());
                 }
-                if ![
-                    "checkpoints",
-                    "diffusionModels",
-                    "ggufDiffusionModels",
-                    "loras",
-                ]
-                .contains(&field)
-                {
+                if !["checkpoints", "diffusionModels", "ggufDiffusionModels"].contains(&field) {
                     selected_source.verify()?;
                     return Ok(());
                 }
@@ -844,16 +843,8 @@ pub(crate) fn validate_selected_context(
                         &source.dir.path.join(&source.name),
                     );
                 source.verify()?;
-                if detected.as_deref().is_some_and(|id| {
-                    if field == "loras" {
-                        crate::model_families::lora_family(id)
-                            != crate::model_families::lora_family(expected)
-                    } else {
-                        id != expected
-                    }
-                }) || (field != "loras"
-                    && expected.starts_with("ace-step")
-                    && detected.is_none())
+                if detected.as_deref().is_some_and(|id| id != expected)
+                    || (expected.starts_with("ace-step") && detected.is_none())
                 {
                     return Err(
                         "MODEL_FAMILY_MISMATCH: intent does not match source-bound model identity"
@@ -968,7 +959,11 @@ fn walk(
     dir: &Path,
     depth: usize,
     out: &mut Vec<(&'static str, PathBuf, PathBuf)>,
+    remaining: &mut usize,
 ) {
+    if *remaining == 0 || out.len() >= MAX_WALK {
+        return;
+    }
     let Ok((resolved, _)) = resolve_directory(dir) else {
         return;
     };
@@ -976,9 +971,11 @@ fn walk(
         return;
     };
     let mut entries: Vec<_> = entries
+        .take(*remaining)
         .flatten()
         .filter_map(|e| Some((dir.join(e.file_name()), e.file_type().ok()?)))
         .collect();
+    *remaining -= entries.len();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     for (path, kind) in entries {
         if out.len() >= MAX_WALK {
@@ -992,7 +989,7 @@ fn walk(
         }
         if (kind.is_dir() || kind.is_symlink()) && resolve_directory(&path).is_ok() {
             if depth < MAX_DEPTH {
-                walk(category, base, &path, depth + 1, out);
+                walk(category, base, &path, depth + 1, out, remaining);
             }
         } else if is_model(&path) {
             out.push((category, base.to_path_buf(), path));
@@ -1009,14 +1006,15 @@ pub fn scan(root: &Path) -> Result<Vec<LocalModel>, String> {
         return Err(format!("{}: not an existing directory", root.display()));
     }
     let mut jobs = vec![];
+    let mut remaining = MAX_WALK;
     for (category, base) in crate::settings::model_locations(root) {
-        walk(category, &base, &base, 0, &mut jobs);
+        walk(category, &base, &base, 0, &mut jobs, &mut remaining);
     }
-    if jobs.len() >= MAX_WALK {
+    if remaining == 0 || jobs.len() >= MAX_WALK {
         crate::logs::push(
             crate::logs::Source::Deas,
             &format!(
-                "WARN: model walk stopped at {MAX_WALK} files under {}",
+                "WARN: model walk reached its {MAX_WALK} entry/file boundary under {}",
                 root.display()
             ),
         );
@@ -1441,6 +1439,30 @@ pub async fn native_model_info(
 mod tests {
     use super::*;
 
+    #[test]
+    fn walk_budget_counts_nonmodels_and_empty_directories_across_roots() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("loras");
+        std::fs::create_dir(&base).unwrap();
+        for name in ["empty-one", "empty-two", "empty-three"] {
+            std::fs::create_dir(base.join(name)).unwrap();
+        }
+        std::fs::write(base.join("notes.txt"), b"not a model").unwrap();
+        let mut jobs = vec![];
+        let mut remaining = 2;
+        walk("loras", &base, &base, 0, &mut jobs, &mut remaining);
+        assert_eq!(remaining, 0);
+        assert!(jobs.is_empty());
+        let other = dir.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        std::fs::write(other.join("a.pt"), b"fixture").unwrap();
+        walk("loras", &other, &other, 0, &mut jobs, &mut remaining);
+        assert!(jobs.is_empty());
+        remaining = 1;
+        walk("loras", &other, &other, 0, &mut jobs, &mut remaining);
+        assert_eq!(jobs.len(), 1);
+    }
+
     fn directory_alias(target: &Path, alias: &Path) {
         #[cfg(unix)]
         std::os::unix::fs::symlink(target, alias).unwrap();
@@ -1724,6 +1746,43 @@ mod tests {
         assert_no_owned_temps(&first.path().join("checkpoints"));
     }
 
+    #[test]
+    fn selected_lora_labels_are_advisory_but_integrity_and_source_checks_remain() {
+        let (root, path) = family_fixture("loras");
+        let header = br#"{"__metadata__":{"modelspec.architecture":"stable-diffusion-xl"},"fixture.weight":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
+        bytes.extend(header);
+        bytes.extend(0f32.to_le_bytes());
+        std::fs::write(&path, bytes).unwrap();
+        let mut info = fixture_info(&path);
+        info.civitai = Some(civitai_info(&serde_json::json!({"id":1,"modelId":2,"name":"v1","model":{"name":"fixture","type":"LORA"},"baseModel":"Flux.1 D"})).unwrap());
+        write_info(&path, &info);
+        let declared = write_family(&path, Some("anima")).unwrap();
+        assert_eq!(declared.check.as_ref().unwrap().compatibility, "blocked");
+        let roots = [root.path().into()];
+        let reads = HASH_READS.with(|n| n.get());
+        for family in ["sdxl", "anima", "minimax-h3"] {
+            validate_selected_family(&roots, "loras", "unknown.safetensors", Some(family)).unwrap();
+        }
+        assert_eq!(HASH_READS.with(|n| n.get()), reads);
+        assert!(
+            validate_selected_family(&roots, "loras", "../unknown.safetensors", Some("anima"))
+                .is_err()
+        );
+        write_cache_bytes(&sidecar(&path), b"{broken");
+        assert!(
+            validate_selected_family(&roots, "loras", "unknown.safetensors", Some("anima"))
+                .unwrap_err()
+                .contains("MODEL_METADATA_INVALID")
+        );
+        std::fs::remove_file(sidecar(&path)).unwrap();
+        std::fs::write(&path, b"partial").unwrap();
+        assert!(
+            validate_selected_family(&roots, "loras", "unknown.safetensors", Some("anima"))
+                .unwrap_err()
+                .contains("MODEL_INTEGRITY_INVALID")
+        );
+    }
     #[test]
     fn model_check_compatible_variant_provider_and_lora_declaration() {
         let (root, path) = family_fixture("diffusion_models");

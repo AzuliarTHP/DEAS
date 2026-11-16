@@ -9,9 +9,9 @@ vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true),conv
 const model=(name:string,extra:Partial<LocalModel>={}):LocalModel=>({name,category:'loras',path:`/models/loras/${name}`,size:1048576,info:null,...extra});
 const fox=model('characters/fox.safetensors',{family:'sdxl',info:{sha256:'a',size:1,fetchedAt:1,civitai:{name:'Fox portrait',version:'v2',base:'SDXL',trainedWords:['foxface','portrait style'],preview:'https://image.civitai.com/fox.jpg',nsfw:true,category:'loras',modelId:1,versionId:1,modelType:'LORA'}}});
 const lamp=model('lighting/lamp.safetensors',{family:'flux'});
-function Host({models=[fox,lamp],onFetch}:{models?:LocalModel[];onFetch?:(models:LocalModel[],missingOnly:boolean)=>void}) {
+function Host({models=[fox,lamp],onFetch,locked=false}:{models?:LocalModel[];onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;locked?:boolean}) {
  const [selected,setSelected]=useState('');const [category,setCategory]=useState('loras');
- return <I18nProvider><InstalledGallery models={models} loaded root="/models" category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={false} actions={null} feedback={null} onFetch={onFetch} renderDetail={()=>'Native model details'}/></I18nProvider>;
+ return <I18nProvider><InstalledGallery models={models} loaded root="/models" category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} actions={null} feedback={null} onFetch={onFetch} renderDetail={()=>'Native model details'}/></I18nProvider>;
 }
 beforeEach(()=>{vi.mocked(invoke).mockReset().mockResolvedValue(undefined);localStorage.clear();localStorage.setItem('deas.locale.v1','en');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:vi.fn().mockResolvedValue(undefined)}});});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
@@ -137,4 +137,55 @@ it('View all automatically appends matching cards and remembers the toggle witho
  await waitFor(()=>expect(document.querySelectorAll('.library-card')).toHaveLength(125));
  fireEvent.click(screen.getByLabelText('View all'));
  await waitFor(()=>expect(document.querySelectorAll('.library-card')).toHaveLength(60));
+});
+
+it('adds a Library LoRA with a notice without opening a popup or starting work',()=>{
+ render(<Host/>);fireEvent.click(screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`}));
+ expect(screen.getByRole('status').textContent).toContain('LoRA added');expect(screen.queryByRole('dialog')).toBeNull();
+ const queue=JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!);expect(queue).toHaveLength(1);expect(queue[0].model.path).toBe(fox.path);expect(invoke).not.toHaveBeenCalled();
+});
+
+it('adds LoRAs from the right-click menu and keeps metadata editing available',()=>{
+ Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:vi.fn()});
+ vi.spyOn(HTMLDialogElement.prototype,'showModal').mockImplementation(function(this:HTMLDialogElement){this.setAttribute('open','');});
+ render(<Host/>);const card=screen.getByRole('button',{name:fox.name});
+ fireEvent.contextMenu(card);fireEvent.click(screen.getByRole('menuitem',{name:'Add to Studio LoRAs'}));
+ expect(screen.getByRole('status').textContent).toContain('LoRA added');expect(screen.queryByRole('dialog')).toBeNull();
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)[0].model.path).toBe(fox.path);
+ fireEvent.contextMenu(card);const edit=screen.getByRole('menuitem',{name:'Edit meta…'});
+ fireEvent.pointerDown(edit);fireEvent.click(edit);expect(screen.getByRole('dialog',{name:'Edit meta…'})).toBeTruthy();
+});
+it('does not add a locked Library LoRA and keeps keyboard metadata editing reachable',()=>{
+ render(<Host locked/>);
+ const add=screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`});
+ expect(add).toHaveProperty('disabled',true);fireEvent.click(add);
+ expect(localStorage.getItem('deas.pref.studio.loraAddQueue')).toBeNull();
+ fireEvent.contextMenu(screen.getByRole('button',{name:fox.name}));
+ expect(screen.getByRole('menuitem',{name:'Add to Studio LoRAs'})).toHaveProperty('disabled',true);
+ expect(document.activeElement).toBe(screen.getByRole('menuitem',{name:'Edit meta…'}));
+});
+
+it('accepts nullable native LoRA metadata without persisting CivitAI payloads',()=>{
+ const native=JSON.parse(JSON.stringify({...fox,metadataError:null,detectedFamily:null,familyOverride:null}));
+ render(<Host models={[native]}/>);fireEvent.click(screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`}));
+ expect(screen.getByRole('status').textContent).toContain('LoRA added');
+ const queue=JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!);
+ expect(queue[0].model.path).toBe(fox.path);expect(queue[0].model.info).toBeNull();
+ expect(invoke).not.toHaveBeenCalled();
+});
+
+it('cancels nested metadata editing without dismissing the Library detail dialog',()=>{
+ Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value:function(){this.open=true;}});
+ render(<Host/>);fireEvent.click(screen.getByRole('button',{name:fox.name}));
+ fireEvent.click(screen.getByRole('button',{name:'Edit meta…'}));
+ fireEvent(screen.getByRole('dialog',{name:'Edit meta…'}),new Event('cancel',{cancelable:true,bubbles:true}));
+ expect(screen.queryByRole('dialog',{name:'Edit meta…'})).toBeNull();
+ expect(screen.getByRole('dialog',{name:'Model details'})).toBeTruthy();
+ expect(invoke).not.toHaveBeenCalled();
+});
+
+it('shows persistence failures instead of an added notice',()=>{
+ render(<Host/>);vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new DOMException('full','QuotaExceededError');});
+ fireEvent.click(screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`}));
+ expect(screen.getByRole('alert').textContent).toContain('Could not add the LoRA');expect(screen.queryByRole('status')).toBeNull();
 });

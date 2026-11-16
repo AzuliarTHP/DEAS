@@ -1,5 +1,5 @@
 .model-meta-target { display: contents; }
-.model-meta-menu { max-width: min(15rem, 100vw); overflow-wrap: anywhere; position: fixed; z-index: 1000; padding: .3rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--panel); box-shadow: 0 .4rem 1.4rem #0008; }
+.model-meta-menu { display:grid; gap:.25rem; max-width: min(15rem, 100vw); overflow-wrap: anywhere; position: fixed; z-index: 1000; padding: .3rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--panel); box-shadow: 0 .4rem 1.4rem #0008; }
 .model-meta-menu button, .model-meta-actions button { color: inherit; background: var(--field); border: 1px solid var(--line); border-radius: .35rem; padding: .45rem .7rem; cursor: pointer; }
 .model-meta-menu button:focus-visible, .model-meta-actions button:focus-visible { outline: 2px solid var(--ok); }
 .model-meta-dialog { color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: .7rem; padding: 1.2rem; width: min(34rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; }
@@ -13,4 +13,7 @@
 .model-meta-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .model-meta-actions button:disabled { opacity: .5; cursor: default; }
 .model-declared { display: block; font-size: .7rem; color: var(--ok); overflow-wrap: anywhere; }
+.wb-tiles button { position:relative; }
+.wb-tiles .model-declared-compact { position:absolute; top:4px; right:4px; width:1.1rem; line-height:1.1rem; padding:0; border:1px solid var(--line); border-radius:.25rem; background:var(--field); font-size:.65rem; white-space:nowrap; }
+.wb-dock[data-view="list"] .model-declared-compact { position:static; flex:none; }
 .wb-tiles button[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }

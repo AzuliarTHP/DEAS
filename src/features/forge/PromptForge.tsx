@@ -9,7 +9,7 @@ import type { Size } from '../../lib/resolution';
 /** MOSS has a native writer but no generation family yet. */
 const dialects = [...new Set([...familyDialects, 'MOSS'])];
 import { isString, oneOf, usePref } from '../../lib/preferences';
-import { relativeMediaPath, type MediaItem } from '../../lib/media';
+import { normalizedMediaPath, relativeMediaPath, type MediaDeletion, type MediaItem } from '../../lib/media';
 import { mediaTypes, mediaViews, type MediaSort, type MediaType, type MediaView } from '../media/MediaLibrary';
 import { MediaPanel } from '../media/MediaPanel';
 import { ModelSelect, useForgeModels } from './ForgeButton';
@@ -42,6 +42,14 @@ export function PromptForge({ endpoint, root, inputDir, outputDir, canvasContext
   const [brief, setBrief] = usePref('forge.brief', '', isString);
   const [pictures, setPictures] = useState<Picture[]>([]);
   useLayoutEffect(() => { setPictures([]); }, [endpoint, root, inputDir, outputDir]);
+  useEffect(() => {
+    const removed = (event: Event) => {
+      const paths = new Set((event as CustomEvent<MediaDeletion>).detail.deleted.map(normalizedMediaPath));
+      setPictures(values => values.some(p => paths.has(normalizedMediaPath(p.nativePath))) ? values.filter(p => !paths.has(normalizedMediaPath(p.nativePath))) : values);
+    };
+    window.addEventListener('deas-media-deleted', removed);
+    return () => window.removeEventListener('deas-media-deleted', removed);
+  }, []);
   const [query, setQuery] = useState('');
   const [sort, setSort] = usePref<MediaSort>('forge.media.sort', 'date', oneOf('date', 'name', 'size'));
   const [view, setView] = usePref<MediaView>('forge.media.view', 'tiles', oneOf(...mediaViews));

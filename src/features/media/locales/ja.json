@@ -29,5 +29,21 @@
   "media.intake.label": "ここに貼り付け／ドロップ",
   "media.intake.hint": "ここをクリックして Ctrl+V を押すとクリップボードの画像を Input に保存します。メディアやファイルマネージャーから画像・動画をここにドロップすると Input にコピーします。元のファイルはそのままです。",
   "media.intake.done": "Input にコピーしました: {name}",
-  "media.intake.ignored": "コピーできるのは画像と動画のみです。"
+  "media.intake.ignored": "コピーできるのは画像と動画のみです。",
+  "media.select.start": "ファイルを選択",
+  "media.select.cancel": "選択を終了",
+  "media.select.title": "削除するメディアを選択",
+  "media.select.count": "{count} 件選択中",
+  "media.select.all": "すべて選択",
+  "media.select.clear": "選択を解除",
+  "media.select.limit": "フィルターを絞り込み、500 件以下にしてください。",
+  "media.select.file": "{name} を選択",
+  "media.delete.selected": "選択したファイルを削除…",
+  "media.delete.one": "削除…",
+  "media.delete.owned": "管理対象の入力・出力フォルダー内のファイルのみ削除できます。",
+  "media.delete.confirm": "{count} 件のファイルを完全に削除しますか？",
+  "media.delete.warning": "元のファイルがディスクから削除されます。元に戻すことはできません。",
+  "media.delete.busy": "ファイルを削除中…",
+  "media.delete.done": "{count} 件のファイルを削除しました。",
+  "media.delete.failed": "{count} 件のファイルを削除できませんでした。再試行する前に、詳細と復旧先が表示されている場合はその場所を確認してください。"
 }

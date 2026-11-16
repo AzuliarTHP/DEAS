@@ -6,6 +6,8 @@ import { describeMedia, draggedItem, dragItem, dropCssPoint, MEDIA_DRAG, itemFro
 import { usePref } from '../../lib/preferences';
 import { StarMediaButton } from './StarMediaButton';
 import { relocatedMediaItem, type MediaRelocation } from '../../lib/media';
+import { deleteMedia, type MediaDeletion } from '../../lib/media';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import './media.css';
 const depths=[1,2,3,4,5];
 const isDepth=(v:unknown):v is number=>typeof v==='number'&&depths.includes(v);
@@ -90,6 +92,18 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const [dropped,setDropped]=useState<MediaItem[]>([]);
  const [error,setError]=useState('');
+ const [selectMode,setSelectMode]=useState(false),[picked,setPicked]=useState<Set<string>>(()=>new Set());
+ const [confirmDelete,setConfirmDelete]=useState<MediaItem[]|null>(null),[deleting,setDeleting]=useState(false),[deleteStatus,setDeleteStatus]=useState('');
+ const selectionScope=useRef('');selectionScope.current=JSON.stringify([listing?.path,filter,type]);
+ const canDelete=(item:MediaItem)=>native&&!!item.path&&(underRoot(item.path,roots.output)||underRoot(item.path,roots.input));
+ const togglePicked=(path:string)=>setPicked(old=>{const next=new Set(old);if(next.has(path))next.delete(path);else if(next.size<500)next.add(path);return next;});
+ const performDelete=async(items:MediaItem[])=>{
+  const scope=selectionScope.current;
+  setConfirmDelete(null);setDeleting(true);setError('');setDeleteStatus('');
+  try{const report=await deleteMedia(items.map(item=>item.path!));if(mounted.current){setPicked(new Set(scope===selectionScope.current?report.failed:[]));setDeleteStatus(t('media.delete.done',{count:report.deleted.length}));if(report.failed.length)setError([t('media.delete.failed',{count:report.failed.length}),...(report.errors??[])].join('\n'));}}
+  catch(e){if(mounted.current)setError(String(e));}
+  finally{if(mounted.current)setDeleting(false);}
+ };
  const [dragging,setDragging]=useState(false);
  // Explicit copy-in field: a pasted picture or a dropped picture/video becomes a new file in Input.
  const intake=useRef<HTMLInputElement>(null);const [intakeStatus,setIntakeStatus]=useState('');
@@ -128,9 +142,19 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
   if(target&&underRoot(target.path,roots.output))void open(target.path,target.levels,target.picked);
  },[outputRevision]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{
-  const moved=(event:Event)=>{const move=(event as CustomEvent<MediaRelocation>).detail;listings.clear();thumbs.clear();setDirectories({});setDropped(items=>items.map(item=>relocatedMediaItem(item,move)));if(listing)void open(listing.path);};
+  const moved=(event:Event)=>{const move=(event as CustomEvent<MediaRelocation>).detail;listings.clear();thumbs.clear();setPicked(new Set());setDirectories({});setDropped(items=>items.map(item=>relocatedMediaItem(item,move)));if(listing)void open(listing.path);};
   window.addEventListener('deas-media-relocated',moved);return()=>window.removeEventListener('deas-media-relocated',moved);
  },[listing]);
+ useEffect(()=>{
+  const removed=(event:Event)=>{const {deleted}=(event as CustomEvent<MediaDeletion>).detail;
+   listings.clear();thumbs.clear();version.current++;setMenu(null);
+   setListing(old=>old?{...old,entries:old.entries.filter(entry=>!deleted.includes(entry.path))}:old);
+   setDirectories(old=>Object.fromEntries(Object.entries(old).map(([path,data])=>[path,{...data,entries:data.entries.filter(entry=>!deleted.includes(entry.path))}])));
+   setDropped(old=>old.filter(item=>!item.path||!deleted.includes(item.path)));setPicked(old=>new Set([...old].filter(path=>!deleted.includes(path))));
+  };
+  window.addEventListener('deas-media-deleted',removed);return()=>window.removeEventListener('deas-media-deleted',removed);
+ },[]);
+ useEffect(()=>{setPicked(new Set());setDeleteStatus('');},[listing?.path,filter,type,depth]);
  const changeDepth=(levels:number)=>{setDepth(levels);if(listing)void open(listing.path,levels);};
  const rootName=underRoot(treeRoot,roots.output)?'root':underRoot(treeRoot,roots.input)?t('media.root.input'):treeRoot.split(/[\\/]+/).filter(Boolean).at(-1)??treeRoot;
  const parent=listing?.parent&&underRoot(listing.parent,treeRoot)&&normalizedPath(listing.path)!==normalizedPath(treeRoot)?listing.parent:null;
@@ -198,6 +222,7 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
  const choose=(entry:MediaEntry)=>{const item=itemFromEntry(entry);if(item)onSelect(item);};
  const visible=useMemo(()=>{const q=filter.trim().toLowerCase();return listing?.entries.filter(e=>e.kind==='file'&&e.media&&(type==='all'||e.media===type)&&(!q||e.name.toLowerCase().includes(q)))
   .sort((a,b)=>sort==='date'?b.modified-a.modified:sort==='size'?b.size-a.size:a.name.localeCompare(b.name))??[];},[listing,filter,sort,type]);
+ const selectable=visible.filter(entry=>!entry.symlink&&canDelete(itemFromEntry(entry)!));
  const loadFolder=async(path:string)=>{
   if(pendingFolders.current.has(path))return;
   pendingFolders.current.add(path);
@@ -247,19 +272,25 @@ export function MediaLibrary({selected,onSelect,roots={},outputRevision=0,filter
     onDrop={e=>{const item=draggedItem(e.dataTransfer);if(!item)return;e.preventDefault();e.stopPropagation();setDragging(false);if(item.path)void copyIn([item.path]);else setIntakeStatus(t('media.intake.ignored'));}}/>}
    {intakeStatus&&<span className="media-intake-status" role="status">{intakeStatus}</span>}
    <span className="media-drop-hint">{t(native?'media.dropHelp':'media.browserHelp')}</span>
-   <button type="button" disabled={!native} onClick={()=>void pick()}>{t('media.openFolder')}</button></header>
+   {native&&<button type="button" aria-pressed={selectMode} disabled={deleting} onClick={()=>{setSelectMode(value=>!value);setPicked(new Set());}}>{t(selectMode?'media.select.cancel':'media.select.start')}</button>}
+   <button type="button" disabled={!native||deleting} onClick={()=>void pick()}>{t('media.openFolder')}</button></header>
   <div className="media-browser">
    {listing&&<nav className="media-folders" aria-label={t('media.folders')}>
     <div className="media-path" aria-label={t('media.currentFolder')}><button type="button" disabled={!parent} aria-label={t('media.up')} onClick={()=>parent&&void open(parent)}>↑</button></div>
     <ul>{treeRoot&&folderBranch(treeRoot,rootName)}</ul>
    </nav>}
    <div className="media-files">
+  {selectMode&&<div className="media-selection" role="group" aria-label={t('media.select.title')}><span>{t('media.select.count',{count:picked.size})}</span><button type="button" disabled={deleting||!selectable.length||selectable.length>500} title={selectable.length>500?t('media.select.limit'):undefined} onClick={()=>setPicked(new Set(selectable.map(entry=>entry.path)))}>{t('media.select.all')}</button><button type="button" disabled={deleting||!picked.size} onClick={()=>setPicked(new Set())}>{t('media.select.clear')}</button><button type="button" disabled={deleting||!picked.size} onClick={()=>setConfirmDelete(selectable.filter(entry=>picked.has(entry.path)).map(entry=>itemFromEntry(entry)!))}>{t('media.delete.selected')}</button></div>}
+  {deleteStatus&&<p className="media-help" role="status">{deleteStatus}</p>}
+  {deleting&&<p className="media-help" role="status">{t('media.delete.busy')}</p>}
   {dropped.length>0&&<ul className="media-list" aria-label={t('media.dropped')}>{dropped.filter(i=>type==='all'||i.media===type).map((item,i)=><li key={`${item.src}-${i}`} data-mark={mark(item.path)}><button type="button" data-media={item.media} aria-current={selected?.src===item.src} draggable onDragStart={e=>dragItem(e.dataTransfer,item)} onContextMenu={onMenu(item)} onClick={()=>onSelect(item)}>{thumb(item.media,item.src)}<span className="media-name">{item.name}</span></button>{badge(item.path)}{canStar(item)&&<StarMediaButton item={item}/>}</li>)}</ul>}
   {error&&<p className="media-error" role="alert">{error}</p>}
-  {listing&&<Tiles folder={listing.path} layout={view} className="media-list" aria-label={t('media.entries')} items={visible} render={entry=><li key={entry.path} data-mark={mark(entry.path)}><button type="button" data-kind={entry.kind} data-media={entry.media??undefined} aria-current={selected?.path===entry.path} title={entry.name} draggable onDragStart={e=>{const item=itemFromEntry(entry);if(item)dragItem(e.dataTransfer,item);}} onContextMenu={onMenu(itemFromEntry(entry))} onClick={()=>choose(entry)}>{native&&(entry.media==='image'||entry.media==='video')?<Thumb key={thumbKey(entry)} entry={entry}/>:thumb(entry.media,null)}<span className="media-name">{entry.name}{entry.symlink&&<span className="media-symlink" aria-label={t('media.symlink')}> ⤳</span>}</span></button>{badge(entry.path)}{canStar(itemFromEntry(entry)!)&&<StarMediaButton key={`${entry.path}:${outputRevision}`} item={itemFromEntry(entry)!}/>}</li>}/>}
-  {menu&&<div className="media-menu" role="menu" aria-label={menu.item.name} style={{left:Math.min(menu.x,window.innerWidth-200),top:Math.min(menu.y,window.innerHeight-48*(1+menu.actions.length))}}>
+  {listing&&<Tiles folder={listing.path} layout={view} className="media-list" aria-label={t('media.entries')} items={visible} render={entry=><li key={entry.path} data-mark={mark(entry.path)} data-picked={picked.has(entry.path)||undefined}><button type="button" data-kind={entry.kind} data-media={entry.media??undefined} aria-current={selected?.path===entry.path} title={entry.name} draggable onDragStart={e=>{const item=itemFromEntry(entry);if(item)dragItem(e.dataTransfer,item);}} onContextMenu={onMenu(itemFromEntry(entry))} disabled={deleting} onClick={()=>selectMode?(!entry.symlink&&canDelete(itemFromEntry(entry)!)&&togglePicked(entry.path)):choose(entry)}>{native&&(entry.media==='image'||entry.media==='video')?<Thumb key={thumbKey(entry)} entry={entry}/>:thumb(entry.media,null)}<span className="media-name">{entry.name}{entry.symlink&&<span className="media-symlink" aria-label={t('media.symlink')}> ⤳</span>}</span></button>{selectMode&&<input className="media-pick" type="checkbox" aria-label={t('media.select.file',{name:entry.name})} checked={picked.has(entry.path)} disabled={deleting||entry.symlink||!canDelete(itemFromEntry(entry)!)} onChange={()=>togglePicked(entry.path)}/>}{badge(entry.path)}{!selectMode&&canStar(itemFromEntry(entry)!)&&<StarMediaButton key={`${entry.path}:${outputRevision}`} item={itemFromEntry(entry)!}/>}</li>}/>}
+  {menu&&<div className="media-menu" role="menu" aria-label={menu.item.name} style={{left:Math.min(menu.x,window.innerWidth-200),top:Math.min(menu.y,window.innerHeight-48*(2+menu.actions.length))}}>
    {menu.actions.map((a,i)=><button key={a.label} type="button" role="menuitem" autoFocus={i===0} disabled={!!a.blocked} title={a.blocked?undefined:a.hint} onClick={()=>{setMenu(null);a.onClick();}}>{a.label}{a.blocked&&<small>{a.blocked}</small>}</button>)}
-   {native&&menu.item.path&&<button type="button" role="menuitem" autoFocus={!menu.actions.length} onClick={()=>reveal(menu.item.path!)}>{t('media.reveal')}</button>}</div>}
+   {native&&menu.item.path&&<button type="button" role="menuitem" autoFocus={!menu.actions.length} onClick={()=>reveal(menu.item.path!)}>{t('media.reveal')}</button>}
+   {native&&menu.item.path&&<button type="button" role="menuitem" disabled={deleting||!canDelete(menu.item)} title={!canDelete(menu.item)?t('media.delete.owned'):undefined} onClick={()=>{setConfirmDelete([menu.item]);setMenu(null);}}>{t('media.delete.one')}</button>}</div>}
+  {confirmDelete&&<ConfirmDialog message={<><strong>{t('media.delete.confirm',{count:confirmDelete.length})}</strong><br/>{t('media.delete.warning')}<span className="media-delete-files">{confirmDelete.map(item=>item.name).join('\n')}</span></>} onDone={accepted=>{if(accepted)void performDelete(confirmDelete);else setConfirmDelete(null);}}/>}
   {listing&&!visible.length&&!error?<p className="media-help">{t('media.empty')}</p>:listing?.truncated?<p className="media-help">{t('media.truncated')}</p>:null}
    </div>
   </div>

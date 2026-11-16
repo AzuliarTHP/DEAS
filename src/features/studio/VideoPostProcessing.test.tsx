@@ -29,6 +29,21 @@ test('a Media-panel video pick is inspected natively by path without opening a c
   expect(screen.getByText('source.mp4')).toBeTruthy();
 });
 
+test.each(['success', 'failure'] as const)('deletion during path inspection discards late %s and releases admission', async outcome => {
+  const pending = deferred(), onInspected = vi.fn(), release = vi.fn();
+  vi.mocked(invoke).mockReturnValueOnce(pending.promise).mockResolvedValueOnce(source);
+  render(<I18nProvider><VideoPostProcessing onInspected={onInspected} release={release} picked={{ name: 'clip.mp4', media: 'video', src: '', path: 'C:\\out\\clip.mp4' }}/></I18nProvider>);
+  act(() => window.dispatchEvent(new CustomEvent('deas-media-deleted', { detail: { deleted: ['C:/out/clip.mp4'], failed: [] } })));
+  await act(async () => outcome === 'success' ? pending.resolve(source) : pending.reject(new Error('missing source')));
+  expect(document.querySelector('[data-video-post-source]')).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(onInspected).not.toHaveBeenCalled();
+  expect(release).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[data-video-post-inspect]')).toHaveProperty('disabled', false);
+  await act(async () => choose());
+  expect(onInspected).toHaveBeenCalledExactlyOnceWith(source);
+});
+
 test('inspection callback emits only successful metadata, never cancellation or failed reads', async () => {
   const onInspected = vi.fn();
   vi.mocked(invoke).mockResolvedValueOnce(source).mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('failed'));

@@ -457,7 +457,7 @@ test('model metadata action enables an unknown supported file while GGUF stays u
  expect([...document.querySelector<HTMLSelectElement>('[data-pipeline]')!.options].find(o=>o.value==='video')).toHaveProperty('disabled',true);
  expect([...picker.options].find(o=>o.value===bad.name)).toBeUndefined();
  expect([...picker.options].find(o=>o.value===gguf.name)?.disabled).toBe(false);
- expect(tile.textContent).toContain('User-declared family');
+ expect(tile.querySelector('.model-declared-compact')?.getAttribute('title')).toContain('User-declared family');
  fireEvent.contextMenu(tile);fireEvent.click(screen.getByRole('menuitem',{name:'Edit meta…'}));
  vi.mocked(writeModelFamily).mockResolvedValue(unknown);fireEvent.click(screen.getByRole('button',{name:'Reset to detection'}));
  await waitFor(()=>expect(tile.getAttribute('aria-disabled')).toBe('true'));
@@ -629,16 +629,16 @@ test('Wan LOW metadata errors remain visible dependencies of the selected HIGH m
  expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
-test.each(['metadata','gguf','integrity','conflict'])('selected LoRA %s errors block Run rather than silently dropping the adapter' ,async issue=>{
+test.each(['metadata','gguf','integrity','conflict'])('selected LoRA %s policy keeps file/format failures blocking and family labels advisory' ,async issue=>{
  const name=issue==='gguf'?'bad.gguf':'bad.safetensors';
  localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify([{name,strength:1}]));
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a.safetensors',size:1,info:null},{category:'loras',name,path:'/m/'+name,size:1,info:null,...(issue==='metadata'?{metadataError:'invalid metadata'}:issue==='integrity'?{integrity:'truncated'}:issue==='conflict'?{familyEvidence:'conflict' as const}:{family:'sdxl',familyOverride:'sdxl'})}]);
  vi.mocked(checkRecipePrerequisites).mockResolvedValue(evidence);
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
  await waitFor(()=>expect(document.querySelector('[data-model-picker]')?.textContent).toContain('a.safetensors'));
- expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',true);expect(screen.getByRole('alert').textContent).toContain(name);
+ expect(screen.getByRole('button',{name:'Run'})).toHaveProperty('disabled',issue!=='conflict');if(issue!=='conflict')expect(screen.getByRole('alert').textContent).toContain(name);
  if(issue==='integrity')expect(screen.getByRole('alert').textContent).toContain('File integrity check failed');
- if(issue==='conflict')expect(screen.getByRole('alert').textContent).toContain('Header and identity evidence conflict');
+ if(issue==='conflict')expect(screen.queryByRole('alert')).toBeNull();
  expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 

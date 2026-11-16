@@ -739,12 +739,21 @@ fn workbench_nonterminal_jobs_block_media_moves() {
     let held = Arc::new(completed("http://127.0.0.1:9/"));
     jobs.lock().unwrap().workbench.push(held.clone());
     assert!(jobs.media_move_idle().is_ok());
+    assert_eq!(jobs.with_idle_media_edit(|| Ok(7)).unwrap(), 7);
     for state in ["queued", "running", "unknown"] {
         held.lock().unwrap().job.as_mut().unwrap().state = state;
         assert!(jobs.media_move_idle().is_err(), "{state}");
+        assert!(
+            jobs.with_idle_media_edit(|| -> Result<(), String> { panic!("active deletion") })
+                .is_err(),
+            "{state}"
+        );
     }
     held.lock().unwrap().job = None;
     assert!(jobs.media_move_idle().is_err(), "preparation reservation");
+    assert!(jobs
+        .with_idle_media_edit(|| -> Result<(), String> { panic!("preparing deletion") })
+        .is_err());
 }
 
 #[test]

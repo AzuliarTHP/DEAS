@@ -29,8 +29,6 @@ const MAX_VALUES: u64 = 1 << 20;
 struct Family {
     id: String,
     loader: String,
-    #[serde(default, rename = "loraFamily")]
-    lora_family: Option<String>,
     #[serde(default)]
     components: std::collections::HashMap<String, Vec<String>>,
     #[serde(default)]
@@ -186,14 +184,6 @@ fn families() -> &'static [Family] {
         serde_json::from_str(include_str!("../../src/families/builtin.json"))
             .expect("bundled family plugin is valid")
     })
-}
-
-pub(crate) fn lora_family(id: &str) -> &str {
-    families()
-        .iter()
-        .find(|f| f.id == id)
-        .and_then(|f| f.lora_family.as_deref())
-        .unwrap_or(id)
 }
 
 pub(crate) fn component_matches(id: &str, slot: &str, component: &str) -> Option<bool> {

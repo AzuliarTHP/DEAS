@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { VideoPostInspection } from '../../lib/videoPost';
 import { VideoPostProcessing } from './VideoPostProcessing';
 import { TveBackendEnhance } from './TveBackendEnhance';
 import { MediaPanel } from '../media/MediaPanel';
 import { mediaTypes, mediaViews, type MediaRoots, type MediaSort, type MediaType, type MediaView } from '../media/MediaLibrary';
-import type { MediaItem } from '../../lib/media';
+import { normalizedMediaPath, type MediaDeletion, type MediaItem } from '../../lib/media';
 import { oneOf, usePref } from '../../lib/preferences';
 import './TrueVideoEnhancer.css';
 
@@ -20,6 +20,14 @@ export function TrueVideoEnhancer({ endpoint = '', roots }: { endpoint?: string;
   const [type, setType] = usePref<MediaType>('tve.media.type', 'video', oneOf(...mediaTypes));
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
+  useEffect(() => {
+    const removed = (event: Event) => {
+      const paths = new Set((event as CustomEvent<MediaDeletion>).detail.deleted.map(normalizedMediaPath));
+      setPicked(value => value?.path && paths.has(normalizedMediaPath(value.path)) ? null : value);
+    };
+    window.addEventListener('deas-media-deleted', removed);
+    return () => window.removeEventListener('deas-media-deleted', removed);
+  }, []);
   return <section className="tve" data-tve aria-label={t('studio.tve.title')}>
     <header className="tve-heading"><div><p className="eyebrow">{t('studio.tab.tve')}</p><h2>{t('studio.tve.title')}</h2></div></header>
     <div className="tve-columns">

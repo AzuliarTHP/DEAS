@@ -1,5 +1,48 @@
 # News
 
+## 0.2.37 BETA — Library and Studio workflow
+
+- Image/video model switches no longer get blocked by retained other-family LoRAs; their draft selections and weights are preserved. Explicit selections remain scoped to the current model draft.
+- SAM Auto Refine now uses the shared Mask Blur setting. Image Post-Processing exposes the learned upscaler with a fresh 2× default; existing explicit factors remain unchanged.
+- Added 7:9 / 9:7 canvas presets, fixed References sorting/thumbnail refresh, recovered queue stars after generation and cleared stale preview/export feedback on model changes. Generic non-actionable model advice stays quiet.
+
+- Restore the native model browsing index across restarts; explicit Refresh checks
+  changes. Library/Studio share collapsible folders, visibility controls, sorting,
+  independent scrolling and View all. Library adds scoped metadata/previews Fetch,
+  Favorites, personal tags/notes and detail dialogs. Local JPG/JPEG, PNG, WebP,
+  GIF, AVIF and BMP previews use a shared fallback path.
+- Manage selected LoRA weights and named sets from the model-picker button. Add
+  LoRAs from Library cards, details or the right-click menu, without changing tabs
+  or opening a popup. A floating notice keeps action buttons aligned. Pending
+  additions survive asynchronous Studio loading and Windows folder spelling
+  differences; retries preserve weights and storage failures report failure. Native
+  index null metadata fields are accepted and normalized. Both success/error
+  notices use the browser top layer to escape pane and dialog clipping.
+  The larger selection dialog includes thumbnails and nested read-only details
+  with cached trigger words. The selection list scrolls independently, uses compact
+  thumbnails and supports pointer/keyboard reordering with edge auto-scroll.
+  Power icons retain disabled, greyed-out entries and weights; saved sets preserve
+  order and switches. Only enabled entries enter Run/Run Plan, in displayed order.
+  Trigger-word chips support Copy selected alongside Copy all. Outside clicks/Escape
+  close only the active dialog; Escape during a drag cancels that reorder.
+- Treat selected LoRA family labels as advisory in Studio, history and native
+  admission. Submit every active, present LoRA with its exact weight; retain
+  file/source, metadata binding, format, loader and integrity validation. Genuine
+  backend loading errors remain visible. Family declarations use a compact badge.
+- Add a personal prompt notebook with nested folders, a separate note-list pane,
+  positive/negative prompts and manual seeds. Explicit Save, unsaved-draft guards,
+  write-failure recovery and confirmed deletion keep it separate from generation.
+  Folder action icons sit beside All notes; note actions and fields stay compact.
+- Add confirmed single/bulk Media deletion within owned Input/Output roots, with
+  whole-batch preflight, job-idle checks, file-identity guards and partial-failure
+  feedback. Deletion is permanent and restricted to regular media files.
+- Returning to Studio no longer scans models or briefly disables Run. Windows
+  output publication uses no-overwrite rename for exFAT, with grouped rollback;
+  the POSIX hard-link path is unchanged.
+- Extend six locales, shared diagnostics, documentation and disposable/synthetic
+  fixtures. Runtime caches, personal notes/sets, models and credentials are not
+  included in source changes.
+
 ## 0.2.36 BETA
 
 - H3 Hi-Res Regenerate now has its own refiner-LoRA strength. Upscale refine strength and 2D sharpness are shared with Latent upscale: change either card and the other card shows the same value. The new Hi-Res tuning needs DaSiWa node pack 0.5.55; normal authoring starts at the existing shared strength 0.2, while 1 restores the full three-step Hi-Res preset.

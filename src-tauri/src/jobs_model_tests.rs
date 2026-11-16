@@ -354,7 +354,7 @@ async fn local_declaration_preparation_rechecks_scanned_model_and_lora_without_p
 }
 
 #[tokio::test]
-async fn incompatible_applied_lora_still_rejects_before_submission() {
+async fn explicitly_applied_lora_family_label_is_advisory_before_submission() {
     let (base, task, posts) = backend().await;
     let root = tempfile::tempdir().unwrap();
     let model = declaration(root.path(), "checkpoints", "sd/model.safetensors").await;
@@ -369,11 +369,12 @@ async fn incompatible_applied_lora_still_rejects_before_submission() {
         .await
         .unwrap();
     draft["loras"] = json!([{"name":"style/a.safetensors","strength":1}]);
-    let error = Jobs::default()
+    let plan = Jobs::default()
         .prepare_with_models(base, draft, vec![root.path().into()])
         .await
-        .unwrap_err();
-    assert!(error.contains("MODEL_FAMILY_MISMATCH"), "{error}");
+        .unwrap();
+    assert_eq!(plan["graph"]["L1"]["inputs"]["lora_name"], "style/a.safetensors");
+    assert_eq!(plan["graph"]["L1"]["inputs"]["strength_model"], 1);
     assert_eq!(posts.load(Ordering::SeqCst), 0);
     task.abort();
 }
