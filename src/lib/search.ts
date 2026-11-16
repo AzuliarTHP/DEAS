@@ -66,6 +66,7 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.cfg', target: '[data-num="cfg"]', aliases: ['guidance'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.recipe.sampler', target: '[data-pick="studio.recipe.sampler"]' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.recipe.scheduler', target: '[data-pick="studio.recipe.scheduler"]' },
+  { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.lyingSigma', target: '[data-lying-sigma-factor]', aliases: ['detail', 'dishonesty', 'sigma'], reason: 'studio.run.post.imageOnly' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.seed', target: '[data-seed]' },
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock.references', label: 'studio.run.video.roles.first', target: '[data-video-role="first"]', aliases: ["video", "first", "frame"], reason: 'studio.run.video.roles.pick' },
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock.references', label: 'studio.run.video.roles.last', target: '[data-video-role="last"]', aliases: ["video", "last", "frame"], reason: 'studio.run.video.roles.pick' },

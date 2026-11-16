@@ -2,6 +2,12 @@
 
 [Documentation index](README.md) · [Plan](PLAN.md)
 
+**Image detail during sampling:** [Lying Sigma](LYING-SIGMA.md) adds an optional
+control below Sampler/Scheduler. Its default is **0 = Off**; nonzero settings
+use the bundled DEAS sampler adapter. The strength stepper uses 0.01 and new
+timing defaults are **25%–90%**. The adapter is deployed through normal owned
+backend startup, without an extra installer choice or full node-pack dependency.
+
 ## Output naming on external drives
 
 The owned-backend adapter publishes readable names with a no-overwrite rename on
@@ -652,6 +658,9 @@ History is optional local metadata in one versioned app-data JSON file. It store
 The Studio checkpoint selector is a compact native dropdown, using the same theme skin as the other selectors. It shows only the selected checkpoint while closed; opening it uses the platform menu rather than inserting a list into the settings pane. Normal platform keyboard selection remains available. There is no extra filter field, custom list or filter preference. Candidates follow the chosen pipeline through the existing compatibility checks. A remembered missing or incompatible selection remains visible but disabled with its reason; it is not silently replaced. Selecting another checkpoint preserves the current positive and negative prompts, including deliberately empty fields, while restoring that model’s other draft settings. Filtering does not bypass native execution validation.
 
 ## Seed controls
+
+The decrease/increase, Random/Fixed and New seed buttons share the **Seed** label
+row above the number field. Use last and the submitted-seed history remain below.
 
 Random/Fixed, New, exact wrapping ±1, Use last and ten submitted seeds with restore/copy persist across restarts. Manual edits/restores select Fixed. Failed preparation/submission adds no history. Seeds are exact within 0–9007199254740991, not full uint64.
 

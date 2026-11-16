@@ -72,6 +72,7 @@ export function GenerationMetadata({job,media=null,onRestore}:{job:JobStatus|nul
    {row('studio.run.cfg',i.cfg)}
    {row('studio.recipe.sampler',i.sampler)}
    {row('studio.recipe.scheduler',i.scheduler)}
+   {i.lyingSigma?.factor!==undefined&&i.lyingSigma.factor!==0&&<>{row('studio.run.lyingSigma',i.lyingSigma.factor)}{row('studio.run.lyingSigma.timing',`${i.lyingSigma.startPercent*100}% – ${i.lyingSigma.endPercent*100}%`)}</>}
    {i.diffusion&&<>{row('studio.run.textEncoder',i.diffusion.textEncoder)}{row('studio.run.vae',i.diffusion.vae)}</>}
    {!!i.loras?.length&&row('studio.run.loras',i.loras.map(l=>`${l.name} (${l.strength})`).join(', '))}
    {i.inputImage&&<>{row('studio.run.pipe.input',i.inputImage)}{row('studio.run.denoise',i.denoise)}</>}

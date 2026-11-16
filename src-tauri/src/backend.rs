@@ -9,6 +9,19 @@ fn install_output_naming(root: &Path) -> Result<(), String> {
         include_str!("output_naming.py").as_bytes(),
     )
 }
+fn install_lying_sigma(root: &Path) {
+    // Optional sampler: installation errors disable only its discovered capability.
+    if let Err(error) = install_adapter(
+        root,
+        "deas_lying_sigma.py",
+        include_bytes!("lying_sigma.py"),
+    ) {
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            &format!("WARN backend.lying-sigma install: {error}"),
+        );
+    }
+}
 fn install_adapter(root: &Path, name: &str, source: &[u8]) -> Result<(), String> {
     use crate::downloads::fs::Anchor;
     use std::io::Write;
@@ -737,6 +750,7 @@ impl Lifecycle {
             "deas_image_postprocess.py",
             include_bytes!("image_postprocess.py"),
         )?;
+        install_lying_sigma(root);
         install_adapter(
             root,
             "deas_sam3_video_window.py",
@@ -1205,6 +1219,39 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
 #[cfg(all(test, target_os = "linux"))]
 #[path = "backend_tests.rs"]
 pub(crate) mod tests;
+
+#[cfg(test)]
+mod lying_sigma_install_tests {
+    use super::*;
+    #[test]
+    fn bundled_adapter_is_installed_and_refreshed_without_package_setup() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("ComfyUI")).unwrap();
+        install_lying_sigma(root.path());
+        let path = root.path().join("ComfyUI/custom_nodes/deas_lying_sigma.py");
+        assert_eq!(fs::read(&path).unwrap(), include_bytes!("lying_sigma.py"));
+        fs::write(&path, "previous DEAS adapter").unwrap();
+        install_lying_sigma(root.path());
+        assert_eq!(fs::read(&path).unwrap(), include_bytes!("lying_sigma.py"));
+        assert!(!root.path().join("venv").exists());
+        assert!(!root.path().join("deas-plan.json").exists());
+    }
+    #[test]
+    fn failed_optional_adapter_install_is_logged_and_does_not_remove_a_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("ComfyUI/custom_nodes/deas_lying_sigma.py");
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("keep.txt"), "user data").unwrap();
+        install_lying_sigma(root.path());
+        assert_eq!(
+            fs::read_to_string(path.join("keep.txt")).unwrap(),
+            "user data"
+        );
+        assert!(crate::logs::native_logs(0)
+            .iter()
+            .any(|e| e.text.contains("WARN backend.lying-sigma install:")));
+    }
+}
 
 #[tauri::command]
 pub fn native_backend_start(

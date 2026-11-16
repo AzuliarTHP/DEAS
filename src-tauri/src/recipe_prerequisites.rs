@@ -13,7 +13,8 @@ const REQUIRED_NODES: [&str; 6] = [
 ];
 /// Image-to-image (`LoadImage`, `VAEEncode`), split diffusion-model loading and the DaSiWa
 /// Civitai-metadata saver; their absence blocks only the recipe variant that needs them.
-const OPTIONAL_NODES: [&str; 37] = [
+const OPTIONAL_NODES: [&str; 38] = [
+    "DEAS_LyingSigmaSampler",
     "DEAS_ImagePostprocessGate",
     "DEAS_VideoPostprocessGate",
     "TextEncodeQwenImage21",
@@ -55,7 +56,8 @@ const OPTIONAL_NODES: [&str; 37] = [
     "TextEncodeMageFlowEdit",
 ];
 /// Model-fixed sigma schedules (Qwen Image 2.1 Turbo, Flux.2): `ManualSigmas`/`Flux2Scheduler` → `SamplerCustomAdvanced` instead of `KSampler`.
-pub(crate) const SIGMA_NODES: [&str; 6] = [
+pub(crate) const SIGMA_NODES: [&str; 7] = [
+    "BasicScheduler",
     "RandomNoise",
     "CFGGuider",
     "KSamplerSelect",
@@ -223,6 +225,25 @@ fn h3_regenerate_tuning_ready(nodes: &Value) -> bool {
             && spec[1]["min"].as_f64() == Some(*min)
             && spec[1]["max"].as_f64() == Some(*max)
     })
+}
+
+fn lying_sigma_ready(nodes: &Value) -> bool {
+    let node = &nodes["DEAS_LyingSigmaSampler"];
+    node["output"][0] == "SAMPLER"
+        && [
+            ("sampler", "SAMPLER"),
+            ("dishonesty_factor", "FLOAT"),
+            ("start_percent", "FLOAT"),
+            ("end_percent", "FLOAT"),
+        ]
+        .iter()
+        .all(|(name, kind)| {
+            let input = &node["input"];
+            input["required"]
+                .get(*name)
+                .unwrap_or(&input["optional"][*name])[0]
+                == *kind
+        })
 }
 
 fn image_postprocess_ready(nodes: &Value) -> bool {
@@ -446,7 +467,7 @@ fn parse(base: &reqwest::Url, nodes: &Value) -> Result<Value, String> {
     Ok(json!({
         "baseUrl":base.as_str(), "recipeId":"checkpoint-text-to-image-diagnostic", "version":1,
         "allowlist":{
-            "nodes":REQUIRED_NODES.iter().chain(OPTIONAL_NODES.iter()).chain(SIGMA_NODES.iter()).chain(OPTION_NODES.iter()).chain(crate::jobs_sam3::NODES.iter()).chain(crate::jobs_sam3_video::NODES.iter()).chain(crate::jobs_face_refine::ALLOW_NODES.iter()).chain(crate::jobs::H3_EDIT_NODES.iter()).chain(crate::jobs_video::VIDEO_NODES.iter()).chain(crate::jobs_video::H3_CONTINUITY_NODES.iter()).chain(crate::jobs_video_post::POST_NODES.iter()).chain(crate::jobs_music::MUSIC_NODES.iter()).chain(crate::jobs_music::ace::NODES.iter()).filter(|name| definitions.contains_key(**name) && (**name != "DEAS_SAM3ShotMask" || sam3_shot_mask_ready(nodes)) && (**name != "DEAS_SAM3VideoWindow" || sam3_video_window_ready(nodes)) && (**name != "DEAS_H3FaceRefine" || face_refine_ready(nodes)) && (**name != "DEAS_ImagePostprocessGate" || image_postprocess_ready(nodes)) && (**name != "DEAS_VideoPostprocessGate" || video_postprocess_ready(nodes)) && (**name != "DEAS_H3StreamVideoSave" || h3_stream_saver_ready(nodes)) && (**name != "ModelPreviewOverrideKJ" || video_preview_ready(nodes)) && (**name != "DaSiWa_SeamlessLoop" || seamless_loop_ready(nodes))).collect::<Vec<_>>(),
+            "nodes":REQUIRED_NODES.iter().chain(OPTIONAL_NODES.iter()).chain(SIGMA_NODES.iter()).chain(OPTION_NODES.iter()).chain(crate::jobs_sam3::NODES.iter()).chain(crate::jobs_sam3_video::NODES.iter()).chain(crate::jobs_face_refine::ALLOW_NODES.iter()).chain(crate::jobs::H3_EDIT_NODES.iter()).chain(crate::jobs_video::VIDEO_NODES.iter()).chain(crate::jobs_video::H3_CONTINUITY_NODES.iter()).chain(crate::jobs_video_post::POST_NODES.iter()).chain(crate::jobs_music::MUSIC_NODES.iter()).chain(crate::jobs_music::ace::NODES.iter()).filter(|name| definitions.contains_key(**name) && (**name != "DEAS_LyingSigmaSampler" || lying_sigma_ready(nodes)) && (**name != "DEAS_SAM3ShotMask" || sam3_shot_mask_ready(nodes)) && (**name != "DEAS_SAM3VideoWindow" || sam3_video_window_ready(nodes)) && (**name != "DEAS_H3FaceRefine" || face_refine_ready(nodes)) && (**name != "DEAS_ImagePostprocessGate" || image_postprocess_ready(nodes)) && (**name != "DEAS_VideoPostprocessGate" || video_postprocess_ready(nodes)) && (**name != "DEAS_H3StreamVideoSave" || h3_stream_saver_ready(nodes)) && (**name != "ModelPreviewOverrideKJ" || video_preview_ready(nodes)) && (**name != "DaSiWa_SeamlessLoop" || seamless_loop_ready(nodes))).collect::<Vec<_>>(),
             "checkpoints":combo(nodes, "CheckpointLoaderSimple", "ckpt_name")?,
             "videos":options(nodes, "LoadVideo", "file", crate::jobs::model_name),
             "loras":combo(nodes, "LoraLoader", "lora_name")?,
@@ -514,6 +535,15 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn lying_sigma_discovery_requires_the_consumed_sampler_abi() {
+        let mut info = json!({"DEAS_LyingSigmaSampler":{"input":{"required":{"sampler":["SAMPLER"],"dishonesty_factor":["FLOAT",{}]},"optional":{"start_percent":["FLOAT",{}],"end_percent":["FLOAT",{}]}},"output":["SAMPLER"]}});
+        assert!(lying_sigma_ready(&info));
+        info["DEAS_LyingSigmaSampler"]["input"]["optional"]["end_percent"][0] = json!("INT");
+        assert!(!lying_sigma_ready(&info));
+        assert!(!lying_sigma_ready(&json!({})));
+    }
 
     #[test]
     fn h3_regenerate_original_requires_backend_target_choice() {

@@ -1,5 +1,175 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Unreleased image Lying Sigma — 2026-11-16
+
+Local contribution on `feat/image-lying-sigma`, based on upstream
+`6169460a75dc16ac26c50051841b617afc5174ad`. No application version bump,
+commit, push, PR publication or release was performed during these checks.
+
+The initial external-node prototype checks are followed by the final bundled
+sampler evidence below.
+
+### Implementation and inspected boundary
+
+- Advanced Image controls place the signed factor below Sampler/Scheduler,
+  default **0 = Off**, with the Off status beside the label and expandable
+  start/end percentages. Seed actions share the Seed heading row above its field.
+- The optional `LyingSigmaSampler` ABI was inspected at Detail Daemon revision
+  `3394e44afea04ed0188fb37b21f0d9952469766b`. Required/optional input types and
+  the SAMPLER output are capability-checked. The extension remains an external
+  dependency; no extension installation or installed custom-node patch occurred.
+- Local ComfyUI source inspected: `e9afbccc2669677076feb08e52658f129cd8c12b`,
+  including BasicScheduler, KSamplerSelect, SamplerCustomAdvanced and KSampler's
+  special penultimate-sigma handling. The installed profile declares Python
+  3.12.11 and PyTorch 2.14.1+cu130; this is manifest/source evidence, not a new
+  backend launch or inference test. No backend launch flags were exercised.
+- Native and TypeScript compilers share a full graph fixture in
+  `tests/fixtures/lying-sigma.json`. Zero preserves the original graph; nonzero
+  wraps the main pass after model/conditioning/mask wiring. Existing explicit
+  schedules retain their links and refinement remains independent.
+- Bounded validation covers exact optional-field shape, finite values, timing
+  order/ranges, unsupported implicit schedules and derived-step limits. Existing
+  native Workbench diagnostics/error redaction remain the shared logging path.
+
+### Automated evidence on Windows
+
+- TypeScript typecheck and production frontend build passed.
+- Core suite: **163 passed, 1 skipped**. UI suite: **2,048 passed in 113 files**
+  using `npm run test:ui -- --maxWorkers=6`. The final focused control tests also
+  passed, including fractional values, default-zero validity, presets/reset,
+  immutable submission values, missing-node blocking and relocated seed actions.
+- One earlier full UI run failed the existing immediate LoRA-restore assertion
+  in Workbench part 2. Its full 159-test file and subsequent complete UI runs
+  passed. No unrelated LoRA implementation or assertion was changed.
+- Native suite: **920 passed, 69 ignored**; binary/doc test targets passed.
+  New tests cover graph parity, zero neutrality, malformed values, image-edit
+  denoise, unchanged refinement, explicit schedules and Anima inpaint with LoRAs
+  and a model patch. Python developer-tool suite: **11 passed**.
+- Shared layout gate: **467 checks passed**, including the intentional broken
+  layout control. The targeted `tools/verify_lying_sigma.py` check passed six
+  locales at three viewport sizes, checked both requested row placements and
+  settings retention, and captured Off/enabled panel screenshots.
+- Paired-output pointer/geometry check: **16 checks passed, no product findings**.
+  Both browser scripts used their own loopback Vite process, synthetic media and
+  simulated read-only native IPC; process cleanup completed. These are Chromium
+  fixtures, not target-WebView acceptance.
+- Changed Rust files pass rustfmt. Full rustfmt still reports the same five
+  pre-existing files as the clean baseline. Strict Clippy reports the same six
+  Rust 1.100 `chunks_exact_to_as_chunks` lints in `audio_runtime.rs`,
+  `jobs_auto_refine.rs` and `jobs_preview.rs`. Clippy passes with only that known
+  category exempted through `-A clippy::chunks_exact_to_as_chunks`; no source
+  suppression was added.
+- Introduced relative documentation links, all six locale additions and
+  `git diff --check` passed.
+- Final Windows release build passed through `build-windows.cmd` (release
+  compilation reported 4m 03s). The 41,524,224-byte executable embeds the final
+  `index-BoV6ZB6O.js` and `index-CIOvB7eh.css` assets; both names were checked in
+  the binary after building. SHA-256:
+  `2f8179ecf440e4550b1dd9b1055e25f5952037a87911e590184d1a15ae3718a2`.
+
+### Remaining acceptance
+
+The automated checks above left the installed backend, model folders and user
+media unchanged. They performed no weight download, generation, training,
+real-library scan or service restart. The separately authorized installation and
+restart below provide additional native evidence.
+Native WebView2/Linux interaction, real-backend extension import/coexistence,
+representative model quality, inference cancellation, idle responsiveness and
+RAM/VRAM/runtime measurements remain open in [the plan](PLAN.md). Successful
+compilation and fixture timings do not establish image-quality or inference
+performance improvements. See [Lying Sigma](LYING-SIGMA.md) for setup and limits.
+
+### User-authorized Windows backend installation and discovery
+
+- Installed the reviewed Detail Daemon revision
+  `3394e44afea04ed0188fb37b21f0d9952469766b` (1.2.0) in the selected DEAS-owned
+  environment's `ComfyUI/custom_nodes/ComfyUI-Detail-Daemon`. Matplotlib 3.11.2
+  was already installed; no Python package upgrade or dependency replacement
+  was needed. The extension checkout is clean.
+- Confirmed the backend's process is owned by the running DEAS application and
+  its queue had zero running/pending jobs immediately before using DEAS's native
+  Backend **Restart** control. No process-name kill or external-service action
+  was used.
+- After restart, the real `object_info/LyingSigmaSampler` response identified
+  `custom_nodes.ComfyUI-Detail-Daemon` and the consumed SAMPLER/FLOAT input/output
+  contract. Core sampling, DaSiWa saver and DEAS postprocess registrations remain
+  present under their own modules.
+- Observed the actual Windows WebView2 Studio with the user's existing Anima
+  draft and nonzero factor retained: the missing-node message disappeared and
+  **Run** became enabled. No generation was submitted. This closes basic Windows
+  installation/discovery and missing-node recovery, not inference quality,
+  narrow-window/history interaction or Linux/native acceptance.
+
+### Bundled sampler and requested defaults follow-up
+
+- The final implementation bundles only the Lying Sigma algorithm in
+  `src-tauri/src/lying_sigma.py`, preserving the upstream MIT license/attribution.
+  It registers `DEAS_LyingSigmaSampler` through the existing owned-backend adapter
+  installation flow. There is no extra upgrade scope, full Detail Daemon download,
+  Matplotlib dependency, installation-plan migration or dependency-source patch.
+  The original third-party node can coexist and its embedded metadata remains
+  recognized, while new DEAS graphs use only the namespaced adapter.
+- Strength now steps by **0.01**; Arrow Down/Up from 0 produces -0.01/0. Fresh/reset
+  timing defaults are **Start 25%, End 90%**, preserving saved timing/precision.
+  The bundled node also defaults to strength 0 and timing 25%–90%.
+- Six Python contract tests cover registration/defaults, exact zero opt-out,
+  selected sampler/inpaint option preservation, callback/seed/mask/schedule
+  forwarding, signed numerical behavior, inclusive rounded model-percentage
+  boundaries and invalid input rejection. Rust filesystem fixtures cover adapter
+  installation/refresh without package setup and optional failure logging without
+  deleting a conflicting directory. Linux lifecycle fixtures were extended with
+  a pre-start file check; they were not executed on this Windows host.
+- The real installed ComfyUI core (`e9afbccc2669677076feb08e52658f129cd8c12b`)
+  and PyTorch **2.14.1+cu130** passed `verify_lying_sigma_runtime.py` with tiny CPU
+  tensors and model doubles. It uses actual `comfy.samplers.KSAMPLER`, verifies
+  signed sigma behavior, exact neutral identity, unchanged input/schedule and
+  preserved inpaint/options/callbacks. Neither Detail Daemon nor Matplotlib was
+  imported. This is API/numerical evidence, not real-model inference.
+- Final Windows gates: **922 native tests passed, 69 ignored; 2,048 UI tests
+  passed in 113 files; 163 core tests passed, 1 skipped; 17 Python tooling tests
+  passed**. Eight focused native feature tests passed. Production frontend build,
+  changed-file rustfmt and all-target Clippy passed with only the previously
+  recorded Rust 1.100 lint category exempted. The final targeted Chromium check
+  covers 18 locale/viewport combinations and verifies actual stepper behavior,
+  defaults, placements, persistence and the absence of a missing-adapter warning.
+  The earlier shared-layout/paired-output evidence above covers the unchanged
+  shell/output layout.
+- Earlier full UI runs intermittently failed existing asynchronous Forge,
+  Continuity and LoRA assertions. Their isolated files and the final complete
+  suite passed; their product implementation/assertions were not changed.
+- Final bundled-sampler Windows release build passed in **4m 21s**. The
+  41,529,344-byte executable contains `index-DqsYgzCJ.js`, `index-CIOvB7eh.css` and
+  the exact bundled Python source including its MIT notice. SHA-256:
+  `aca8a33cbddfb3ba4280c19d6e6a6e0a7a5cd7aeb1d81fb0e9ff66f33d54e740`.
+  The running older executable was preserved; the new artifact has a separate
+  filename and has not been launched against the user's backend.
+- The separately recorded earlier manual full-pack installation/discovery is
+  historical evidence. It does not establish native startup acceptance of this
+  bundled adapter. No real backend service, model library or media was changed
+  during this follow-up; generation and Linux/native acceptance remain open.
+
+### PR preparation on current upstream 0.2.38
+
+- Rebased the contribution onto upstream
+  `212f2a90fcf4196a2ecec7bb36697dbde1f5e375`. The shared capability filter retains
+  both Lying Sigma and upstream's new streaming H3 saver ABI checks; upstream
+  backend adapters, streaming controls, whole-source face refinement and startup
+  defaults are preserved. This contribution does not change the upstream version.
+- Rebased Windows checks passed: **163 core tests, 1 skipped; 2,056 UI tests in
+  115 files; 929 native tests, 71 ignored; 17 Python tooling tests**. Production
+  frontend build and all-target Clippy passed with the same previously recorded
+  Rust 1.100 lint category exempted. Shared Chromium layout passed **467 checks**;
+  the targeted sampler controls passed **18 locale/viewport checks**. Browser
+  checks remain simulated IPC evidence, and no real generation was submitted.
+- The rebased Windows release build passed in **4m 07s**. Its 41,575,424-byte
+  executable contains `index-DXWkjFZA.js`, `index-CIOvB7eh.css` and the exact
+  licensed sampler source. SHA-256:
+  `52f0a9b23561d0481d365141da9fadc5787a3d55468a38f03d15f4ebdb671d92`.
+- Repository-wide rustfmt still reports upstream formatting findings, including
+  the new 0.2.38 streaming code. Strict Clippy retains the recorded Rust 1.100
+  baseline category; no lint suppression or unrelated formatting change was
+  added to the contribution.
+
 ## Opt-in streaming H3 decode/export (0.2.38, unreleased)
 
 - Adapter `src-tauri/src/h3_stream_video.py` CPU suite against the installed Core: **11 passed**, including the stock H3 temporal decoder oracle (identical output through a full tensor versus the bounded sink, covering out-of-range blends and tails), real CPU codec/audio/metadata readback, cgroup-proportional admission, invalid model/layout rejection, scoped cancellation, disk-failure and no-clobber Original survival, and resource errors never becoming codec retries.

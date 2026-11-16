@@ -9,6 +9,8 @@ use std::{
 mod audio_post;
 #[path = "jobs_auto_refine.rs"]
 mod auto_refine;
+#[path = "jobs_lying_sigma.rs"]
+mod lying_sigma;
 pub use auto_refine::native_auto_refine;
 #[path = "jobs_outputs.rs"]
 mod job_outputs;
@@ -632,6 +634,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     if options.is_some_and(|o| !valid_options(o)) {
         return Err("Invalid options".into());
     }
+    lying_sigma::validate(object.get("lyingSigma"))?;
     // `sigmas` is a model-fixed schedule (steps + 1 values, descending to 0): ManualSigmas → SamplerCustomAdvanced replaces KSampler.
     let sigmas = object.get("sigmas");
     if sigmas.is_some_and(|s| !valid_sigmas(s, i["steps"].as_f64())) {
@@ -672,6 +675,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             + usize::from(reference.is_some())
             + usize::from(native_reference.is_some())
             + usize::from(resize.is_some())
+            + usize::from(object.contains_key("lyingSigma"))
             + usize::from(sigmas.is_some())
             + usize::from(mask.is_some())
             + usize::from(blur.is_some())
@@ -1233,6 +1237,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             }
         }
     }
+    lying_sigma::apply(&mut graph, object.get("lyingSigma"))?;
     Ok(graph)
 }
 

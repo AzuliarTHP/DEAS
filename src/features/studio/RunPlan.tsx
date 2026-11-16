@@ -77,6 +77,7 @@ export function RunPlan({intent,pipeline,notices,outputRoot,inputNotes=[]}:{inte
    </>)}
    {stage('generate',<>
     {row('studio.run.resolution.title',size(intent))}{row('studio.run.seed',intent.seed)}{row('studio.run.steps',intent.steps)}{row('studio.run.cfg',intent.cfg)}{row('studio.recipe.sampler',intent.sampler)}
+    {image?.lyingSigma?.factor!==undefined&&image.lyingSigma.factor!==0&&<>{row('studio.run.lyingSigma',image.lyingSigma.factor)}{row('studio.run.lyingSigma.timing',`${image.lyingSigma.startPercent*100}% – ${image.lyingSigma.endPercent*100}%`)}</>}
     {row(image?.sigmas?'studio.run.opt.sigmas':'studio.recipe.scheduler',image?.sigmas?image.sigmas.join(', '):intent.scheduler)}
     {image?.denoise!==undefined&&row('studio.run.denoise',image.denoise)}
     {image?.h3Edit&&<>{row('studio.run.video.shiftVideo',image.h3Edit.shiftVideo)}{row('studio.run.video.shiftAudio',image.h3Edit.shiftAudio)}</>}

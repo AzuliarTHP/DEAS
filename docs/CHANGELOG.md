@@ -7,6 +7,22 @@
 
 - **Manual H3 face refinement targets the whole source.** The action no longer copies the face-mask analysis start/duration (default two seconds) into the refinement job. Analysis settings remain unchanged and only trim the diagnostic mask preview; the standalone refinement requests exact full-source timing at the backend boundary. Explicit legacy window jobs keep their meaning. Audio preservation and actual model-quality acceptance are recorded separately in VERIFICATION and PLAN.
 
+- **Optional image Lying Sigma.** Advanced Image settings expose the signed factor
+  immediately below Sampler/Scheduler, defaulting to **0 = Off**, with expandable
+  start/end percentages (default **25%–90%**) and a strength stepper of **0.01**.
+  Nonzero settings wrap the selected sampler through the
+  bundled DEAS Lying Sigma adapter; missing/incompatible capabilities block only
+  enabled image sampling. Exact settings survive preferences, presets, recent-job
+  history and recognized embedded graph reuse. The main pass retains its seed,
+  conditioning, model patches, LoRAs, masks and denoise; separate refinement stays
+  unchanged. See [usage, installation and supported schedules](LYING-SIGMA.md).
+- **Compact sampling controls.** The Lying Sigma **0 = Off** status sits beside
+  its label; the seed action buttons sit on the Seed heading row above the field.
+- **Bundled Lying Sigma sampler.** The owned backend receives the small sampler
+  adapter automatically on startup. No full Detail Daemon/Matplotlib installation
+  or extra upgrade option is required. Existing sampler/inpaint options remain
+  intact and third-party registrations coexist.
+
 ## 0.2.37 BETA
 
 - **SAM Auto Refine uses Mask Blur.** The SAM panel shares Inpaint's saved 0–31 Mask Blur value (default 4; explicit saved 0 remains off). Automatic, manual-source and imported-mask passes send it to the existing native sampling/composite blur chain, with context padding expanded by the blur radius. Legacy settings without the field keep zero blur; invalid values and explicit-mask geometry are rejected before uploads. This corrects mask feathering, not a proven fix for KREA2 detail loss.
