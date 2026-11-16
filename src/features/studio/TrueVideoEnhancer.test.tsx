@@ -27,6 +27,25 @@ test('mount only reads audio installation recovery; chooser inspection feeds the
   expect(document.querySelector('[data-tve-enhance]')).toHaveProperty('disabled', false);
 });
 
+test('media deletion clears the selected TVE tile and inspected backend source only on an exact match', async () => {
+  vi.mocked(invoke).mockImplementation(async command => command === 'native_audio_enhance_install_status' ? { running: false, mode: '', stage: '', downloaded: 0, total: 0 } : source);
+  render(<I18nProvider><TrueVideoEnhancer endpoint="http://127.0.0.1:7801/" roots={{ output: '/out' }}/></I18nProvider>);
+  const tile = await screen.findByRole('button', { name: 'clip.mp4' });
+  await act(async () => { fireEvent.click(tile); });
+  expect(tile.getAttribute('aria-current')).toBe('true');
+  fireEvent.click(document.querySelector('[data-tve-post="denoise"]')!);
+  expect(document.querySelector('[data-tve-enhance]')).toHaveProperty('disabled', false);
+  act(() => window.dispatchEvent(new CustomEvent('deas-media-deleted', { detail: { deleted: ['/other/clip.mp4'], failed: ['/out/clip.mp4'] } })));
+  expect(document.querySelector('[data-video-post-source]')).not.toBeNull();
+  expect(document.querySelector('[data-tve-enhance]')).toHaveProperty('disabled', false);
+  act(() => window.dispatchEvent(new CustomEvent('deas-media-deleted', { detail: { deleted: ['/out/clip.mp4'], failed: [] } })));
+  expect(document.querySelector('[data-video-post-source]')).toBeNull();
+  expect(document.querySelector('[data-tve-enhance]')).toHaveProperty('disabled', true);
+  fireEvent.click(screen.getByRole('button', { name: 'Output' }));
+  expect((await screen.findByRole('button', { name: 'clip.mp4' })).getAttribute('aria-current')).toBe('false');
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'native_video_post_inspect_path')).toHaveLength(1);
+});
+
 test('without media roots there is no Media panel; with roots a video tile is inspected by path', async () => {
   vi.mocked(invoke).mockImplementation(async command => command === 'native_audio_enhance_install_status' ? { running: false, mode: '', stage: '', downloaded: 0, total: 0 } : source);
   const { unmount } = render(<I18nProvider><TrueVideoEnhancer endpoint=""/></I18nProvider>);

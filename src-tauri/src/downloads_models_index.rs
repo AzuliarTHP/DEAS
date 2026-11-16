@@ -78,9 +78,17 @@ struct Index {
 
 const PREVIEW_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
 
+fn absolute_path_valid(path: &Path) -> bool {
+    path.is_absolute()
+        && path.to_string_lossy().len() <= 32768
+        && !path.to_string_lossy().chars().any(char::is_control)
+        && path.components().all(|part| matches!(part,
+            std::path::Component::Prefix(_) | std::path::Component::RootDir | std::path::Component::Normal(_)))
+}
+
 fn preview_path_valid(model: &str, preview: &str) -> bool {
     let preview = Path::new(preview);
-    preview.is_absolute()
+    absolute_path_valid(preview)
         && preview.parent() == Path::new(model).parent()
         && preview.extension().is_some_and(|ext| {
             PREVIEW_EXTENSIONS
@@ -99,7 +107,7 @@ fn local_preview(path: &Path, folders: &mut PreviewFolders) -> Option<String> {
     let names = folders.entry(parent.into()).or_insert_with(|| {
         let mut names = HashMap::new();
         if let Ok(entries) = std::fs::read_dir(parent) {
-            for entry in entries.flatten() {
+            for entry in entries.take(MAX_WALK).flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 if entry.file_type().is_ok_and(|kind| kind.is_file())
                     && Path::new(&name).extension().is_some_and(|ext| {
@@ -161,7 +169,7 @@ fn read_any(path: &Path) -> Option<Index> {
         use std::os::unix::fs::OpenOptionsExt;
         File::options()
             .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(path)
             .ok()?
     };
@@ -175,11 +183,11 @@ fn read_any(path: &Path) -> Option<Index> {
         && index.detector == env!("CARGO_PKG_VERSION")
         && !roots.is_empty()
         && roots.len() <= 32
-        && roots.iter().all(|root| root.is_absolute())
+        && roots.iter().all(|root| absolute_path_valid(root))
         && index.records.len() <= MAX_WALK * roots.len()
         && index.records.iter().all(|record| {
             let m = &record.model;
-            Path::new(&m.path).is_absolute()
+            absolute_path_valid(Path::new(&m.path))
                 && roots
                     .iter()
                     .any(|root| Path::new(&m.path).starts_with(root))
@@ -187,6 +195,7 @@ fn read_any(path: &Path) -> Option<Index> {
                     preview.len() <= 32768 && preview_path_valid(&m.path, preview)
                 })
                 && !m.name.is_empty()
+                && !m.name.chars().any(char::is_control)
                 && m.name.len() <= 32768
                 && m.path.len() <= 32768
                 && Path::new(&m.path).ends_with(&m.name)
@@ -297,11 +306,7 @@ pub fn load(
 ) -> Result<Vec<SnapshotModel>, String> {
     if roots.is_empty()
         || roots.len() > 32
-        || roots.iter().any(|p| {
-            !p.is_absolute()
-                || p.to_string_lossy().len() > 32768
-                || p.to_string_lossy().chars().any(char::is_control)
-        })
+        || roots.iter().any(|p| !absolute_path_valid(p))
     {
         return Err("Invalid model index roots".into());
     }
@@ -331,13 +336,18 @@ pub fn load(
         .map(|r| ((r.model.category.clone(), r.model.path.clone()), r))
         .collect();
     let mut jobs = vec![];
+    let mut remaining = MAX_WALK;
     for root in &roots {
         if resolve_directory(root).is_err() {
             return Err("Models folder could not be read; saved index retained".into());
         }
         for (category, base) in crate::settings::model_locations(root) {
-            walk(category, &base, &base, 0, &mut jobs);
+            walk(category, &base, &base, 0, &mut jobs, &mut remaining);
         }
+    }
+    if remaining == 0 {
+        crate::logs::push(crate::logs::Source::Deas,
+            "WARN: Library index operation=scan entry limit reached; narrow the configured model roots");
     }
     let chunk = jobs.len().div_ceil(4).max(1);
     let records = std::thread::scope(|scope| {
@@ -444,6 +454,40 @@ pub fn load(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_rejects_traversal_in_roots_models_and_previews() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("models");
+        std::fs::create_dir_all(root.join("loras")).unwrap();
+        std::fs::write(root.join("loras/a.pt"), b"fixture").unwrap();
+        let cache = dir.path().join("index");
+        load(&cache, vec![root.clone()], false).unwrap();
+        let file = std::fs::read_dir(&cache).unwrap().next().unwrap().unwrap().path();
+        for field in ["root", "model", "preview"] {
+            let mut index = read(&file, std::slice::from_ref(&root)).unwrap();
+            match field {
+                "root" => index.roots = vec![root.join("../models")],
+                "model" => index.records[0].model.path = root.join("../outside/a.pt").to_string_lossy().into_owned(),
+                _ => index.records[0].model.local_preview = Some(root.join("loras/../outside/a.png").to_string_lossy().into_owned()),
+            }
+            let invalid = cache.join(format!("invalid-{field}.json"));
+            publish(&invalid, &index).unwrap();
+            assert!(read_any(&invalid).is_none(), "{field}");
+        }
+        assert!(load(&cache, vec![root.join("../models")], false).is_err());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cache_fifo_is_a_nonblocking_miss() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("models-fifo.json");
+        let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        assert!(read_any(&path).is_none());
+    }
 
     #[test]
     fn sibling_previews_support_raster_formats_and_refresh_without_model_changes() {

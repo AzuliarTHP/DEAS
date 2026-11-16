@@ -1,3 +1,4 @@
+import { requestStudioLora } from '../../lib/studioLoraSelection';
 import { adopt, choosePipe, clickMedia, collection, dock, dropTile, evidence, heldJob, ltxModels, menuOf, pipe, sessionModel, sessionModels, sessionSettings, videoEvidence } from './Workbench.testHarness';
 import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -31,6 +32,80 @@ test('folder eye toggles hide Studio descendants without changing the active mod
  expect((screen.getByRole('combobox',{name:'Checkpoint'}) as HTMLSelectElement).value).toBe(active);
  dock('LoRAs');dock('Models');expect(screen.queryByRole('button',{name:a.name})).toBeNull();
  fireEvent.click(screen.getByRole('button',{name:'Show group folder'}));expect(screen.getByRole('button',{name:a.name})).toBeTruthy();
+ expect(scanModels).toHaveBeenCalledTimes(1);expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
+test('Studio submits selected differently labelled LoRAs without a family confirmation or popup',async()=>{
+ const file=(category:string,name:string,family?:string)=>({category,name,family,path:'/m/'+category+'/'+name,size:1,info:null});
+ vi.mocked(scanModels).mockResolvedValue([file('checkpoints','a.safetensors','sdxl'),file('checkpoints','b.safetensors','sd15'),file('loras','same/style.safetensors','sdxl'),file('loras','other/flux.safetensors','flux'),file('loras','unknown.pt')]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);dock('LoRAs');
+ const incompatible=await screen.findByRole('button',{name:'other/flux.safetensors'});
+ expect(incompatible.getAttribute('aria-disabled')).toBe('false');expect(incompatible.getAttribute('title')).toContain('Family label differs');
+ fireEvent.click(screen.getByLabelText('Hide other families'));
+ expect(screen.queryByRole('button',{name:'other/flux.safetensors'})).toBeNull();
+ expect(screen.getByRole('button',{name:'unknown.pt'})).toBeTruthy();
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.dock.hideOtherLoraFamilies')!)).toBe(true);
+ fireEvent.click(screen.getByLabelText('Hide other families'));
+
+ expect(screen.getByRole('treeitem',{name:'other'})).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'other/flux.safetensors'}));expect(screen.getByRole('button',{name:'other/flux.safetensors'}).getAttribute('aria-pressed')).toBe('true');
+ expect(screen.getByRole('button',{name:'LoRAs · 1'})).toBeTruthy();
+ await waitFor(()=>expect(document.querySelector('[data-run]')).toHaveProperty('disabled',false));
+ fireEvent.change(screen.getByLabelText('Strength of other/flux.safetensors'),{target:{value:'0.65'}});
+ vi.mocked(runWorkbenchJob).mockResolvedValue({id:'advisory-lora',baseUrl:evidence.baseUrl,promptId:'fixture',state:'succeeded',outputs:[],error:null,generationReady:false});
+ fireEvent.click(document.querySelector('[data-run]')!);
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({loras:[{name:'other/flux.safetensors',strength:0.65}]});
+ expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('alert')).toBeNull();
+ dock('Models');fireEvent.click(screen.getByRole('button',{name:'b.safetensors'}));
+ dock('LoRAs');expect(screen.getByRole('button',{name:'other/flux.safetensors'}).getAttribute('aria-pressed')).toBe('false');
+ expect(document.querySelector('[data-run]')).toHaveProperty('disabled',false);
+ fireEvent.click(document.querySelector('[data-run]')!);await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(2));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[1][1].loras??[]).toEqual([]);
+ dock('Models');fireEvent.click(screen.getByRole('button',{name:'a.safetensors'}));dock('LoRAs');
+ expect(screen.getByRole('button',{name:'other/flux.safetensors'}).getAttribute('aria-pressed')).toBe('true');
+ fireEvent.click(document.querySelector('[data-run]')!);await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(3));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[2][1].loras).toEqual([{name:'other/flux.safetensors',strength:0.65}]);
+ fireEvent.click(screen.getByRole('button',{name:'other/flux.safetensors'}));
+ const compatible=screen.getByRole('button',{name:'same/style.safetensors'});fireEvent.click(compatible);
+ expect(compatible.getAttribute('aria-pressed')).toBe('true');
+ expect(screen.getByRole('button',{name:'unknown.pt'}).getAttribute('aria-disabled')).toBe('false');
+ expect(scanModels).toHaveBeenCalledTimes(1);expect(runWorkbenchJob).toHaveBeenCalledTimes(3);
+});
+
+test('Library additions update the LoRA draft without opening the popup or running; the picker button edits weights',async()=>{
+ const lora={category:'loras',name:'style.safetensors',path:'/m/loras/style.safetensors',family:'sdxl',size:1,info:null};
+ vi.mocked(scanModels).mockResolvedValue([{...lora,category:'checkpoints',name:'a.safetensors',path:'/m/checkpoints/a.safetensors'},lora]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await screen.findByRole('button',{name:'LoRAs · 0'});
+ act(()=>requestStudioLora('/m',lora));await screen.findByRole('button',{name:'LoRAs · 1'});
+ expect(screen.queryByRole('dialog',{name:'Selected LoRAs and sets'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'LoRAs · 1'}));expect(screen.getByRole('dialog',{name:'Selected LoRAs and sets'})).toBeTruthy();
+ fireEvent.change(screen.getByLabelText('Strength of style.safetensors'),{target:{value:'0.65'}});
+ act(()=>requestStudioLora('/m',lora));expect(screen.getByLabelText('Strength of style.safetensors')).toHaveProperty('value','0.65');
+ fireEvent.click(screen.getByRole('button',{name:'Disable style.safetensors'}));
+ act(()=>requestStudioLora('/m',lora));expect(screen.getByRole('button',{name:'Disable style.safetensors'}).getAttribute('aria-pressed')).toBe('true');expect(screen.getByLabelText('Strength of style.safetensors')).toHaveProperty('value','0.65');
+ expect(runWorkbenchJob).not.toHaveBeenCalled();expect(scanModels).toHaveBeenCalledTimes(1);
+});
+
+test('Notes keeps its manual draft across dock tabs without changing active prompts or seed',async()=>{
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a.safetensors',family:'sdxl',size:1,info:null}]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await screen.findByRole('button',{name:'LoRAs · 0'});const seed=(screen.getByLabelText('Seed') as HTMLInputElement).value;
+ dock('Notes');fireEvent.change(screen.getByLabelText('Note name'),{target:{value:'Manual note'}});fireEvent.change(screen.getByLabelText('Note positive prompt'),{target:{value:'saved prompt only'}});fireEvent.change(screen.getByLabelText('Note seed'),{target:{value:'777'}});
+ dock('LoRAs');dock('Notes');expect(screen.getByLabelText('Note positive prompt')).toHaveProperty('value','saved prompt only');
+ fireEvent.keyDown(screen.getByLabelText('Note positive prompt'),{key:'Enter',ctrlKey:true});await act(async()=>{});
+ fireEvent.click(screen.getByRole('button',{name:'Save note'}));expect((document.querySelector('[data-run-positive]') as HTMLTextAreaElement).value).toBe('');expect(screen.getByLabelText('Seed')).toHaveProperty('value',seed);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();expect(scanModels).toHaveBeenCalledTimes(1);
+});
+
+test('confirmed media deletion clears its active preview without selecting another file or scanning models',async()=>{
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a',family:'sdxl',size:1,info:null}]);
+ vi.mocked(invoke).mockImplementation(async()=>({path:'/out/raw',parent:'/out',entries:['one.png','two.png'].map(name=>({name,path:'/out/raw/'+name,kind:'file',media:'image',symlink:false,size:1,modified:1})),truncated:false}));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m',output:'/out'}}/></I18nProvider>);
+ fireEvent.click(await screen.findByRole('button',{name:'one.png'}));expect(document.querySelector('[data-browsed-preview]')).not.toBeNull();
+ act(()=>window.dispatchEvent(new CustomEvent('deas-media-deleted',{detail:{deleted:['/out/raw/one.png'],failed:[]}})));
+ expect(document.querySelector('[data-browsed-preview]')).toBeNull();expect(screen.queryByRole('button',{name:'one.png'})).toBeNull();expect(screen.getByRole('button',{name:'two.png'})).toBeTruthy();
  expect(scanModels).toHaveBeenCalledTimes(1);expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
@@ -580,7 +655,7 @@ test('IPC fixture: families gate models and LoRAs, picking applies the family de
  expect((screen.getByLabelText('CFG') as HTMLInputElement).value).toBe('1');
  expect((screen.getByLabelText('Text encoder') as HTMLSelectElement).selectedOptions[0].textContent).toBe('Automatic · qwen3vl_4b.safetensors');
  dock('LoRAs');
- expect(screen.queryByRole('button',{name:/ill-style/})).toBeNull(); // other family hidden, unknown kept
+ expect(screen.getByRole('button',{name:/ill-style/}).getAttribute('aria-disabled')).toBe('false'); // other families remain selectable authoring drafts
  fireEvent.click(screen.getByRole('button',{name:/k-style/}));expect(screen.getByRole('button',{name:/mystery/})).toBeTruthy();
  expect(checkRecipePrerequisites).toHaveBeenCalledTimes(1); // the backend list is read once when the endpoint is known, so the first click already shows it
  await waitFor(()=>expect(Array.from((screen.getByLabelText('Sampler') as HTMLSelectElement).options,o=>o.value)).toEqual(['euler','er_sde','res_multistep']));
@@ -591,7 +666,7 @@ test('IPC fixture: families gate models and LoRAs, picking applies the family de
  expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({checkpoint:'k2.safetensors',sampler:'res_multistep',scheduler:'simple',loras:[{name:'k-style.safetensors',strength:1}],diffusion:{textEncoder:'qwen3vl_4b.safetensors',clipType:'krea2',vae:'Q/qwen_image_vae.safetensors'}});
 });
 
-test('switching model architecture leaves hidden LoRAs inactive without losing their saved selection',async()=>{
+test('switching model architecture leaves retained LoRAs inactive without losing their saved selection',async()=>{
  const m=(name:string,family:string,category='checkpoints')=>({category,name,family,path:'/m/'+name,size:1,info:null});
  const lora={name:'xl-style.safetensors',strength:1};
  localStorage.setItem('deas.pref.studio.run.checkpoint',JSON.stringify('xl.safetensors'));
@@ -603,7 +678,7 @@ test('switching model architecture leaves hidden LoRAs inactive without losing t
  dock('LoRAs');fireEvent.click(screen.getByRole('button',{name:lora.name}));
  expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!)).toEqual([lora]);
  dock('Models');fireEvent.click(screen.getByRole('button',{name:'sd15.safetensors'}));
- dock('LoRAs');expect(screen.queryByRole('button',{name:lora.name})).toBeNull();
+ dock('LoRAs');expect(screen.getByRole('button',{name:lora.name}).getAttribute('aria-pressed')).toBe('false');
  const run=screen.getByRole('button',{name:'Run'});expect(run).toHaveProperty('disabled',false);
  fireEvent.click(run);await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
  expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({checkpoint:'sd15.safetensors'});
@@ -613,6 +688,24 @@ test('switching model architecture leaves hidden LoRAs inactive without losing t
  fireEvent.click(run);await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(2));
  expect(vi.mocked(runWorkbenchJob).mock.calls[1][1]).toMatchObject({checkpoint:'xl-next.safetensors',loras:[lora]});
  expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!)).toEqual([lora]);
+});
+
+test.each([false,true])('retained LoRAs do not prevent switching to another-family GGUF model (disabled=%s)',async disabled=>{
+ const selected={name:'xl-style.safetensors',strength:.5,...(disabled?{enabled:false}:{})};
+ localStorage.setItem('deas.pref.studio.run.checkpoint',JSON.stringify('xl.safetensors'));
+ localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify([selected]));
+ vi.mocked(scanModels).mockResolvedValue([
+  {category:'checkpoints',name:'xl.safetensors',family:'sdxl',path:'/m/xl',size:1,info:null},
+  {category:'diffusion_models',name:'other.gguf',family:'anima',path:'/m/other.gguf',size:1,info:null},
+  {category:'loras',name:selected.name,family:'sdxl',path:'/m/style',size:1,info:null},
+ ]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);dock('Models');
+ const other=await screen.findByRole('button',{name:'other.gguf'});
+ expect(other.getAttribute('aria-disabled')).toBe('false');fireEvent.click(other);
+ expect(screen.getByRole('combobox',{name:'Checkpoint'})).toHaveProperty('value','other.gguf');
+ dock('LoRAs');expect(screen.getByRole('button',{name:selected.name}).getAttribute('aria-pressed')).toBe('false');
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!)).toEqual([selected]);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 
 test('a genuinely missing selected LoRA still blocks Run',async()=>{
@@ -960,4 +1053,37 @@ test('H3 frame people are opt-in, reach the Forge and reset on a new source pict
  fireEvent.click(document.querySelector('[data-open-references]')!);
  fireEvent.click(within(screen.getByRole('dialog',{name:'References'})).getByRole('button',{name:'Edit first.png'}));
  expect(within(screen.getByRole('dialog',{name:'Edit first.png'})).getByRole('combobox',{name:'Character order in first.png'})).toHaveProperty('value','z');
+});
+
+test('pre-mount Library additions survive asynchronous inventory and draft restoration with Windows roots',async()=>{
+ const lora={category:'loras',name:'style.safetensors',path:'L:/Models/loras/style.safetensors',family:'sdxl',size:1,info:null};
+ requestStudioLora('l:\\models\\',lora);
+ let release!:(models:typeof lora[])=>void;
+ vi.mocked(scanModels).mockReturnValueOnce(new Promise(resolve=>{release=resolve;}));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'L:/Models'}}/></I18nProvider>);
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)).toHaveLength(1);
+ await act(async()=>release([{...lora,category:'checkpoints',name:'base.safetensors',path:'L:/Models/checkpoints/base.safetensors'}]));
+ await screen.findByRole('button',{name:'LoRAs · 1'});
+ dock('LoRAs');expect(screen.getByRole('button',{name:lora.name}).getAttribute('aria-pressed')).toBe('true');
+ expect(screen.queryByRole('dialog')).toBeNull();expect(runWorkbenchJob).not.toHaveBeenCalled();
+ expect(scanModels).toHaveBeenCalledExactlyOnceWith('L:/Models',[]);
+ expect(JSON.parse(localStorage.getItem('deas.pref.studio.loraAddQueue')!)).toEqual([]);
+});
+
+test('disabled LoRAs stay in the draft but do not block or enter Run; submitted order follows the picker',async()=>{
+ const file=(category:string,name:string)=>({category,name,path:'/m/'+category+'/'+name,size:1,info:null,family:'sdxl'});
+ vi.mocked(scanModels).mockResolvedValue([file('checkpoints','a.safetensors'),...['a','c'].map(n=>file('loras',n+'.safetensors')),{...file('loras','b.pt'),integrity:'truncated',metadataError:'stale'}]);
+ localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify([{name:'missing.safetensors',strength:.6,enabled:false},{name:'a.safetensors',strength:.4},{name:'b.pt',strength:.8,enabled:false},{name:'c.safetensors',strength:.2}]));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-run]')).toHaveProperty('disabled',false));
+ fireEvent.click(screen.getByRole('button',{name:'LoRAs · 4'}));
+ const handle=screen.getByRole('button',{name:'Reorder c.safetensors'});
+ for(let i=0;i<3;i++)fireEvent.keyDown(handle,{key:'ArrowUp'});
+ fireEvent.click(within(screen.getByRole('dialog',{name:'Selected LoRAs and sets'})).getByRole('button',{name:'Close'}));
+ vi.mocked(runWorkbenchJob).mockResolvedValue({id:'enabled-ordered',baseUrl:evidence.baseUrl,promptId:'fixture',state:'succeeded',outputs:[],error:null,generationReady:false});
+ fireEvent.click(document.querySelector('[data-run]')!);
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1].loras).toEqual([{name:'c.safetensors',strength:.2},{name:'a.safetensors',strength:.4}]);
+ const draft=JSON.parse(localStorage.getItem('deas.pref.studio.run.loras')!);expect(draft.find((l:{name:string})=>l.name==='b.pt')).toMatchObject({enabled:false,strength:.8});
+ expect(scanModels).toHaveBeenCalledTimes(1);
 });

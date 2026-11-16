@@ -89,6 +89,18 @@ pub fn native_logs_people_image_error() {
     );
 }
 
+/// Fixed notes-storage failure; no prompt text or paths are accepted.
+#[tauri::command]
+pub fn native_logs_prompt_notes_error() {
+    static LAST: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if last.is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
+        return;
+    }
+    *last = Some(std::time::Instant::now());
+    push(Source::Deas, "ERROR: Studio Notes operation=save local profile storage unavailable or full; unsaved draft retained (repeats limited to once per minute)");
+}
+
 /// Fixed Library outcomes; no filenames, clipboard data or user notes are accepted.
 #[tauri::command]
 pub fn native_logs_library_error(operation: String) {
@@ -96,9 +108,10 @@ pub fn native_logs_library_error(operation: String) {
         "clipboard" => (0, "ERROR: Library gallery clipboard: copy failed; select and copy the text manually"),
         "listing" => (1, "ERROR: Library gallery listing: models folder could not be read; previous browsing snapshot retained if available"),
         "preview" => (2, "WARN: Library gallery preview: image unavailable; placeholder shown"),
+        "selection" => (3, "ERROR: Library to Studio LoRA selection: request storage unavailable or queue full; addition was not applied"),
         _ => return,
     };
-    static LAST: Mutex<[Option<std::time::Instant>; 3]> = Mutex::new([None; 3]);
+    static LAST: Mutex<[Option<std::time::Instant>; 4]> = Mutex::new([None; 4]);
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     if last[slot].is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
         return;
@@ -290,15 +303,15 @@ mod tests {
     fn library_gallery_errors_are_shared_fixed_and_rate_limited() {
         let start = native_logs(0).last().map_or(0, |e| e.seq);
         native_logs_library_error("secret-user-note".into());
-        for operation in ["clipboard", "listing", "preview"] {
+        for operation in ["clipboard", "listing", "preview", "selection"] {
             native_logs_library_error(operation.into());
             native_logs_library_error(operation.into());
         }
         let entries: Vec<_> = native_logs(start)
             .into_iter()
-            .filter(|e| e.text.contains("Library gallery"))
+            .filter(|e| e.text.contains("Library gallery") || e.text.contains("Library to Studio"))
             .collect();
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 4);
         assert!(entries
             .iter()
             .all(|e| e.source == Source::Deas && !e.text.contains("secret-user-note")));
@@ -472,5 +485,18 @@ mod tests {
             s.entries.iter().map(|e| e.text.len()).sum::<usize>()
         );
         assert!(s.entries.iter().all(|e| e.seq > 1));
+    }
+    #[test]
+    fn prompt_notes_storage_error_is_fixed_and_rate_limited() {
+        let start = native_logs(0).last().map_or(0, |entry| entry.seq);
+        native_logs_prompt_notes_error();
+        native_logs_prompt_notes_error();
+        let entries: Vec<_> = native_logs(start)
+            .into_iter()
+            .filter(|entry| entry.text.contains("Studio Notes operation=save"))
+            .collect();
+        assert_eq!(entries.len(), 1);
+        assert!(include_str!("main.rs").contains("deas::native_logs_prompt_notes_error"));
+        assert!(include_str!("../permissions/logs.toml").contains("native_logs_prompt_notes_error"));
     }
 }

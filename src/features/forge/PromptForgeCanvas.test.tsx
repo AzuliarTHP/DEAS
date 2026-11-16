@@ -52,6 +52,26 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
+it('media deletion removes only matching Forge pictures and invalidates their completed result', async () => {
+  localStorage.setItem('deas.pref.forge.h3.mode', JSON.stringify('REF2VA'));
+  const base = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation((command, args) => command === 'native_media_list' ? Promise.resolve({ path: '/out', parent: null, truncated: false, entries: ['a.png', 'b.png'].map(name => ({ name, path: `/out/${name}`, kind: 'file', symlink: false, media: 'image', size: 1, modified: 1 })) }) : base(command, args));
+  render(view(vi.fn(), baseContext, { outputDir: '/out' })); await ready();
+  fireEvent.click(await screen.findByRole('button', { name: 'a.png' }));
+  fireEvent.click(screen.getByRole('button', { name: 'b.png' }));
+  await write();
+  act(() => window.dispatchEvent(new CustomEvent('deas-media-deleted', { detail: { deleted: ['/elsewhere/a.png'], failed: ['/out/a.png'] } })));
+  expect(document.querySelectorAll('.forge-pictures li')).toHaveLength(2);
+  expect(button('[data-forge-send]').disabled).toBe(false);
+  act(() => window.dispatchEvent(new CustomEvent('deas-media-deleted', { detail: { deleted: ['/out/a.png'], failed: ['/out/b.png'] } })));
+  expect(document.querySelectorAll('.forge-pictures li')).toHaveLength(1);
+  expect(document.querySelector('.forge-pictures img')?.getAttribute('alt')).toBe('b.png [output]');
+  expect(button('[data-forge-send]').disabled).toBe(true);
+  fireEvent.click(button('[data-forge-write]'));
+  await waitFor(() => expect(h3Calls()).toHaveLength(2));
+  expect(h3Calls()[1].body.references).toEqual([expect.objectContaining({ path: 'b.png [output]' })]);
+});
+
 it('standalone H3 offers canonical Settings choices and sends only the consumed non-square canvas on explicit Send', async () => {
   const send = vi.fn(); render(view(send)); await ready();
   expect(Array.from(aspect().options, option => option.value)).toEqual(forgeAspectChoices);

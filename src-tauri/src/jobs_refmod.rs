@@ -160,8 +160,24 @@ struct Submitted {
     base: reqwest::Url,
     client_id: String,
     graph: Value,
+    active: bool,
 }
 static SUBMITTED: Mutex<Vec<Submitted>> = Mutex::new(Vec::new());
+
+pub(crate) fn with_idle_media_edit<T>(edit: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    let submitted = SUBMITTED.lock().map_err(|_| "RefMod ownership lock failed")?;
+    if submitted.iter().any(|entry| entry.active) {
+        return Err("Wait for RefMod exports to finish and check their status before deleting media; an uncertain submission requires checking the backend queue before restarting DEAS".into());
+    }
+    edit()
+}
+
+fn release_media(base: &reqwest::Url, id: &str) {
+    if let Some(entry) = SUBMITTED.lock().unwrap_or_else(|e| e.into_inner())
+        .iter_mut().find(|entry| &entry.base == base && entry.prompt_id == id) {
+        entry.active = false;
+    }
+}
 
 fn submitted(base: &reqwest::Url, prompt_id: &str) -> Result<(String, Value), String> {
     SUBMITTED
@@ -381,29 +397,41 @@ pub async fn native_h3_refmod_submit(
     let request = fill_h3_vaes(&base, request, models_dir.as_deref().map(Path::new)).await;
     let graph = compile(&request, &uuid::Uuid::new_v4().to_string())?;
     let client_id = format!("deas-refmod-{}", uuid::Uuid::new_v4());
+    // Reserve before POST: a lost reply is not evidence the backend rejected the job.
+    {
+        let mut list = SUBMITTED.lock().map_err(|_| "RefMod ownership lock failed")?;
+        if list.len() >= 16 {
+            let index = list.iter().position(|entry| !entry.active)
+                .ok_or("Check pending RefMod exports before submitting another")?;
+            list.remove(index);
+        }
+        list.push(Submitted { prompt_id: String::new(), base: base.clone(),
+            client_id: client_id.clone(), graph: graph.clone(), active: true });
+    }
     let (status, v) = request_json(
         &base,
         "prompt",
         Some(json!({"prompt":graph,"client_id":client_id})),
     )
-    .await?;
+    .await.inspect_err(|_| {
+        log(&format!("ERROR: RefMod export operation=submit job={client_id} reply uncertain; media deletion remains blocked until backend ownership is reconciled"));
+    })?;
     let id = v["prompt_id"].as_str().filter(|id| prompt_id(id));
     match (status.is_success(), id) {
         (true, Some(id)) => {
             let mut list = SUBMITTED.lock().unwrap_or_else(|e| e.into_inner());
-            if list.len() >= 16 {
-                list.remove(0);
-            }
-            list.push(Submitted {
-                prompt_id: id.to_owned(),
-                base,
-                client_id,
-                graph,
-            });
+            let entry = list.iter_mut().find(|entry| entry.client_id == client_id)
+                .ok_or("RefMod ownership reservation lost")?;
+            entry.prompt_id = id.to_owned();
             log(&format!("INFO: RefMod export queued: prompt={id}"));
             Ok(json!({"promptId":id}))
         }
         _ => {
+            // A successful HTTP reply without an id remains uncertain and must keep its reservation.
+            if !status.is_success() {
+                SUBMITTED.lock().unwrap_or_else(|e| e.into_inner())
+                    .retain(|entry| entry.client_id != client_id);
+            }
             let reason = bounded(&rejection(&v));
             log(&format!(
                 "ERROR: RefMod export rejected (HTTP {status}): {reason}"
@@ -504,6 +532,7 @@ pub async fn native_h3_refmod_status(base_url: String, prompt_id: String) -> Res
     submitted(&base, &prompt_id)?;
     let history = get(&client()?, &base, &format!("history/{prompt_id}")).await?;
     if let Some(state) = history.get(&prompt_id).and_then(history_state) {
+        release_media(&base, &prompt_id);
         let detail = match state["state"].as_str() {
             Some("done") => format!(
                 "INFO: RefMod export saved: {}.safetensors ({} members)",
@@ -520,7 +549,17 @@ pub async fn native_h3_refmod_status(base_url: String, prompt_id: String) -> Res
         return Ok(state);
     }
     let queue = get(&client()?, &base, "queue").await?;
-    Ok(json!({"state":queued_state(&queue, &prompt_id).unwrap_or("missing")}))
+    if !["queue_running", "queue_pending"].iter().all(|key| {
+        queue[*key].as_array().is_some_and(|entries| entries.iter()
+            .all(|entry| entry[1].as_str().is_some()))
+    }) {
+        return Err("Invalid RefMod queue reply; media ownership remains active".into());
+    }
+    let state = queued_state(&queue, &prompt_id).unwrap_or("missing");
+    if state == "missing" {
+        release_media(&base, &prompt_id);
+    }
+    Ok(json!({"state":state}))
 }
 
 /// Scoped to this app's own prompt on the owned backend: a pending one is deleted, a running one goes through

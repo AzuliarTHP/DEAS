@@ -2,18 +2,33 @@ import { useEffect, useRef, useState } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { useI18n } from '../../i18n/I18nProvider';
 import { inspectVideoPost, inspectVideoPostPath, type VideoPostInspection } from '../../lib/videoPost';
-import type { MediaItem } from '../../lib/media';
+import { normalizedMediaPath, type MediaDeletion, type MediaItem } from '../../lib/media';
 
 const blockerCodes = ['cadenceUnknown', 'cadenceMismatch', 'interlaced', 'rotation', 'alpha', 'hdr', 'colorUnknown', 'unsupportedPixelFormat', 'multipleVideoStreams', 'unsupportedDimensions', 'fieldOrderUnknown', 'nonSquarePixels', 'pixelAspectUnknown'];
 
 /** Only a successful inspection replaces the workspace source; cancellation retains it. */
-export function VideoPostProcessing({ onInspected, disabled = false, acquire, release, picked }: { onInspected?: (source: VideoPostInspection) => void; disabled?: boolean; acquire?: () => boolean; release?: () => void; /** A Media-panel tile (video with a path): inspected natively like a chooser pick. */ picked?: MediaItem | null }) {
+export function VideoPostProcessing({ onInspected, disabled = false, acquire, release, picked }: { onInspected?: (source: VideoPostInspection | null) => void; disabled?: boolean; acquire?: () => boolean; release?: () => void; /** A Media-panel tile (video with a path): inspected natively like a chooser pick. */ picked?: MediaItem | null }) {
   const { t } = useI18n();
   const [source, setSource] = useState<VideoPostInspection | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
   const epoch = useRef(0);
+  const sourcePath = useRef<string | undefined>(undefined);
+  const inspecting = useRef<{ path?: string; deleted: boolean } | null>(null);
+  useEffect(() => {
+    const removed = (event: Event) => {
+      const paths = new Set((event as CustomEvent<MediaDeletion>).detail.deleted.map(normalizedMediaPath));
+      if (inspecting.current?.path && paths.has(normalizedMediaPath(inspecting.current.path))) inspecting.current.deleted = true;
+      if (sourcePath.current && paths.has(normalizedMediaPath(sourcePath.current))) {
+        sourcePath.current = undefined;
+        setSource(null);
+        onInspected?.(null);
+      }
+    };
+    window.addEventListener('deas-media-deleted', removed);
+    return () => window.removeEventListener('deas-media-deleted', removed);
+  }, [onInspected]);
   useEffect(() => () => { epoch.current++; }, []);
   useEffect(() => { if (picked?.path && picked.media === 'video') void choose(picked.path); }, [picked]);
 
@@ -21,17 +36,20 @@ export function VideoPostProcessing({ onInspected, disabled = false, acquire, re
     if (pending.current || disabled || !isTauri() || (acquire && !acquire())) return;
     pending.current = true;
     const current = epoch.current;
+    const inspection = { path, deleted: false };
+    inspecting.current = inspection;
     setError(null);
     setBusy(true);
     try {
       const selected = path ? await inspectVideoPostPath(path) : await inspectVideoPost(t('studio.videoPost.dialog'));
-      if (epoch.current === current && selected) { setSource(selected); onInspected?.(selected); }
+      if (epoch.current === current && !inspection.deleted && selected) { sourcePath.current = path; setSource(selected); onInspected?.(selected); }
     } catch (failure) {
-      if (epoch.current === current) {
+      if (epoch.current === current && !inspection.deleted) {
         const detail = failure && typeof failure === 'object' && 'message' in failure ? String(failure.message) : String(failure);
         setError(detail);
       }
     } finally {
+      inspecting.current = null;
       release?.();
       if (epoch.current === current) { pending.current = false; setBusy(false); }
     }

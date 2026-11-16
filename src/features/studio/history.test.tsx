@@ -150,7 +150,7 @@ test.each(['ltx-2','minimax-h3'] as const)('current %s text-to-video intent has 
  expect(restored.pipeline).toBe('t2v');expect(restored.unsupported).toEqual([]);expect(restored.unavailable).toEqual([]);
  expect(restored.intent).toEqual(intent);expect(JSON.stringify(original)).toBe(before);expect(invoke).not.toHaveBeenCalled();
 });
-test('history accepts the same declared LoRA family as Studio without accepting missing or unrelated LoRAs',()=>{
+test('history treats LoRA family labels as advisory while retaining missing-file checks',()=>{
  const family=builtinFamilies.find(f=>f.id==='qwen-image-2.1-turbo')!;
  const intent={...image,sigmas:family.sigmas,diffusion:{textEncoder:'clip.safetensors',vae:'vae.safetensors',clipType:family.clipType!},loras:[{name:'style.safetensors',strength:0.75}]};
  const current:RestoreContext={...context,models:[{name:image.checkpoint,family:family.id},{name:'style.safetensors',family:'qwen-image-2.1'}]};
@@ -158,7 +158,7 @@ test('history accepts the same declared LoRA family as Studio without accepting 
  const restored=historyRestore(original,current);
  expect(restored.unavailable).toEqual([]);expect(restored.unsupported).toEqual([]);
  expect(restored.intent).toEqual(intent);expect(JSON.stringify(original)).toBe(before);expect(invoke).not.toHaveBeenCalled();
- expect(historyRestore(original,{...current,models:[current.models[0],{name:'style.safetensors',family:'sdxl'}]}).unavailable).toContain('LoRA: style.safetensors');
+ expect(historyRestore(original,{...current,models:[current.models[0],{name:'style.safetensors',family:'sdxl'}]}).unavailable).not.toContain('LoRA: style.safetensors');
  expect(historyRestore(original,{...current,models:[current.models[0]]}).unavailable).toContain('LoRA: style.safetensors');
  expect(historyRestore(original,{...current,allow:{...current.allow!,loras:[]}}).unavailable).toContain('LoRA: style.safetensors');
 });

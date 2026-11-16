@@ -19,6 +19,49 @@ const rootButton=(name:string)=>within(screen.getByRole('group',{name:'Environme
 const rootListing=(path:string)=>({path,parent:path.replace(/[\\/][^\\/]+$/,''),entries:['raw','starred'].map(name=>({...entry(name,'directory'),path:path+'/'+name})),truncated:false});
 const lists=()=>vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_media_list').map(([,a])=>a);
 const visibleDropBox=(box:Element)=>vi.spyOn(box,'getBoundingClientRect').mockReturnValue({left:10,top:10,right:110,bottom:110,width:100,height:100,x:10,y:10,toJSON:()=>({})});
+const deleteCalls=()=>vi.mocked(invoke).mock.calls.filter(([command])=>command==='native_media_delete');
+async function deletionFixture(result?:{deleted:string[];failed:string[];errors?:string[]}|Error){
+ vi.mocked(isTauri).mockReturnValue(true);
+ Object.defineProperty(HTMLDialogElement.prototype,'showModal',{configurable:true,value(this:HTMLDialogElement){this.open=true;}});
+ const files=['a.png','b.jpg'].map(name=>({...entry(name,'file','image'),path:'/owned/raw/'+name}));
+ mockMediaInvoke(async(command,args)=>{
+  if(command==='native_media_delete'){if(result instanceof Error)throw result;return result??{deleted:(args as {paths:string[]}).paths,failed:[]};}
+  return command==='native_media_list'?{path:'/owned/raw',parent:'/owned',entries:files,truncated:false}:'/cache/t.png';
+ });
+ const select=vi.fn();render(<I18nProvider><MediaLibrary selected={null} onSelect={select} roots={{output:'/owned'}}/></I18nProvider>);
+ await screen.findByRole('button',{name:'a.png'});return select;
+}
+it('right-click deletion requires confirmation, cancel is inert and success removes only that file',async()=>{
+ await deletionFixture();
+ const ask=()=>{fireEvent.contextMenu(screen.getByRole('button',{name:'a.png'}));fireEvent.click(screen.getByRole('menuitem',{name:'Delete…'}));};
+ ask();expect(deleteCalls()).toHaveLength(0);expect(screen.getByRole('dialog').textContent).toContain('Permanently delete 1');
+ fireEvent.click(screen.getByRole('button',{name:'Cancel'}));expect(deleteCalls()).toHaveLength(0);expect(screen.getByRole('button',{name:'a.png'})).toBeTruthy();
+ ask();fireEvent.click(document.querySelector('[data-confirm-dialog]')!);
+ await waitFor(()=>expect(screen.queryByRole('button',{name:'a.png'})).toBeNull());
+ expect(screen.getByRole('button',{name:'b.jpg'})).toBeTruthy();expect(deleteCalls()).toEqual([['native_media_delete',{paths:['/owned/raw/a.png']}]]);
+});
+it('bulk selection does not preview files and deletes the confirmed set in one request',async()=>{
+ const select=await deletionFixture();fireEvent.click(screen.getByRole('button',{name:'Select files'}));
+ fireEvent.click(screen.getByLabelText('Select a.png'));fireEvent.click(screen.getByRole('button',{name:'b.jpg'}));expect(select).not.toHaveBeenCalled();
+ expect(screen.getByText('2 selected')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Delete selected…'}));expect(deleteCalls()).toHaveLength(0);
+ expect(screen.getByRole('dialog').textContent).toContain('b.jpg');fireEvent.click(document.querySelector('[data-confirm-dialog]')!);
+ await waitFor(()=>expect(deleteCalls()).toHaveLength(1));expect(deleteCalls()[0][1]).toEqual({paths:['/owned/raw/a.png','/owned/raw/b.jpg']});
+ await waitFor(()=>expect(screen.queryByRole('button',{name:'a.png'})).toBeNull());expect(screen.queryByRole('button',{name:'b.jpg'})).toBeNull();
+});
+it('bulk partial failures retain unsuccessful selections and never hide files on rejected deletion',async()=>{
+ await deletionFixture({deleted:['/owned/raw/a.png'],failed:['/owned/raw/b.jpg'],errors:['restore could not complete; recovery: /owned/raw/.deas-delete-fixture/media']});fireEvent.click(screen.getByRole('button',{name:'Select files'}));fireEvent.click(screen.getByRole('button',{name:'Select all'}));
+ fireEvent.click(screen.getByRole('button',{name:'Delete selected…'}));fireEvent.click(document.querySelector('[data-confirm-dialog]')!);
+ await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('1 file(s) could not be deleted'));
+ expect(screen.getByRole('alert').textContent).toContain('recovery: /owned/raw/.deas-delete-fixture/media');
+ expect(screen.getByLabelText('Select b.jpg')).toHaveProperty('checked',true);expect(screen.queryByRole('button',{name:'a.png'})).toBeNull();
+ cleanup();await deletionFixture(new Error('Wait for native generation to finish before deleting media'));
+ fireEvent.contextMenu(screen.getByRole('button',{name:'a.png'}));fireEvent.click(screen.getByRole('menuitem',{name:'Delete…'}));fireEvent.click(document.querySelector('[data-confirm-dialog]')!);
+ await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('Wait for native generation'));expect(screen.getByRole('button',{name:'a.png'})).toBeTruthy();
+});
+it('unmanaged media cannot be selected for deletion',async()=>{
+ vi.mocked(isTauri).mockReturnValue(true);mockMediaInvoke(async c=>c==='native_media_list'?home:'/cache/t.png');mount();await screen.findByRole('button',{name:'a.png'});
+ fireEvent.contextMenu(screen.getByRole('button',{name:'a.png'}));expect(screen.getByRole('menuitem',{name:'Delete…'})).toHaveProperty('disabled',true);expect(deleteCalls()).toHaveLength(0);
+});
 it('native drops respect visible library bounds and scale hover/drop coordinates',async()=>{
  vi.mocked(isTauri).mockReturnValue(true);nativeDrop.mockImplementation(async()=>()=>{});
  vi.stubGlobal('devicePixelRatio',2);
@@ -571,7 +614,7 @@ describe('media library plugin — IPC fixtures, not real filesystem access',()=
   expect(screen.getByText('Video 1').classList.contains('media-mark')).toBe(true);
   fireEvent.contextMenu(screen.getByRole('button',{name:'a.png'}),{clientX:5,clientY:5});
   const menu=within(screen.getByRole('menu',{name:'a.png'}));
-  expect(menu.getAllByRole('menuitem').map(b=>b.textContent)).toEqual(['Add','Fulllimit reached','Open in folder']);
+  expect(menu.getAllByRole('menuitem').map(b=>b.textContent)).toEqual(['Add','Fulllimit reached','Open in folder','Delete…']);
   expect((menu.getByRole('menuitem',{name:/Full/}) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(menu.getByRole('menuitem',{name:'Add'}));
   expect(add).toHaveBeenCalledTimes(1);expect(screen.queryByRole('menu')).toBeNull();

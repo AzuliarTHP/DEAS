@@ -241,5 +241,8 @@
   "library.folderHiddenByParent": "Hidden by parent folder",
   "library.viewAll": "View all",
   "library.viewAllHelp": "Automatically show the next matching cards as you scroll. No folder rescan.",
-  "library.loadingMore": "Loading more models…"
+  "library.loadingMore": "Loading more models…",
+  "library.addLora": "Add to Studio LoRAs",
+  "library.loraAdded": "LoRA added to Studio.",
+  "library.loraAddFailed": "Could not add the LoRA. Please try again."
 }

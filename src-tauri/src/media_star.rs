@@ -28,7 +28,7 @@ pub(crate) fn output_root(engine: &crate::install::Engine) -> Result<PathBuf, St
 pub(crate) fn validate(root: &Path, source: &Path) -> Result<bool, String> {
     preflight(root, source).map(|(starred, _)| starred)
 }
-fn preflight(root: &Path, source: &Path) -> Result<(bool, std::fs::File), String> {
+pub(crate) fn preflight(root: &Path, source: &Path) -> Result<(bool, std::fs::File), String> {
     if !source.is_absolute()
         || source.components().any(|p| {
             !matches!(

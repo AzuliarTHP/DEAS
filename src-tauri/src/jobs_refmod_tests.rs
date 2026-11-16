@@ -3,6 +3,50 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 const PROMPT: &str = "5f1c3c39-3a37-4c39-9d0d-2bb0e4d4f8a1";
 
+#[tokio::test]
+async fn refmod_media_ownership_blocks_deletion_until_verified_terminal_status() {
+    let terminal = Arc::new(AtomicUsize::new(0));
+    let phase = terminal.clone();
+    let (base, task) = crate::jobs::tests::server(move |path, _| {
+        let body = if path.starts_with("POST /comfy/prompt ") {
+            json!({"prompt_id":PROMPT})
+        } else if path.contains("/history/") && phase.load(Ordering::SeqCst) == 1 {
+            json!({(PROMPT):{"status":{"completed":true}}})
+        } else {
+            json!({}) // A malformed queue snapshot must not release media ownership.
+        };
+        (200, body.to_string())
+    }).await;
+    native_h3_refmod_submit(base.clone(), request(), None).await.unwrap();
+    assert!(with_idle_media_edit(|| -> Result<(), String> { panic!("active RefMod deletion") }).is_err());
+    assert!(native_h3_refmod_status(base.clone(), PROMPT.into()).await.is_err());
+    let url = crate::validate_base_url(&base).unwrap();
+    assert!(SUBMITTED.lock().unwrap().iter().any(|entry| entry.base == url && entry.active));
+    terminal.store(1, Ordering::SeqCst);
+    assert_eq!(native_h3_refmod_status(base, PROMPT.into()).await.unwrap()["state"], "failed");
+    assert!(SUBMITTED.lock().unwrap().iter().filter(|entry| entry.base == url).all(|entry| !entry.active));
+    SUBMITTED.lock().unwrap().retain(|entry| entry.base != url);
+    task.abort();
+}
+
+#[tokio::test]
+async fn lost_refmod_submit_reply_keeps_a_bounded_active_reservation() {
+    let (base, task) = crate::jobs::tests::server(|_, _| (200, "not json".into())).await;
+    assert!(native_h3_refmod_submit(base.clone(), request(), None).await.is_err());
+    let url = crate::validate_base_url(&base).unwrap();
+    let client_id = SUBMITTED.lock().unwrap().iter()
+        .find(|entry| entry.base == url && entry.active && entry.prompt_id.is_empty())
+        .unwrap().client_id.clone();
+    let logs = crate::logs::native_logs(0);
+    let diagnostic = logs.iter().find(|entry| entry.text.contains("operation=submit") && entry.text.contains(&client_id)).unwrap();
+    assert_eq!(diagnostic.source, crate::logs::Source::Deas);
+    assert!(diagnostic.text.starts_with("ERROR:"));
+    assert!(!diagnostic.text.contains("deas-input"));
+    assert!(with_idle_media_edit(|| -> Result<(), String> { panic!("uncertain RefMod deletion") }).is_err());
+    SUBMITTED.lock().unwrap().retain(|entry| entry.base != url);
+    task.abort();
+}
+
 fn request() -> Value {
     json!({"name":"hero","description":"main cast","conceptType":"identity",
         "media":[{"type":"image","file":"deas-inputs/a.png","slot":0,"description":"face"},

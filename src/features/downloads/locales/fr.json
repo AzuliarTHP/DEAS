@@ -241,5 +241,8 @@
   "library.folderHiddenByParent": "Masqué par le dossier parent",
   "library.viewAll": "Tout afficher",
   "library.viewAllHelp": "Afficher les cartes suivantes en défilant, sans nouvelle analyse des dossiers.",
-  "library.loadingMore": "Chargement des modèles suivants…"
+  "library.loadingMore": "Chargement des modèles suivants…",
+  "library.addLora": "Ajouter aux LoRAs de Studio",
+  "library.loraAdded": "LoRA ajouté à Studio.",
+  "library.loraAddFailed": "Impossible d’ajouter le LoRA. Veuillez réessayer."
 }

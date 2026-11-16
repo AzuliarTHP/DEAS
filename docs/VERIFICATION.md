@@ -1,5 +1,283 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release gates — 0.2.37
+
+- Native full serial `cargo test --locked -- --test-threads=1`: **1,027 library tests passed / 74 ignored**, **3 binary tests passed**, doctests passed. The new Linux deletion capture/rollback, cache bounds/path/FIFO and RefMod ownership regressions executed against disposable fixtures. The first run exposed one old assertion that rejected an explicitly selected other-family LoRA; the test now pins the approved advisory-label policy and exact emitted adapter/strength. No production validation was weakened to make that assertion pass.
+- Strict Linux release Clippy passed. Windows MSVC `cargo xwin check --locked --all-targets` and strict Clippy passed. The initial manual-inspect lint was corrected with `inspect_err` while preserving the original error. Windows runtime interaction remains untested.
+- Native gates ran with Strata left running, one Cargo job, a systemd user scope limited to 3 GiB RAM / 6 GiB swap / 200% CPU. No service was stopped or restarted.
+- Final frontend evidence remains 159 core tests, 2,040 UI tests, typecheck/production build and 467 Chromium layout checks. Only native test/lint corrections and release documentation changed afterward. Independent precommit source review found no remaining security or logic blocker.
+
+## Maintainer integration of PR #33 onto 0.2.37
+
+- Integrated PR head `14c377a07e07e1935565419479e00a28928b26b9` with main `15ba0cd`, preserving SAM mask blur, aspect presets, reference/thumbnail refresh, queue-star recovery, preview/export resets and quiet model advice.
+- Retained other-family LoRAs remain inactive on a first model switch; an explicit selection/set/history restore can enable the exact adapter in that model draft. Disabled adapters do not enter readiness guards or native intents. File/source/format/integrity checks remain authoritative.
+- Review fixes cover locked Library actions and keyboard menu focus, bounded cache scans and paths, deletion admission during RefMod export, and output-name repair keyed by full source path instead of basename. Deleted media also clears retained Forge/TVE inputs and fences delayed inspections.
+- Initial integrated frontend run: typecheck and all 159 core tests passed; 2,038 UI tests passed and two failed. One assertion needed the newly explicit LoRA enable flag; the H3 continuation assertion passed on both the unchanged base and an unloaded integrated rerun. The complete two affected files then passed all 165 tests. The production frontend build and 14 output-publication Python tests passed. The final frozen-source run in the canonical checkout passed typecheck, all **159 core tests** and all **2,040 UI tests across 111 files**, including the Forge/TVE deletion cleanup and recovery-detail display. The earlier scratch rerun overlapped the intentionally failing recovery regression; its failure is superseded by this complete frozen-source run.
+- Final canonical production frontend build passed. The shared Chromium geometry gate passed **467 checks across 11 tabs**, six locales and seven viewport sizes, including its failing negative control and cleanup of its isolated Vite process. Desktop/narrow German screenshots were inspected without visible control overlap; this is mocked-IPC Chromium evidence, not native WebKit/WebView acceptance. Build output is `dist/`; no native app binary was rebuilt.
+- Native review caught and corrected the private-module guard import and Linux check-then-unlink race before integration. Linux now atomically captures the entry into private same-filesystem staging, verifies the captured inode/content/directory identities, and restores without overwrite or retains a recovery file. Recovery details are validated across IPC and displayed in Media; the 50-test Media browser file passed after the recovery-detail regression demonstrated failure before the fix. A separate Python probe exercised seven real Linux syscall scenarios (replacement, recreation, content changes, unlink failure and no-clobber rollback); this proves the protocol, **not execution of the Rust implementation**. All 14 changed/new Rust source files passed syntax parsing only.
+- At the integration checkpoint, Rust compilation/library tests, native Linux deletion and Windows/WebView/exFAT acceptance were **not run**; later release gates are recorded separately. The owner initially accepted leaving these gates open: the Windows test host is off, while the Linux host's live Strata workload leaves insufficient memory for a safe full native build. No service was stopped or restarted, and no real collection scan, provider fetch, model generation or user-media deletion was performed.
+
+The PR #33 entries below describing contributor checks are retained historical evidence, not fresh verification of this maintainer integration.
+
+## Selected LoRA panel, order, switches and trigger selection — 2026-11-16
+
+- The picker has separate selected-list and Saved sets scroll areas, smaller 40×48
+  thumbnails and fixed list heading/Add controls. Pointer capture on the stable
+  list supports row reordering without OS drag-and-drop. A requestAnimationFrame
+  loop scrolls at a stationary top/bottom edge; pointer release/cancel, lost capture,
+  blur and unmount stop it. Escape during dragging restores the starting order.
+  Focused grip buttons also support Up/Down arrows with a live announcement.
+- Optional enabled flags default to true for old drafts/sets. Power icons retain
+  disabled entries, weights and positions; saved definitions round-trip order and
+  switches. Disabled entries are excluded from readiness warnings and Run/Run Plan.
+  The mocked submit regression includes a disabled missing file and confirms exact
+  enabled order/weights and absence of UI-only fields in the native payload. Native
+  image/video loader chains already enumerate payload order; their source is unchanged.
+- LoRA detail trigger chips split comma/newline-separated entries while preserving
+  multiword phrases. Copy selected de-duplicates and follows metadata order; Copy all
+  preserves original metadata text. Clipboard refusal retains selection and uses
+  fixed-operation shared diagnostics without logging trigger words.
+- Chromium synthetic acceptance passed with 75 selected entries: real pointer drags,
+  stationary upward/downward edge scrolling, independent panes, Escape rollback,
+  saved switches, smaller thumbnails, control bounds at 960/1366/1920 desktop widths
+  and selective copying through a mocked clipboard. Shared viewport gate: 467 passed.
+- Frontend production build and core suite passed (157 passed / 1 skipped). Full UI
+  run: 1,999 passed / one timing-sensitive existing post-process assertion failed.
+  The entire affected Workbench file rerun passed all 50 tests. Targeted picker/set,
+  clipboard and enabled-order submission tests passed. A complete UI rerun after
+  packaging passed all 2,000 tests across 109 files. Release build passed. Native
+  code was unchanged.
+- No native DEAS capture, real model scan, provider fetch, model download, generation,
+  system clipboard write or backend restart was performed. Runtime data is excluded
+  from publication.
+
+## Cached LoRA metadata and notification clipping follow-up — 2026-11-16
+
+- Reproduced the Add failure with the actual indexed-listing shape: SnapshotDetails
+  serializes absent family/metadataError fields as null. The queue rejected that
+  shape while previous browser fixtures omitted those fields. The ingress now
+  accepts null optional fields and normalizes them before storing pending additions;
+  explicit metadata errors remain retained for native execution validation.
+- Shared alert CSS overrode the toast position, while Library container containment
+  could clip a fixed child. Notices now use the browser top layer and explicit
+  position/reset styles, with a body portal when browsing cards. Mocked Chromium
+  checks cover nullable cached payloads, Add through the context menu, both success
+  and storage-error notices, scrolled details and 1366/1920/960 desktop widths.
+  Action-button positions stay unchanged. Shared layout gate: 467 checks passed.
+- The new null-payload unit regression failed before the fix and passed afterward.
+  Production frontend build passed. Initial full run: 157 core passed / 1 skipped,
+  1,994 UI passed and two timing-sensitive Workbench assertions failed during the
+  concurrent release build. Both affected files passed in a separate rerun: 132
+  tests. A complete UI rerun after the release build passed all 1,996 tests in
+  108 files. Release build passed. Native orchestration and model execution policy
+  were unchanged.
+- No native app capture, installed-model scan, real provider request or generation
+  was performed. Changes contain source, synthetic fixtures and documentation only.
+
+## Library-to-Studio LoRA handoff follow-up — 2026-11-16
+
+- Added regressions for pre-mount additions during delayed Studio inventory/draft
+  restoration, Windows case/slash/trailing/extended-path identities, duplicate
+  notifications, isolated folders, queue bounds and failed storage writes. Repeated
+  additions keep edited weights. Library card right-click now offers Add to Studio
+  LoRAs while retaining metadata editing.
+- The synthetic Chromium gallery fixture confirms the context-menu addition reaches
+  retained Studio, keeps details open on Add and leaves both action-button bounding
+  boxes unchanged while the floating notice is visible. No real app was captured.
+- Full frontend tests passed: 157 core / 1 skipped and 1,995 UI tests across 108
+  files. Production build, rustfmt, scoped clippy and all 904 native library tests
+  passed (69 ignored). Shared Chromium layout gate passed all 467 checks.
+  Shared diagnostics test includes fixed, rate-limited
+  selection-storage/queue failures without user content.
+- No installed-model scan, real metadata fetch, generation, media deletion or
+  application/backend restart was performed. Local profile data remains excluded
+  from the PR.
+
+## PR #33 integration with current upstream — 2026-11-16
+
+- Combined the expanded Library/Studio changes with upstream main
+  `454a1f083b8e9ab0a2b614470e1f9607ab2c7da3`. Preserved
+  upstream HyperFlow loader/pin, media CSP, release notes and provenance changes.
+- `npm test`: 157 core passed / 1 skipped; all 1,988 UI tests passed in 107 files.
+  Production frontend build and rustfmt check passed. Native library rerun passed
+  904 tests / 69 ignored. Clippy passed with warnings denied except the existing
+  Rust 1.100 `chunks_exact_to_as_chunks` category; upstream resolved the prior
+  H3 `collapsible_if` diagnostic.
+- The first parallel native run hit the existing workbench global-log-count
+  assertion (3 records instead of 2). Its isolated rerun and the complete native
+  suite both passed; no unrelated logging code was changed to hide this race.
+- Shared Chromium viewport gate passed 467 checks; the dedicated synthetic gallery,
+  nested LoRA dialogs, compact controls and Notes fixture also passed. Windows
+  output-publication fixtures passed all 13 tests, and developer script-path tests
+  passed all four with UTF-8 enabled.
+- Forge-data updater tests could not complete on this Windows environment because
+  their required zstd CLI is absent. These updater files were not changed by this
+  PR. Linux/WebKitGTK and native WebView interaction remain separate acceptance;
+  no real model scan, provider fetch, user-media deletion or generation was run.
+- Publication includes source, tests and documentation only. Runtime caches,
+  executables, media/models, credentials and personal notes/sets are excluded.
+
+## Local advisory LoRA families and compact controls — 2026-11-16
+
+- Final `npm test` passed 157 core tests / 1 skipped and all 1,988 UI tests across
+  107 files. Production TypeScript/Vite build passed. A mocked Studio Run submits
+  the selected other-family LoRA at the exact edited 0.65 weight without a dialog
+  or family alert. History restores present LoRAs despite changed family labels;
+  missing inventory/backend entries remain unavailable.
+- Native library suite passed 904 tests / 69 ignored. New disposable-file coverage
+  permits disagreeing header/provider/declaration family labels for selected LoRAs,
+  preserves immutable context and verifies malformed sidecars, unsafe paths and
+  truncated weights still reject. The corresponding non-LoRA checkpoint family
+  rejection remains tested. Selected metadata validation performs no full hashing.
+- Clippy passed with only the existing `chunks_exact_to_as_chunks` and
+  `collapsible_if` baseline allowances. The obsolete native LoRA-family rejection
+  projection was removed; the shared family plugin and frontend browse filters
+  retain their data and declaration behavior.
+- Synthetic Chromium verifies that selecting a differently labelled LoRA leaves
+  Run enabled without submitting a real job. Declared-family badges fit within
+  the thumbnail button and do not increase card height. Folder action icons sit
+  beside All notes without overlap at desktop widths 960/1280/1920; nested details,
+  note persistence, independent scrolling and the existing gallery flows still pass.
+- `npm run test:layout` passed all 467 shared checks. The frontend/native policy
+  tests preserve metadata/integrity/format blockers rather than suppressing real
+  execution errors. No native app capture, installed-model scan, live generation,
+  user-file deletion, cache edit or service restart is performed during checks.
+
+## Local LoRA details and three-pane Notes refinement — 2026-11-16
+
+- Full `npm test` passed: 157 core / 1 skipped and 1,987 UI tests across 107 files.
+  TypeScript/Vite production build passed. Updated authoring regression selects
+  another-family card and verifies the generation blocker remains; the selected
+  count and removable weight controls include it. Present other-family sets load
+  as drafts, while missing-file sets still cannot replace the selection.
+- Shared preview tests cover an indexed JPG, fallback to the cached remote PNG,
+  an exhausted-preview placeholder, changed-source recovery and fixed logging
+  without filenames or URLs. Library, Studio and both LoRA dialogs reuse that path.
+- Nested-dialog tests inspect cached filename/version/base/path/trigger words,
+  isolate bubbled Cancel/Escape from the parent, preserve the unfinished set name
+  and weights and restore focus to the clicked thumbnail.
+- Synthetic Chromium passed grey-card selection, the enlarged popup and thumbnails,
+  actual nested Escape/backdrop dismissal, three separate Notes panes at desktop
+  widths 960/1280/1920, field/button order and retained draft persistence. No model
+  scan refresh, metadata fetch, download job or generation is initiated.
+- `npm run test:layout` passed all 467 shared viewport checks, including retained
+  hidden views and the deliberately broken negative control. These are browser
+  fixtures, not native WebView2/WebKitGTK screenshots or interactive acceptance.
+- This refinement adds no native command, dependency or persistence migration.
+  Previous native fixture results remain applicable; no real models, images,
+  library cache, saved sets or personal notes are edited during verification.
+
+## Local Notes and confirmed Media deletion — 2026-11-16
+
+- `npm test`: 157 core tests passed / 1 skipped, and all 1,983 UI tests passed
+  across 106 files. The production TypeScript/Vite build passed. Notes tests
+  cover nested folders, note editing/moving/deletion, persistence, unsaved drafts,
+  invalid seeds and failed-save retry. Integration checks preserve active prompts
+  and seed, suppress notebook Ctrl/Cmd+Enter generation and clear deleted previews.
+- Media tests cover right-click confirmation/cancel, bulk selection without preview
+  changes, one native request per confirmed batch, partial failure selection,
+  native refusal without hidden files and unmanaged-file rejection.
+- Windows Rust fixtures: full library suite passed 902 tests / 69 ignored. Five
+  deletion tests exercise real disposable-file removal, Unicode names, whole-batch
+  validation, sidecar/project refusal, namespace replacement and fixed shared-log
+  delivery. The job-idle regression additionally proves queued/running/uncertain
+  jobs and preparation reservations cannot invoke the deletion callback.
+- Clippy passed with the existing baseline allowances for
+  `chunks_exact_to_as_chunks` and `collapsible_if`; no new dependency was added.
+- Synthetic Chromium passed actual Notes folder/subfolder creation, positive/
+  negative/seed saving, retained tab drafts, Ctrl+Enter isolation and confirmed
+  Media selection/deletion through mocked IPC. Stable textarea accessible names
+  also remain usable after editing. Native DEAS was not opened or captured.
+- The shared `npm run test:layout` gate passed 467 checks. Fixture artifacts are
+  kept in ignored `output/playwright` rather than the user's profile directory.
+- Linux deletion code is implemented but not executed here. Chromium is not
+  WebKitGTK/WebView2 interactive acceptance. No real media deletion, model scan,
+  generation or backend restart is performed by this verification.
+
+## Local selected LoRAs / sets and backdrop dismissal — 2026-11-16
+
+- Fifteen focused tests passed for Library browsing/add notices, set weight edits,
+  save/update/rename/load/delete, root scoping, missing-file rejection, malformed
+  weights and outside-only pointer dismissal. Workbench integration passed draft
+  updates without opening the dialog, duplicate weight preservation and no native
+  listing or generation on Library additions.
+- Synthetic desktop Chromium checks passed actual backdrop clicks on details and
+  LoRA popups, weight editing/set creation, popup geometry, mixed-family visibility,
+  automatic View all and independent folder/card scrolling.
+- Full frontend suite passed: 157 core / 1 skipped and 1,972 UI tests across
+  105 files. The production frontend build and 467 shared layout checks passed.
+- All records/images are fixtures. No real model-folder scan, native DEAS capture,
+  model generation, provider request or PR update is performed by these checks.
+
+
+## Local Studio LoRA inventory fix — 2026-11-16
+
+- Focused mixed-family regression passed: compatible, unknown and mismatched LoRAs
+  all appear in the dock/tree. A known mismatch explains its disabled state and
+  cannot be activated; a compatible selection works without a new native listing
+  or generation. Production frontend build passed.
+- The remembered Hide other families toggle was tested in unit and desktop browser
+  fixtures. All 45 tests in the affected Workbench file passed. The full suite
+  passed 1,965 UI tests with one H3 continuity timing failure (its button was not
+  yet present); that fixture passed individually and in the complete 45-test rerun.
+- Shared viewport/layout gate: 467 checks passed. No execution compatibility checks
+  were relaxed to make the inventory visible.
+- The browser fixture now uses mixed native LoRA families rather than unresolved
+  ones, so automatic View all coverage also checks the full inventory.
+- No real model scan, native DEAS capture or generation is performed.
+
+
+## Local Studio refocus fix — 2026-11-16
+
+- Focus/visibility regression passed: window return issues no model/capability
+  request, preserves enabled Run and the current listing, and explicit Reload
+  still requests a refreshed listing. The fixture never submits a generation.
+- All 159 tests in the affected Workbench suite and the production frontend build passed.
+- No native app capture, real model-folder scan or live generation was performed.
+
+
+## Local Windows exFAT output naming fix — 2026-11-15
+
+- Thirteen publication/metadata tests passed using temporary workspace fixtures.
+  Windows rename tests use the real no-overwrite operation; POSIX test runs emulate
+  its collision contract. The prior hard-link rollback tests remain covered.
+- New checks cover publication without hard links, second-file collision retry,
+  restoring original files on a later failure, and preserving a newly occupied
+  original path if rollback cannot restore it.
+- No generation, model scan or live backend restart is performed. Actual exFAT
+  generation acceptance remains with the user. The installed DaSiWa node pack is
+  unchanged; the fix belongs to DEAS's owned-backend adapter.
+
+
+## Proposed indexed native model browser — 2026-11-15
+
+Rebased onto the 0.2.36 source at `f99ee6df33a0a986dd2a78727496210fc3930323`.
+Windows source/fixture evidence, without a native app launch or real-library scan:
+
+- `npm run build`: passed.
+- `npm test`: 157 core passed / 1 skipped; 1,965 UI passed across 103 files.
+- `cargo test --locked --offline --manifest-path src-tauri/Cargo.toml --lib`:
+  896 passed, 69 ignored. Model fixtures use a workspace-local temporary directory.
+- Chromium 156: shared viewport/layout gate passed 467 checks; dedicated mocked
+  Library/Studio browser checks passed cards, filters, details, folder visibility,
+  independent wheel scrolling, header alignment and automatic View all batches.
+- Clippy with warnings denied initially reports pre-existing
+  `chunks_exact_to_as_chunks` diagnostics under Rust 1.100, and the upstream
+  nested condition in `jobs.rs` for H3 Regenerate tuning (`collapsible_if`).
+  Both lint categories were excluded for the remaining all-targets check. No
+  unrelated H3 code is changed by this proposal.
+
+The model-index tests cover warm restore without model access, explicit incremental
+refresh, changed/new/deleted files, sidecar changes, offline roots, corrupt cache,
+metadata updates and sibling raster covers. Fetch selection tests cover deduplication,
+root containment, missing-only metadata and stale records. No real provider request,
+model download or generation was executed. Screenshots from browser verification
+are synthetic fixtures and are excluded from the PR.
+
+Maintainer acceptance remains for Linux/WebKit, actual native WebView interaction,
+external-drive behavior, real-library refresh time and very large View all memory
+use. Browsing snapshots remain advisory; execution validates selected files live.
+
 ## Release 0.2.36 BETA (published)
 
 Published 2026-11-15 at source commit `1b553790bb3aced0176adfb63021658a881a7a7e` (source tree `eefdb1de87207b755e7d655c95961297f54da5fe`), tag `v0.2.36` (the private mirror + github). GitHub Actions Verify/Release workflows are paused, so this is the disclosed local unsigned fallback build (rustc 1.97.0, node v26.13.1, CachyOS host): Linux binary via `build-linux.sh --release`, Windows exe via the script's `cargo xwin build --release --target x86_64-pc-windows-msvc` step (`LNK4099` missing-CRT-PDB linker warning only). NSIS/deb/AppImage not produced (no Windows bundler / patchelf on the host) — the four-asset set is the release. The Linux binary's direct glibc floor is 2.39 (CachyOS build host); `ldd` reports zero "not found"; both binaries embed the current frontend chunk `index-CJZp4Nhw.js`.

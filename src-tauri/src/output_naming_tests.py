@@ -21,6 +21,9 @@ exec(compile(sys.argv.pop(1), 'output_naming.py', 'exec'), adapter.__dict__)
 
 class PublicationTests(unittest.TestCase):
     def setUp(self):
+        mode = patch.object(adapter, '_USE_RENAME', False)
+        mode.start()
+        self.addCleanup(mode.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
@@ -117,7 +120,97 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(set(self.root.iterdir()), set(self.sources))
 
 
+class WindowsRenameTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.sources = [self.root / name for name in ('clip_00001_audio.webm', 'clip_00001_audio-first-frame.png')]
+        for i, source in enumerate(self.sources):
+            source.write_bytes(bytes([i]))
+        self.files = [(source, adapter.SAVED.fullmatch(source.name)) for source in self.sources]
+        mode = patch.object(adapter, '_USE_RENAME', True)
+        mode.start()
+        self.addCleanup(mode.stop)
+        # Use the real no-clobber rename on Windows; emulate its contract on POSIX.
+        rename = os.rename
+        def windows_rename(source, target):
+            if os.name != 'nt' and Path(target).exists():
+                raise FileExistsError(errno.EEXIST, 'target occupied')
+            rename(source, target)
+        self.rename = windows_rename
+        operation = patch.object(adapter.os, 'rename', side_effect=windows_rename)
+        operation.start()
+        self.addCleanup(operation.stop)
+
+    def test_success_never_requires_hardlinks(self):
+        with patch.object(adapter.os, 'link', side_effect=OSError(1, 'hardlinks unsupported')) as link:
+            result = adapter.publish(self.files)
+        link.assert_not_called()
+        self.assertEqual(list(result.values()), ['clip-00001-audio.webm', 'clip-00001-audio-first-frame.png'])
+        self.assertEqual([(self.root / name).read_bytes() for name in result.values()], [b'\0', b'\1'])
+        self.assertTrue(all(not source.exists() for source in self.sources))
+
+    def test_collision_on_second_file_restores_group_before_retry(self):
+        occupied = self.root / 'clip-00001-audio-first-frame.png'
+        occupied.write_bytes(b'foreign')
+        result = adapter.publish(self.files)
+        self.assertEqual(occupied.read_bytes(), b'foreign')
+        self.assertFalse((self.root / 'clip-00001-audio.webm').exists())
+        self.assertEqual(list(result.values()), ['clip-00002-audio.webm', 'clip-00002-audio-first-frame.png'])
+        self.assertEqual([(self.root / name).read_bytes() for name in result.values()], [b'\0', b'\1'])
+
+    def test_second_rename_failure_restores_originals_and_preserves_error(self):
+        failure = OSError(errno.EIO, 'second rename failed')
+        def fail_second(source, target):
+            if Path(source) == self.sources[1]:
+                raise failure
+            self.rename(source, target)
+        with patch.object(adapter.os, 'rename', side_effect=fail_second):
+            with self.assertRaises(OSError) as raised:
+                adapter.publish(self.files)
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(set(self.root.iterdir()), set(self.sources))
+        self.assertEqual([source.read_bytes() for source in self.sources], [b'\0', b'\1'])
+
+    def test_rollback_cannot_overwrite_a_new_file_at_original_path(self):
+        failure = OSError(errno.EIO, 'second rename failed')
+        def fail_second(source, target):
+            if Path(source) == self.sources[1]:
+                self.sources[0].write_bytes(b'new unrelated file')
+                raise failure
+            self.rename(source, target)
+        with patch.object(adapter.os, 'rename', side_effect=fail_second):
+            with self.assertRaises(OSError) as raised:
+                adapter.publish(self.files)
+        self.assertIs(raised.exception, failure)
+        self.assertIn('rollback failed', str(failure.__notes__))
+        self.assertEqual(self.sources[0].read_bytes(), b'new unrelated file')
+        self.assertEqual((self.root / 'clip-00001-audio.webm').read_bytes(), b'\0')
+        self.assertEqual(self.sources[1].read_bytes(), b'\1')
+
+
 class MetadataTests(unittest.TestCase):
+    def test_identical_basenames_in_different_folders_keep_their_own_published_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            assets = []
+            paths = []
+            for folder in ('one', 'two'):
+                parent = root / folder
+                parent.mkdir()
+                source = parent / 'image_00001_.png'
+                source.write_bytes(folder.encode())
+                paths.append(str(source))
+                assets.append({'type': 'output', 'subfolder': folder, 'filename': source.name})
+            (root / 'two' / 'image-00001.png').write_bytes(b'occupied')
+            saved = {'ui': {'images': assets}, 'result': tuple(paths)}
+            with patch.object(adapter.folder_paths, 'get_output_directory', return_value=str(root), create=True):
+                result = adapter.wrap_save(lambda self, **kwargs: saved)(None, extra_pnginfo={'deas_output_naming': True})
+            self.assertEqual([a['filename'] for a in result['ui']['images']], ['image-00001.png', 'image-00002.png'])
+            self.assertEqual(result['result'], (str(root / 'one/image-00001.png'), str(root / 'two/image-00002.png')))
+            self.assertEqual((root / 'two/image-00001.png').read_bytes(), b'occupied')
+
     def test_marked_save_clones_graph_and_strips_only_execution_cache(self):
         captured = []
         def save(self, **kwargs):

@@ -241,5 +241,8 @@
   "library.folderHiddenByParent": "親フォルダーにより非表示",
   "library.viewAll": "すべて表示",
   "library.viewAllHelp": "スクロールすると次のカードを自動表示します。フォルダーは再スキャンしません。",
-  "library.loadingMore": "追加のモデルを読み込み中…"
+  "library.loadingMore": "追加のモデルを読み込み中…",
+  "library.addLora": "Studio の LoRA に追加",
+  "library.loraAdded": "Studio に LoRA を追加しました。",
+  "library.loraAddFailed": "LoRA を追加できませんでした。もう一度お試しください。"
 }

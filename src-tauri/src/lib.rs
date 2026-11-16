@@ -84,6 +84,8 @@ pub use projects::{
 pub mod directory;
 pub use directory::{native_json_open, native_json_save, native_pick_directory};
 pub mod media;
+mod media_delete;
+pub use media_delete::native_media_delete;
 pub mod media_export;
 pub use media_export::native_media_export_clean;
 pub mod media_metadata;
@@ -131,7 +133,8 @@ pub use install::{
 pub use logs::{
     native_logs, native_logs_beginner_error, native_logs_comfy_drop_error,
     native_logs_continuity_join_notice, native_logs_export, native_logs_library_error,
-    native_logs_people_image_error, native_logs_reference_media_error,
+    native_logs_people_image_error, native_logs_prompt_notes_error,
+    native_logs_reference_media_error,
 };
 
 use reqwest::Url;

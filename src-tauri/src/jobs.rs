@@ -24,6 +24,7 @@ mod observer;
 pub(crate) mod preview;
 #[path = "jobs_refmod.rs"]
 mod refmod;
+pub(crate) use refmod::with_idle_media_edit;
 #[path = "jobs_stages.rs"]
 mod stages;
 #[path = "jobs_stop.rs"]
@@ -120,14 +121,13 @@ fn model_check_job_revalidates_image_family_from_immutable_context() {
     std::fs::copy(path, loras.join("style.safetensors")).unwrap();
     let mut lora_models = models;
     lora_models.selected = vec![("loras".into(), "style.safetensors".into())];
+    lora_models.validate().unwrap();
+    std::fs::write(loras.join("style.safetensors"), b"partial").unwrap();
     assert!(lora_models
         .validate()
         .unwrap_err()
-        .contains("MODEL_FAMILY_MISMATCH"));
-    assert_eq!(
-        crate::model_families::lora_family("qwen-image-2.1-turbo"),
-        "qwen-image-2.1"
-    );
+        .contains("MODEL_INTEGRITY_INVALID"));
+    assert_eq!(lora_models.context, json!({"diffusion":{"family":"anima"}}));
 }
 
 #[cfg(test)]
