@@ -156,9 +156,9 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             .as_str()
             .is_some_and(|s| model_name(s) && !s.contains(['/', '[', ']']))
         && finite(&i["startSeconds"], 0.0, f64::MAX)
-        && i["durationSeconds"]
-            .as_f64()
-            .is_some_and(|n| n.is_finite() && n > 0.0)
+        && i["durationSeconds"].as_f64().is_some_and(|n| {
+            n.is_finite() && (n > 0.0 || (n == 0.0 && i["startSeconds"].as_f64() == Some(0.0)))
+        })
         && i["seed"].as_u64().is_some()
         && i["steps"].as_u64().is_some_and(|n| (1..=200).contains(&n))
         && [&i["sampler"], &i["scheduler"]]
@@ -253,6 +253,44 @@ mod tests {
             "textEncoder":"qwen3vl_32b_minimax_h3_int4_convrot.safetensors","vae":"MiniMaxH3/video_vae.safetensors",
             "audioVae":"MiniMaxH3/audio_vae.safetensors","sourceVideo":"take.mp4","startSeconds":0.0,"durationSeconds":5.0,
             "seed":7,"steps":30,"sampler":"euler","scheduler":"simple","shiftVideo":12.0,"shiftAudio":3.0,"faceRefine":block()})
+    }
+
+    #[test]
+    fn standalone_whole_source_and_legacy_windows_preserve_audio_routes() {
+        for (start, duration) in [(0.0, 0.0), (0.0, 5.0), (0.0, 2.0), (1.0, 2.0)] {
+            let mut i = intent();
+            i["startSeconds"] = json!(start);
+            i["durationSeconds"] = json!(duration);
+            let g = crate::jobs::compile(&i).unwrap();
+            assert_eq!(g["W"]["inputs"]["start_seconds"], json!(start));
+            assert_eq!(g["W"]["inputs"]["duration_seconds"], json!(duration));
+            assert_eq!(g["W"]["inputs"]["include_audio"], json!(true));
+            for node in ["FR", "B7", "7"] {
+                assert_eq!(g[node]["inputs"]["audio"], json!(["VC", 1]));
+            }
+        }
+    }
+
+    #[test]
+    fn standalone_rejects_partial_sentinels_and_non_numeric_windows() {
+        for (start, duration) in [
+            (json!(1), json!(0)),
+            (json!(-1), json!(0)),
+            (json!(0), json!(-1)),
+            (json!(false), json!(0)),
+            (json!(0), json!(false)),
+            (json!(true), json!(2)),
+            (json!(0), json!(true)),
+            (json!("0"), json!(0)),
+            (json!(0), json!("0")),
+            (json!(null), json!(0)),
+            (json!(0), json!(null)),
+        ] {
+            let mut i = intent();
+            i["startSeconds"] = start;
+            i["durationSeconds"] = duration;
+            assert!(compile(&i).is_err(), "{i}");
+        }
     }
 
     #[test]
@@ -367,7 +405,7 @@ mod tests {
             ("model", json!("../h3.safetensors")),
             ("steps", json!(0)),
             ("shiftVideo", json!(0)),
-            ("durationSeconds", json!(0)),
+            ("durationSeconds", json!(-1)),
             ("outputPrefix", json!("../x")),
             ("extra", json!(1)),
         ] {

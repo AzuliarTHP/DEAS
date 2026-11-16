@@ -59,19 +59,14 @@ fn capability(plan: Option<&crate::install::Plan>) -> Option<(u32, u32)> {
     Some((major.parse().ok()?, minor.parse().ok()?))
 }
 
-/// Speed+ = Comfy Kitchen INT8 attention + fp16 accumulation + kernel autotune; Comfy Kitchen
-/// needs SM 7.5+ (ComfyUI exits otherwise), so older cards get autotune only. Compatibility =
-/// autotune only (same math, any CUDA GPU). Off = ComfyUI's own defaults. CPU: nothing.
+/// Speed+ = Comfy Kitchen INT8 attention + fp16 accumulation on NVIDIA SM 7.5+.
+/// Older GPUs, Compatibility and Off use ComfyUI's own defaults. Autotune is custom opt-in only.
 pub fn preset(name: &str, plan: Option<&crate::install::Plan>) -> Startup {
     let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect();
     match (name, capability(plan)) {
         ("speed", Some(cc)) if cc >= (7, 5) => Startup {
             flags: strings(&["--use-ck-attention"]),
-            fast: strings(&["fp16_accumulation", "autotune"]),
-            ..Default::default()
-        },
-        ("speed" | "compatibility", Some(_)) => Startup {
-            fast: strings(&["autotune"]),
+            fast: strings(&["fp16_accumulation"]),
             ..Default::default()
         },
         _ => Startup::default(),
@@ -366,8 +361,15 @@ mod tests {
         let rtx = plan("nvidia", "12.0");
         let speed = preset("speed", Some(&rtx));
         assert_eq!(speed.flags, ["--use-ck-attention"]);
-        assert_eq!(speed.fast, ["fp16_accumulation", "autotune"]);
-        assert_eq!(preset("compatibility", Some(&rtx)).fast, ["autotune"]);
+        assert_eq!(speed.fast, ["fp16_accumulation"]);
+        assert_eq!(preset("compatibility", Some(&rtx)), Startup::default());
+        assert_eq!(preset("speed", Some(&plan("nvidia", "7.5"))), speed);
+        for cc in ["6.1", "7.0", "unknown"] {
+            assert_eq!(
+                preset("speed", Some(&plan("nvidia", cc))),
+                Startup::default()
+            );
+        }
         assert_eq!(preset("off", Some(&rtx)), Startup::default());
         // Pascal: no Comfy Kitchen INT8 kernel (SM 7.5+), so ComfyUI would exit.
         assert!(preset("speed", Some(&plan("nvidia", "6.1")))
@@ -386,12 +388,26 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         assert_eq!(
             args(root.path(), Some(&rtx)).unwrap(),
-            [
-                "--use-ck-attention",
-                "--fast",
-                "fp16_accumulation",
-                "autotune"
-            ]
+            ["--use-ck-attention", "--fast", "fp16_accumulation"]
+        );
+        for name in PRESETS {
+            let saved = Startup {
+                preset: Some(name.into()),
+                ..Default::default()
+            };
+            assert_eq!(write(root.path(), saved.clone()).unwrap(), saved);
+            assert_eq!(read(root.path()).unwrap(), saved);
+            assert!(!args(root.path(), Some(&rtx))
+                .unwrap()
+                .iter()
+                .any(|a| a == "autotune"));
+        }
+        let custom = s(&[], &["autotune"]);
+        write(root.path(), custom.clone()).unwrap();
+        assert_eq!(read(root.path()).unwrap(), custom);
+        assert_eq!(
+            args(root.path(), Some(&rtx)).unwrap(),
+            ["--fast", "autotune"]
         );
         let mut mixed = Startup {
             preset: Some("speed".into()),

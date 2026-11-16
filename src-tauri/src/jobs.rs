@@ -1727,6 +1727,7 @@ impl Jobs {
             let video = crate::jobs_video::is_video(&intent);
             if video { crate::jobs_video::validate_preview_capability(&intent, allow)?; }
             if video
+                && intent["streamDecode"] != true
                 && !crate::jobs_video_post::is_enhance(&intent)
                 && (intent.get("videoPost").is_some() || intent.get("faceRefine").is_some() || intent.get("latentUpscale").is_some())
                 && !allow["nodes"].as_array().is_some_and(|n| n.contains(&json!("DEAS_VideoPostprocessGate")))
@@ -2402,7 +2403,7 @@ pub(crate) fn job_outputs(entry: &Value, graph: &Value) -> Result<Vec<Value>, St
     for output in &mut originals {
         output["role"] = json!("original");
     }
-    if graph["7"]["class_type"] == "DaSiWa_EnhancedVideoCombine" {
+    if matches!(graph["7"]["class_type"].as_str(), Some("DaSiWa_EnhancedVideoCombine" | "DEAS_H3StreamVideoSave")) {
         for outputs in [&mut final_outputs, &mut originals] {
             outputs.sort_by_key(|o| {
                 !o["format"]
@@ -2598,8 +2599,7 @@ async fn poll_present(job: &mut Job) -> Result<bool, String> {
                     && !["original", "processed"].iter().all(|role| {
                         images.iter().any(|o| {
                             o["role"] == *role
-                                && (job.plan.graph["7"]["class_type"]
-                                    != "DaSiWa_EnhancedVideoCombine"
+                                && (!matches!(job.plan.graph["7"]["class_type"].as_str(), Some("DaSiWa_EnhancedVideoCombine" | "DEAS_H3StreamVideoSave"))
                                     || o["format"]
                                         .as_str()
                                         .is_some_and(|f| f.starts_with("video/")))

@@ -273,6 +273,7 @@ fn stage(id: &str, class: &str) -> &'static str {
         "DaSiWa_MetadataImageSaver"
         | "SaveImage"
         | "SaveVideo"
+        | "DEAS_H3StreamVideoSave"
         | "DaSiWa_EnhancedVideoCombine"
         | "SaveAudioAdvanced" => "save",
         "YuE2GenerateMusic" => "music-tokens",
@@ -505,6 +506,8 @@ mod tests {
             ("SD", "DaSiWaH3ContinuitySegmentDecode", "decode"),
             ("D", "VAEDecodeAudio", "audio-decode"),
             ("7", "DaSiWa_EnhancedVideoCombine", "save"),
+            ("7", "DEAS_H3StreamVideoSave", "save"),
+            ("B7", "DEAS_H3StreamVideoSave", "save"),
             ("7", "DaSiWa_MetadataImageSaver", "save"),
             ("7", "SaveAudioAdvanced", "save"),
             ("M", "YuE2GenerateMusic", "music-tokens"),

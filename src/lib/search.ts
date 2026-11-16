@@ -31,6 +31,7 @@ export interface SearchEntry {
 const studio: SearchView = 'studio';
 
 export const searchIndex: readonly SearchEntry[] = [
+  {view:studio,studioTab:'generate',dockTab:'post',tab:'setup.tab.studio',section:'studio.run.post.group.latent',label:'studio.run.streamDecode.label',target:'[data-stream-decode]',aliases:['H3','streaming','bounded pixel RAM','decode','export'],reason:'studio.run.streamDecode.hint'},
   {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.smoothAudioSeams',target:'[data-cont-join-smooth-audio]',aliases:['audio','seam','smoothing','fade','join'],reason:'studio.run.cont.join.smoothAudioSeamsHint'},
   {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.transitions',target:'[data-cont-join-transition]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},
   {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.context',target:'[data-cont-join-context]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},

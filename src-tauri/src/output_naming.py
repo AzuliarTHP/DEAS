@@ -14,7 +14,7 @@ from server import PromptServer
 SAVED = re.compile(r"(.+)_(\d{5,})_?(audio)?(.*)\.(\w+)")
 # Windows rename is atomic and refuses an existing destination, including on exFAT.
 _USE_RENAME = os.name == "nt"
-SAVERS = ("SaveImage", "DaSiWa_MetadataImageSaver", "DaSiWa_EnhancedVideoCombine")
+SAVERS = ("SaveImage", "DaSiWa_MetadataImageSaver", "DaSiWa_EnhancedVideoCombine", "DEAS_H3StreamVideoSave")
 
 
 def publish(files):

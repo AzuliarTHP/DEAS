@@ -1,0 +1,33 @@
+import { collection, dock, evidence, h3VideoFiles, heldJob, videoEvidence, videoSam } from './Workbench.testHarness';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
+import { Workbench } from './Workbench';
+import { I18nProvider } from '../../i18n/I18nProvider';
+import { faceRefineNodes, sam3VideoNodes } from '../../lib/sam3';
+import { checkRecipePrerequisites } from '../../lib/recipePrerequisites';
+import { scanModels } from '../../lib/models';
+import { readCurrentWorkbench, runWorkbenchJob, uploadInput } from '../../lib/jobs';
+
+test.each([[0,2],[1,1]])('manual face refinement uses the whole source, not the analysis window %s / %s',async(start,duration)=>{
+ localStorage.setItem('deas.pref.studio.run.pipeline',JSON.stringify('t2v'));
+ localStorage.setItem('deas.pref.studio.run.samVideoStart',JSON.stringify(start));
+ localStorage.setItem('deas.pref.studio.run.samVideoDuration',JSON.stringify(duration));
+ vi.mocked(scanModels).mockResolvedValue([...h3VideoFiles(),{category:'checkpoints',name:videoSam,path:'/m/'+videoSam,size:1,info:null}]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...videoEvidence,allowlist:{...videoEvidence.allowlist,nodes:[...videoEvidence.allowlist.nodes,...faceRefineNodes,...sam3VideoNodes],checkpoints:[videoSam]}});
+ const source={...heldJob('face-source','succeeded',evidence.baseUrl),outputRoot:'/out',outputs:[{filename:'five-seconds.mp4',subfolder:'clips',type:'output' as const,format:'video/mp4'}]};
+ vi.mocked(readCurrentWorkbench).mockResolvedValue(collection([source]));
+ vi.mocked(uploadInput).mockResolvedValue('uploaded.mp4');
+ vi.mocked(runWorkbenchJob).mockResolvedValue(heldJob('face-result','failed',evidence.baseUrl));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m',output:'/out',input:'/in'}}/></I18nProvider>);
+ await waitFor(()=>expect(document.querySelector('[data-job-id="face-source"]')).not.toBeNull());
+ fireEvent.click(document.querySelector('[data-job-id="face-source"] .wb-queue-select')!);
+ dock('Post-Processing');fireEvent.click(document.querySelector('[data-post-card="face-analysis"]')!);
+ const run=await screen.findByRole('button',{name:'Refine faces'});
+ await waitFor(()=>expect(run).toHaveProperty('disabled',false));
+ expect(document.querySelector('[data-sam-video="startSeconds"]')).toHaveProperty('value',String(start));
+ expect(document.querySelector('[data-sam-video="durationSeconds"]')).toHaveProperty('value',String(duration));
+ fireEvent.click(run);
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
+ expect(uploadInput).toHaveBeenCalledExactlyOnceWith(evidence.baseUrl,'/out/clips/five-seconds.mp4');
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({recipeId:'h3-face-refine',sourceVideo:'uploaded.mp4',startSeconds:0,durationSeconds:0});
+});

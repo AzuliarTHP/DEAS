@@ -33,6 +33,7 @@ export interface PostBadgeInput {
   video: boolean;
   audio: boolean;
   latent: boolean;
+  streamDecode?: boolean;
   tve: TvePref;
   refine: boolean;
   imageUpscaleModel?: string;
@@ -61,7 +62,7 @@ export function postCategoryFunctions(p: PostBadgeInput): Record<PostCategoryId,
   const refineEligible = imageEligible && !p.h3Image && !p.moss;
   return {
     audio: p.audio && p.audioMode !== 'off' ? ['audio'] : [],
-    latent: p.video && p.latent ? ['latent', ...(p.latentSpikeGuard ? ['latent.spikeGuard'] : [])] : [],
+    latent: [...(p.video && p.latent ? ['latent', ...(p.latentSpikeGuard ? ['latent.spikeGuard'] : [])] : []), ...(h3Video && p.streamDecode ? ['streamDecode'] : [])],
     regenerate: h3Video && p.regenerate ? ['regenerate', ...(p.regenerateTilingOff ? ['regenerate.tilingOff'] : [])] : [],
     'face-analysis': h3Video && p.faceRefine ? ['faceRefine', ...(p.samVideoCuts ? ['faceAnalysis.cuts'] : []), ...(p.faceRefinePrimaryOnly ? ['faceRefine.primaryOnly'] : [])] : [],
     sam: imageEligible && p.sam ? ['sam'] : [],
