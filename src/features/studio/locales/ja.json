@@ -1127,7 +1127,7 @@
   "studio.run.viewer.next": "次の画像",
   "studio.run.viewer.closed": "まず生成画像を全画面表示で開いてください。",
   "studio.run.exportClean.label": "メタデータなしでエクスポート…",
-  "studio.run.exportClean.hint": "プロンプト、ワークフロー、設定を含まないコピーを保存します。元のファイルは変更されません。",
+  "studio.run.exportClean.hint": "プロンプト・ワークフロー・設定を除いて保存します。確認後、元ファイルを含む既存ファイルを置き換えられます。",
   "studio.run.exportClean.title": "メタデータなしでエクスポート",
   "studio.run.exportClean.native": "メタデータなしのエクスポートには、デスクトップアプリ内のローカルファイルが必要です。",
   "studio.run.exportClean.done": "メタデータなしのコピーを保存しました: {path}",
@@ -1252,5 +1252,7 @@
   "loraDetails.copySelected": "選択項目をコピー（{count}）",
   "studio.faceRefine.stillHint": "H3画像生成後、SAM3.1で顔を検出し、正方形のクロップを補正して合成します。元の画像と処理結果を両方保存します。動画解析や手動の補正操作は不要です。",
   "studio.faceRefine.stillUnavailable": "H3静止画の顔補正にはBOOLEAN型のstill_imageに対応した互換アダプターが必要です。",
-  "studio.faceRefine.h3Only": "MiniMax H3の画像と動画でのみ利用できます。"
+  "studio.faceRefine.h3Only": "MiniMax H3の画像と動画でのみ利用できます。",
+  "studio.run.exportClean.replaceTitle": "既存のファイルを置き換えますか？",
+  "studio.run.exportClean.replaceMessage": "選択したファイルをメタデータのないコピーで置き換えますか？元ファイルを選択した場合も置き換えられます。"
 }

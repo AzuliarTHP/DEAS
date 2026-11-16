@@ -1127,7 +1127,7 @@
   "studio.run.viewer.next": "下一张图片",
   "studio.run.viewer.closed": "请先在全屏视图中打开一张生成的图片。",
   "studio.run.exportClean.label": "不含元数据导出…",
-  "studio.run.exportClean.hint": "保存一份不含提示词、工作流和设置的副本；原文件保持不变。",
+  "studio.run.exportClean.hint": "保存时移除提示词、工作流和设置。确认后可替换现有文件，包括原文件。",
   "studio.run.exportClean.title": "不含元数据导出",
   "studio.run.exportClean.native": "不含元数据导出需要桌面应用中的本地文件。",
   "studio.run.exportClean.done": "已保存不含元数据的副本：{path}",
@@ -1252,5 +1252,7 @@
   "loraDetails.copySelected": "复制所选（{count}）",
   "studio.faceRefine.stillHint": "H3 图像生成后，使用 SAM3.1 检测人脸，精修方形裁剪并贴回。原始与处理后图像均保留。无需视频分析或手动精修操作。",
   "studio.faceRefine.stillUnavailable": "H3 静态图像人脸精修需要支持 BOOLEAN 类型 still_image 的兼容适配器。",
-  "studio.faceRefine.h3Only": "仅适用于 MiniMax H3 图像和视频。"
+  "studio.faceRefine.h3Only": "仅适用于 MiniMax H3 图像和视频。",
+  "studio.run.exportClean.replaceTitle": "替换现有文件？",
+  "studio.run.exportClean.replaceMessage": "用不含元数据的副本替换所选文件？选择原文件也会替换它。"
 }

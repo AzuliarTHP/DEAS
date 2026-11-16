@@ -1,3 +1,5 @@
+import builtinFamilies from '../../families/builtin.json' with {type:'json'};
+import { useModelOrganization } from '../../lib/modelOrganization';
 import { ModelPreview } from '../../components/models/ModelPreview';
 import { useDialogBackdropClose } from '../../components/useDialogBackdropClose';
 import { requestStudioLora } from '../../lib/studioLoraSelection';
@@ -16,16 +18,11 @@ import './installedGallery.css';
 import { reportLibraryError } from './libraryDiagnostics';
 import { ModelFolderTree } from '../../components/ModelFolderTree';
 
-type Annotation={favorite?:boolean; notes?:string; tags?:string[]};
-type Organization=Record<string,Annotation>;
-const validOrganization=(value:unknown):value is Organization=>!!value&&typeof value==='object'&&!Array.isArray(value)&&Object.entries(value).length<=10000&&Object.entries(value).every(([path,item])=>path.length<=32768&&!!item&&typeof item==='object'&&
- (item.favorite===undefined||typeof item.favorite==='boolean')&&(item.notes===undefined||typeof item.notes==='string'&&item.notes.length<=4000)&&
- (item.tags===undefined||Array.isArray(item.tags)&&item.tags.length<=20&&item.tags.every((tag:unknown)=>typeof tag==='string'&&tag.length<=50)));
 const bucket=(m:LocalModel)=>['checkpoints','diffusion_models'].includes(m.category)?'models':m.category;
 const folderOf=(m:LocalModel)=>m.name.split(/[\\/]/).slice(0,-1).join('/');
 const filename=(m:LocalModel)=>m.name.split(/[\\/]/).at(-1)??m.name;
 const titleOf=(m:LocalModel)=>m.info?.civitai?.name??filename(m).replace(/\.(safetensors|sft|ckpt|pt|pth|gguf|bin)$/i,'');
-const familyOf=(m:LocalModel)=>m.info?.civitai?.base??m.family??'';
+const familyOf=(m:LocalModel)=>m.familyOverride?(builtinFamilies.find(f=>f.id===m.familyOverride)?.name??m.familyOverride):m.info?.civitai?.base??m.family??'';
 const sizeOf=(bytes:number)=>bytes>=1073741824?`${(bytes/1073741824).toFixed(1)} GB`:`${Math.max(0,Math.round(bytes/1048576))} MB`;
 const order=['models','loras','vae','text_encoders','clip_vision','controlnet','upscale_models','embeddings'];
 const PAGE_SIZE=60;
@@ -50,7 +47,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const [query,setQuery]=usePref('library.local.query','',isString);
  const [layout,setLayout]=usePref('library.local.layout','grid',oneOf('grid','list'));
  const [sort,setSort]=usePref('library.local.sort','name',isModelSort);const usage=useModelUsage();const [shuffleSeed,setShuffleSeed]=useState(()=>Math.floor(Math.random()*2147483647));
- const [organization,setOrganization]=usePref<Organization>('library.local.organization',{},validOrganization);
+ const {organization,annotation,annotate,isFavorite,toggleFavorite,error:organizationError}=useModelOrganization();
  const [favoritesOnly,setFavoritesOnly]=useState(false);const [folder,setFolder]=useState('');const [family,setFamily]=useState('');const [tag,setTag]=useState('');
  const [metadata,setMetadata]=useState('all');const [limit,setLimit]=useState(PAGE_SIZE);const [copied,setCopied]=useState('');
  const [blur,setBlur]=usePref('library.local.blur',true,(v):v is boolean=>typeof v==='boolean');
@@ -60,13 +57,13 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const hiddenKey=`${root}:${active}`;const hiddenFolders=hiddenByCollection[hiddenKey]??[];const isHidden=(m:LocalModel)=>modelFolderHidden(m.name,hiddenByCollection[`${root}:${bucket(m)}`]??[]);
  const collection=useMemo(()=>models.filter(m=>bucket(m)===active),[models,active]);
  const families=useMemo(()=>[...new Set(collection.map(familyOf).filter(Boolean))].sort(),[collection]);
- const tags=useMemo(()=>[...new Set(collection.flatMap(m=>organization[m.path]?.tags??[]))].sort(),[collection,organization]);
+ const tags=useMemo(()=>[...new Set(collection.flatMap(m=>annotation(m.path)?.tags??[]))].sort(),[collection,organization]);
  const matching=useMemo(()=>{
   const terms=query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
   return sortModels(collection.filter(m=>{
-   const personal=organization[m.path];const info=m.info?.civitai;
+   const personal=annotation(m.path);const info=m.info?.civitai;
    const haystack=[m.name,info?.name,info?.version,familyOf(m),...info?.trainedWords??[],personal?.notes,...personal?.tags??[]].filter(Boolean).join(' ').toLocaleLowerCase();
-   return !isHidden(m)&&terms.every(term=>haystack.includes(term))&&(!favoritesOnly||personal?.favorite)&&(!folder||folderOf(m)===folder||folderOf(m).startsWith(`${folder}/`))&&(!family||familyOf(m)===family)&&(!tag||personal?.tags?.includes(tag))&&(metadata==='all'||(metadata==='known'?!!info:!info));
+   return (favoritesOnly||!isHidden(m))&&terms.every(term=>haystack.includes(term))&&(!favoritesOnly||isFavorite(m.path))&&(!folder||folderOf(m)===folder||folderOf(m).startsWith(`${folder}/`))&&(!family||familyOf(m)===family)&&(!tag||personal?.tags?.includes(tag))&&(metadata==='all'||(metadata==='known'?!!info:!info));
   }),sort,usage,shuffleSeed);
  },[collection,query,favoritesOnly,folder,family,tag,metadata,sort,organization,usage,shuffleSeed,hiddenByCollection,root]);
  useEffect(()=>{setLimit(PAGE_SIZE);},[query,active,favoritesOnly,folder,family,tag,metadata,sort,viewAll]);
@@ -76,8 +73,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  useEffect(()=>setEditing(false),[picked?.path]);
  // Use the top layer to escape Library containment, modal clipping and shared alert styles.
  useEffect(()=>{const element=noticeRef.current;if(!loraNotice||!element)return;element.showPopover?.();return()=>element.hidePopover?.();},[loraNotice,!!picked]);
- const annotate=(path:string,change:Partial<Annotation>)=>setOrganization(old=>({...old,[path]:{...old[path],...change}}));
- const favorite=(m:LocalModel)=>annotate(m.path,{favorite:!organization[m.path]?.favorite});
+ const favorite=(m:LocalModel)=>toggleFavorite(m.path);
  const copy=async(text:string,key:string)=>{try{await navigator.clipboard.writeText(text);setCopied(key);}catch{setCopied('error');reportLibraryError('clipboard');}};
  useEffect(()=>{if(!copied)return;const timer=setTimeout(()=>setCopied(''),2000);return()=>clearTimeout(timer);},[copied]);
  const reset=()=>{setQuery('');setFavoritesOnly(false);setFolder('');setFamily('');setTag('');setMetadata('all');};
@@ -90,6 +86,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
   <header className="library-heading"><div className="library-native-actions">{onFetch&&<button type="button" className="action-button" aria-expanded={fetchOpen} disabled={locked||fetchBusy} onClick={()=>setFetchOpen(v=>!v)}>{t('library.fetch')}</button>}{actions}</div></header>
   <div className="library-fetch-tools">{onFetch&&fetchOpen&&<div className="library-fetch-options" role="group" aria-label={t('library.fetch')}><label>{t('library.fetchTarget')}<select value={fetchTarget} disabled={fetchBusy} onChange={e=>setFetchTarget(e.target.value)}><option value="filtered">{t('library.fetchFiltered')}</option><option value="folder">{t('library.fetchFolder')}</option><option value="category">{t('library.fetchCategory')}</option><option value="all">{t('library.fetchAll')}</option></select></label><label className="library-checkbox"><input type="checkbox" checked={missingOnly} disabled={fetchBusy} onChange={e=>setMissingOnly(e.target.checked)}/>{t('library.fetchMissing')}</label><span>{t('library.fetchCount',{count:fetchModels.length})}</span><button type="button" className="action-button" disabled={locked||fetchBusy||!fetchModels.length} onClick={()=>{onFetch(fetchModels,missingOnly);setFetchOpen(false);}}>{t('library.fetchStart')}</button><p className="field-help">{t('library.fetchHelp')}</p></div>}</div>
   {feedback}
+  {organizationError&&<p role="alert">{t('library.organizationFailed')}</p>}
   <nav className="library-browse" aria-label={t('library.browse')}>
     <span className="library-section-label">{t('library.browse')}</span>
     <div className="library-types" role="tablist" aria-label={t('downloads.category')}>{tabs.map(c=><button role="tab" key={c} type="button" aria-label={t(`downloads.folder.${c}`)} aria-selected={active===c} disabled={locked} onClick={()=>{setSelected('');setCategory(c);}}><Glyph name={c==='loras'?'model':'folder'}/><span>{t(`downloads.folder.${c}`)}</span><small>{models.filter(m=>bucket(m)===c).length}</small></button>)}</div>
@@ -97,10 +94,10 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
   <div className="library-layout">
    <aside className="library-sidebar" aria-label={t('library.navigation')}>
 
-    <button className="library-favorite-filter" type="button" data-library-favorites aria-label={t('library.favorites')} aria-pressed={favoritesOnly} onClick={()=>setFavoritesOnly(v=>!v)}><span aria-hidden="true">★</span>{t('library.favorites')}<small>{collection.filter(m=>organization[m.path]?.favorite).length}</small></button>
+    <button className="library-favorite-filter" type="button" data-library-favorites aria-label={t('library.favorites')} aria-current={favoritesOnly?'page':undefined} onClick={()=>{setFavoritesOnly(true);setFolder('');setFamily('');setTag('');setMetadata('all');setQuery('');}}><span aria-hidden="true">★</span>{t('library.favorites')}<small>{collection.filter(m=>isFavorite(m.path)).length}</small></button>
     <div className="library-sidebar-divider"/>
     <span className="library-section-label">{t('library.filters')}</span>
-    <div data-library-folder><ModelFolderTree names={collection.map(m=>m.name)} selected={folder} onSelect={setFolder} storageKey={`library:${root}:${active}`} rootLabel={t('library.allFolders')} disabled={locked} hiddenFolders={hiddenFolders} onToggleHidden={path=>setHiddenByCollection(old=>({...old,[hiddenKey]:(old[hiddenKey]??[]).includes(path)?(old[hiddenKey]??[]).filter(p=>p!==path):[...old[hiddenKey]??[],path]}))}/></div>
+    <div data-library-folder><ModelFolderTree names={collection.map(m=>m.name)} selected={favoritesOnly?'favorites://':folder} onSelect={path=>{setFavoritesOnly(false);setFolder(path);}} storageKey={`library:${root}:${active}`} rootLabel={t('library.allFolders')} disabled={locked} hiddenFolders={hiddenFolders} onToggleHidden={path=>setHiddenByCollection(old=>({...old,[hiddenKey]:(old[hiddenKey]??[]).includes(path)?(old[hiddenKey]??[]).filter(p=>p!==path):[...old[hiddenKey]??[],path]}))}/></div>
     <label>{t('library.base')}<select data-library-family value={family} onChange={e=>setFamily(e.target.value)}><option value="">{t('library.allBases')}</option>{families.map(f=><option key={f} value={f}>{f}</option>)}</select></label>
     <label>{t('library.metadata')}<select value={metadata} onChange={e=>setMetadata(e.target.value)}><option value="all">{t('library.anyMetadata')}</option><option value="known">{t('library.withMetadata')}</option><option value="missing">{t('library.missingMetadata')}</option></select></label>
     {tags.length>0&&<label>{t('library.tags')}<select value={tag} onChange={e=>setTag(e.target.value)}><option value="">{t('library.allTags')}</option>{tags.map(value=><option key={value}>{value}</option>)}</select></label>}
@@ -115,14 +112,14 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
     <div className="library-body" data-model-scroll>
      <div className="library-results">
       <div className={`library-card-grid is-${layout}`}>{matching.slice(0,limit).map(m=>{
-       const info=m.info?.civitai;const personal=organization[m.path];
+       const info=m.info?.civitai;const personal=annotation(m.path);
        return <article key={m.path} className={`library-card${selected===m.path?' is-selected':''}${blur&&info?.nsfw?' is-sensitive':''}`}>
         <ModelMetadataTarget model={m} actions={m.category==='loras'?[{label:t('library.addLora'),onClick:()=>addLora(m),disabled:locked}]:[]}><button type="button" className="download-card library-card-main" aria-label={m.name} aria-haspopup="dialog" aria-keyshortcuts="Shift+F10" aria-pressed={selected===m.path} disabled={locked} onClick={()=>setSelected(selected===m.path?'':m.path)}>
          <div className="library-card-art"><Cover model={m}/><span className="library-family-badge">{familyOf(m)||t('library.unclassified')}</span>{info?.nsfw&&<span className="library-mature-badge">{t('downloads.nsfwTag')}</span>}</div>
          <div className="library-card-caption"><strong>{titleOf(m)}</strong><span className="library-card-version">{info?.version??filename(m)}</span><div className="library-card-bottom"><span>{sizeOf(m.size)}</span><span title={folderOf(m)}><Glyph name="folder"/>{folderOf(m).split('/').at(-1)||t('library.rootFolder')}</span></div><ModelDeclaredBadge model={m}/><small className="library-model-check">{modelCheckText(checkModel(m),t)}</small></div>
         </button></ModelMetadataTarget>
         {m.category==='loras'&&<button type="button" className="library-add-lora" disabled={locked} aria-label={`${t('library.addLora')}: ${m.name}`} title={t('library.addLora')} onClick={()=>addLora(m)}>+</button>}
-        <button type="button" className="library-star" aria-label={t(personal?.favorite?'library.unfavorite':'library.favorite',{name:m.name})} aria-pressed={!!personal?.favorite} onClick={()=>favorite(m)}>{personal?.favorite?'★':'☆'}</button>
+        <button type="button" className="library-star" aria-label={t(isFavorite(m.path)?'library.unfavorite':'library.favorite',{name:m.name})} aria-pressed={isFavorite(m.path)} onClick={()=>favorite(m)}>{isFavorite(m.path)?'★':'☆'}</button>
        </article>;
       })}</div>
       {loaded&&matching.length===0&&<div className="library-empty"><Glyph name="search"/><h3>{t('library.noResults')}</h3><p>{models.length?t('library.noResultsHelp'):t('downloads.installed.empty',{root})}</p>{models.length>0&&<button type="button" className="action-button" onClick={reset}>{t('library.reset')}</button>}</div>}
@@ -133,7 +130,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
       <h3 tabIndex={-1}>{titleOf(picked)}</h3><p className="library-detail-version">{picked.info?.civitai?.version??filename(picked)}</p>
       {picked.info?.civitai&&models.filter(m=>m.info?.civitai?.modelId===picked.info?.civitai?.modelId).length>1&&<section className="library-detail-section"><h4>{t('downloads.version')}</h4><div className="library-trigger-words">{models.filter(m=>m.info?.civitai?.modelId===picked.info?.civitai?.modelId).map(m=><button key={m.path} type="button" aria-pressed={m.path===picked.path} onClick={()=>setSelected(m.path)}>{m.info?.civitai?.version??filename(m)}</button>)}</div></section>}
       {words.length>0&&<section className="library-detail-section"><div className="library-section-heading"><h4>{t('downloads.installed.words')}</h4><button type="button" onClick={()=>void copy(words.join(', '),'words')}>{copied==='words'?t('library.copied'):t('library.copyAll')}</button></div><div className="library-trigger-words">{words.map((word,i)=><button type="button" key={`${word}-${i}`} onClick={()=>void copy(word,`word-${i}`)}>{copied===`word-${i}`?'✓ ':''}{word}</button>)}</div></section>}
-      <section className="library-detail-section"><h4>{t('library.organize')}</h4><label className="library-checkbox"><input type="checkbox" checked={!!organization[picked.path]?.favorite} onChange={()=>favorite(picked)}/>{t('library.favorites')}</label><label>{t('library.tags')}<input aria-label={t('library.editTags')} maxLength={500} placeholder={t('library.tagsHint')} key={picked.path} defaultValue={(organization[picked.path]?.tags??[]).join(', ')} onBlur={e=>annotate(picked.path,{tags:[...new Set(e.currentTarget.value.split(',').map(tag=>tag.trim().slice(0,50)).filter(Boolean))].slice(0,20)})} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label><label>{t('library.notes')}<textarea data-library-notes maxLength={4000} rows={4} placeholder={t('library.notesHint')} value={organization[picked.path]?.notes??''} onChange={e=>annotate(picked.path,{notes:e.target.value})}/></label><small>{t('library.savedLocally')}</small></section>
+      <section className="library-detail-section"><h4>{t('library.organize')}</h4><label className="library-checkbox"><input type="checkbox" checked={isFavorite(picked.path)} onChange={()=>favorite(picked)}/>{t('library.favorites')}</label><label>{t('library.tags')}<input aria-label={t('library.editTags')} maxLength={500} placeholder={t('library.tagsHint')} key={picked.path} defaultValue={(annotation(picked.path)?.tags??[]).join(', ')} onBlur={e=>annotate(picked.path,{tags:[...new Set(e.currentTarget.value.split(',').map(tag=>tag.trim().slice(0,50)).filter(Boolean))].slice(0,20)})} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label><label>{t('library.notes')}<textarea data-library-notes maxLength={4000} rows={4} placeholder={t('library.notesHint')} value={annotation(picked.path)?.notes??''} onChange={e=>annotate(picked.path,{notes:e.target.value})}/></label><small>{t('library.savedLocally')}</small></section>
       <section className="library-popup-facts"><div><small>{t('downloads.version')}</small><p>{picked.info?.civitai?.version??'—'}</p></div><div><small>{t('modelMeta.filename')}</small><p>{filename(picked)}</p></div><div><small>{t('downloads.installed.path')}</small><p>{picked.path}</p></div><div><small>{t('library.base')}</small><p>{familyOf(picked)||t('library.unclassified')}</p></div><div><small>{t('downloads.size')}</small><p>{sizeOf(picked.size)}</p></div><div><small>{t('library.modelId')}</small><p>{picked.info?.civitai?.modelId??'—'}</p></div><div><small>{t('library.versionId')}</small><p>{picked.info?.civitai?.versionId??'—'}</p></div><div><small>{t('downloads.digest')}</small><p>{picked.info?.sha256??t('downloads.installed.unhashed')}</p></div></section>
       {picked.info?.civitai?.description&&<section className="library-detail-section"><h4>{t('library.aboutVersion')}</h4><p className="library-version-description">{picked.info.civitai.description.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')}</p></section>}
       <div className="library-detail-actions">{picked.category==='loras'&&<button type="button" className="action-button" disabled={locked} onClick={()=>addLora(picked)}>{t('library.addLora')}</button>}<button type="button" className="action-button" onClick={()=>setEditing(true)}>{t('modelMeta.title')}</button></div>

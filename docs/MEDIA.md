@@ -32,6 +32,12 @@ For image Runs with the optional refine chain, the queue labels **Original** (co
 
 ## Working with media
 
+**Export without metadata…** opens Save As. Choosing an occupied filename, including
+the source itself, requires a separate replacement confirmation. Cancel keeps all
+files intact. DEAS prepares the clean file before replacing the captured destination;
+if that destination changes meanwhile, it refuses replacement or reports a recovery
+file instead of overwriting a new arrival. See [Studio](STUDIO.md) for format limits.
+
 Use [Studio](STUDIO.md) for image-to-image, masks, inserts, last-frame marking and output comparison. Image edits consume approved backend-resolvable input/output references; unsupported origins/formats show a blocker. Up to four visible inserts/masks and ephemeral source-owned drafts are not a persistent media project. Metadata **Use these settings** restores supported values explicitly; **Open in Comfy** imports a stored editor workflow without queueing it.
 
 ## Playback and limits

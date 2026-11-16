@@ -1,5 +1,43 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Library/Studio quality-of-life PR — 2026-11-17
+
+Rebased onto upstream `2ba8b6c`, preserving its Windows preview release/delete fixes.
+This slice adds shared sidebar Favorites, explicit inventory/preview invalidation,
+compact Studio selection and family batches, and confirmed clean-export replacement.
+The reference-popup redesign remains planning only and is excluded.
+
+Integrated PR-checkout evidence on Windows:
+
+- Production frontend build passed. Full frontend sweep: 165 core passed / one
+  skipped, and 2,113 UI tests passed across 120 files.
+- Chromium gallery acceptance passed, including shared hidden-folder Favorites,
+  explicit update propagation, cover retry, inline icon geometry, reference-card
+  label matching, bulk favorites and the existing 75-entry LoRA regressions.
+  Shared viewport gate passed 467 checks; paired-output gate passed 16 checks
+  with no product findings. These fixtures use simulated IPC, not native WebViews.
+- Whole-tree rustfmt passed. All-target Clippy passed with warnings denied except
+  the existing Rust 1.100 `chunks_exact_to_as_chunks` category.
+- Native library suite: 942 passed, three failed, 73 ignored. All new clean-export,
+  family-batch and diagnostics regressions passed. The failures are unchanged
+  upstream Windows media-deletion tests: `deletion_correlates_only_the_unchanged_retained_video_identity`,
+  `rejects_namespace_replacement_and_reports_partial_failure`, and
+  `removes_only_confirmed_regular_files_and_keeps_unselected_files`.
+  A separate clean checkout of upstream `2ba8b6c` reproduced exactly those three
+  failures (media-delete group: four passed, three failed, one ignored). The PR
+  leaves the upstream deletion/inspection implementation untouched.
+- Developer tooling suite: 11 passed; six unchanged Forge-data checks could not
+  pass without the local `zstd` CLI (five errors and one failure). This PR does
+  not change the Forge-data updater or its tests.
+- Linux/native-WebView interaction, real provider and model execution remain
+  unverified; previous local release-build evidence is separate from this checkout.
+
+No installed-model scan, provider fetch, generation, native app capture, user-media
+write or backend restart is part of verification. Fixtures use disposable/synthetic
+data. Runtime settings, caches, favorites, notes, LoRA sets, models and credentials
+are excluded from the published changes, as are executable builds.
+
+
 ## Windows preview-handle media delete (unreleased) — 2026-11-16
 
 - Reproduced on the live Windows PC with a handle-semantics probe compiled from the same `windows-sys 0.59` APIs as `media_delete.rs`: a share-delete-capable preview holder (WebView2-style) makes the disposition delete succeed while the name stays pending — `exists()` true, same-path `CreateFile` fails with ERROR_ACCESS_DENIED (5) until the holder closes; a non-share-delete holder (Rust/Python default) fails the delete open with ERROR_SHARING_VIOLATION (32).

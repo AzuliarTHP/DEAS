@@ -1,3 +1,4 @@
+import { MODEL_LIBRARY_UPDATED,patchModels,type ModelLibraryUpdate } from '../../lib/modelLibrary';
 import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { createPortal } from 'react-dom';
@@ -8,7 +9,7 @@ import './modelMetadata.css';
 const changedEvent='deas:model-family-changed';
 /** Patch exact paths only; no mount-time scan or unrelated metadata requests. */
 export function useModelMetadataUpdates(setModels:Dispatch<SetStateAction<LocalModel[]|null>>) {
- useEffect(()=>{const update=(event:Event)=>{const model=(event as CustomEvent<LocalModel>).detail;setModels(old=>old?.map(m=>m.path===model.path?{...model,addedAt:m.addedAt,localPreview:m.localPreview}:m)??old);};window.addEventListener(changedEvent,update);return()=>window.removeEventListener(changedEvent,update);},[setModels]);
+ useEffect(()=>{const update=(event:Event)=>{const model=(event as CustomEvent<LocalModel>).detail;setModels(old=>old?.map(m=>m.path===model.path?{...model,addedAt:m.addedAt,localPreview:m.localPreview}:m)??old);};const batch=(event:Event)=>{const change=(event as CustomEvent<ModelLibraryUpdate>).detail;if(change.updates)setModels(old=>old?patchModels(old,change.updates!):old);};window.addEventListener(changedEvent,update);window.addEventListener(MODEL_LIBRARY_UPDATED,batch);return()=>{window.removeEventListener(changedEvent,update);window.removeEventListener(MODEL_LIBRARY_UPDATED,batch);};},[setModels]);
 }
 export function ModelDeclaredBadge({model,compact=false}:{model:LocalModel;compact?:boolean}) {const {t}=useI18n();const label=`${t('modelMeta.declared')}: ${families.find(f=>f.id===model.familyOverride)?.name??model.familyOverride}`;return model.familyOverride?<small className={`model-declared${compact?' model-declared-compact':''}`} title={compact?label:undefined} aria-label={compact?label:undefined}>{compact?'✓':label}</small>:null;}
 export function ModelMetadataTarget({model,children,actions=[]}:{model:LocalModel;children:ReactNode;actions?:{label:string;onClick:()=>void;disabled?:boolean}[]}) {

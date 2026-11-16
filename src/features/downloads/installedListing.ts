@@ -1,3 +1,4 @@
+import { MODEL_LIBRARY_UPDATED,patchModels,modelPathKey,type ModelLibraryUpdate,publishModelLibrary,refreshModelPreviews } from '../../lib/modelLibrary';
 import { scanModels, type LocalModel } from '../../lib/models';
 import { reportLibraryError } from './libraryDiagnostics';
 
@@ -10,7 +11,7 @@ export function loadInstalledListing(root:string, refresh=false, reloadIndex=fal
  const entry=listing;
  if(entry.pending)return entry.pending;
  if(!refresh&&!reloadIndex&&entry.models!==null)return Promise.resolve(entry.models);
- entry.pending=scanModels(root,[],refresh).then(models=>{entry.models=models;return models;}).catch(error=>{reportLibraryError('listing');throw error;}).finally(()=>{entry.pending=undefined;});
+ entry.pending=scanModels(root,[],refresh).then(value=>{const models=refresh||reloadIndex?refreshModelPreviews(value):value;entry.models=models;if(refresh||reloadIndex)publishModelLibrary({root,models});return models;}).catch(error=>{reportLibraryError('listing');throw error;}).finally(()=>{entry.pending=undefined;});
  return entry.pending;
 }
 
@@ -25,3 +26,5 @@ if(typeof window!=='undefined')window.addEventListener('deas:model-family-change
  const model=(event as CustomEvent<LocalModel>).detail;
  if(listing?.models)listing.models=listing.models.map(old=>old.path===model.path?{...model,addedAt:old.addedAt,localPreview:old.localPreview}:old);
 });
+
+if(typeof window!=='undefined')window.addEventListener(MODEL_LIBRARY_UPDATED,event=>{const change=(event as CustomEvent<ModelLibraryUpdate>).detail;if(listing?.models&&change.updates&&modelPathKey(listing.root)===modelPathKey(change.root))listing.models=patchModels(listing.models,change.updates);});

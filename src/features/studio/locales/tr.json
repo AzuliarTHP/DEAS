@@ -1127,7 +1127,7 @@
   "studio.run.viewer.next": "Sonraki resim",
   "studio.run.viewer.closed": "Önce oluşturulmuş bir resmi tam görünümde açın.",
   "studio.run.exportClean.label": "Meta veriler olmadan dışa aktar…",
-  "studio.run.exportClean.hint": "Prompt, iş akışı ve ayarlar olmadan bir kopya kaydeder; orijinal değişmez.",
+  "studio.run.exportClean.hint": "İstem, iş akışı veya ayarlar olmadan kaydedin. Kaynak dahil mevcut dosyalar onaydan sonra değiştirilebilir.",
   "studio.run.exportClean.title": "Meta veriler olmadan dışa aktar",
   "studio.run.exportClean.native": "Meta veriler olmadan dışa aktarma, masaüstü uygulamasında yerel bir dosya gerektirir.",
   "studio.run.exportClean.done": "Meta verisiz kopya kaydedildi: {path}",
@@ -1252,5 +1252,7 @@
   "loraDetails.copySelected": "Seçilenleri kopyala ({count})",
   "studio.faceRefine.stillHint": "H3 görsel üretiminden sonra SAM3.1 yüzleri algılar, kare kırpımları iyileştirip geri yerleştirir. Özgün ve işlenmiş görseller korunur. Video analizi veya elle iyileştirme işlemi gerekmez.",
   "studio.faceRefine.stillUnavailable": "H3 durağan görsel yüz iyileştirmesi BOOLEAN still_image desteği olan uyumlu bir bağdaştırıcı gerektirir.",
-  "studio.faceRefine.h3Only": "Yalnızca MiniMax H3 görselleri ve videoları için kullanılabilir."
+  "studio.faceRefine.h3Only": "Yalnızca MiniMax H3 görselleri ve videoları için kullanılabilir.",
+  "studio.run.exportClean.replaceTitle": "Mevcut dosya değiştirilsin mi?",
+  "studio.run.exportClean.replaceMessage": "Seçilen dosya meta veri içermeyen bir kopyayla değiştirilsin mi? Özgün dosyayı seçmek onu da değiştirir."
 }

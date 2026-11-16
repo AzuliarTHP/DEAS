@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { I18nProvider } from '../../i18n/I18nProvider';
@@ -188,4 +188,13 @@ it('shows persistence failures instead of an added notice',()=>{
  render(<Host/>);vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw new DOMException('full','QuotaExceededError');});
  fireEvent.click(screen.getByRole('button',{name:`Add to Studio LoRAs: ${fox.name}`}));
  expect(screen.getByRole('alert').textContent).toContain('Could not add the LoRA');expect(screen.queryByRole('status')).toBeNull();
+});
+
+it('Favorites sidebar ignores folder visibility and a folder click restores normal browsing',()=>{
+ localStorage.setItem('deas.pref.library.local.organization',JSON.stringify({[fox.path]:{favorite:true}}));localStorage.setItem('deas.pref.library.local.hiddenFolders',JSON.stringify({'/models:loras':['characters']}));
+ render(<Host/>);expect(screen.queryByRole('button',{name:fox.name})).toBeNull();fireEvent.click(screen.getByRole('button',{name:'Favorites'}));expect(screen.getByRole('button',{name:fox.name})).toBeTruthy();expect(screen.queryByRole('button',{name:lamp.name})).toBeNull();
+ expect(screen.getByRole('button',{name:'Favorites'}).getAttribute('aria-current')).toBe('page');fireEvent.click(screen.getByRole('treeitem',{name:'All folders'}));expect(screen.queryByRole('button',{name:fox.name})).toBeNull();expect(screen.getByRole('button',{name:lamp.name})).toBeTruthy();
+});
+it('keeps bulk family controls out of Library',()=>{
+ render(<Host/>);expect(screen.queryByRole('button',{name:'Select models'})).toBeNull();
 });

@@ -1,0 +1,16 @@
+import { useEffect,useRef,useState } from 'react';
+import { useDialogBackdropClose } from '../../components/useDialogBackdropClose';
+import { createPortal } from 'react-dom';
+import { useI18n } from '../../i18n/I18nProvider';
+import { writeModelFamilies,type LocalModel } from '../../lib/models';
+import { publishModelLibrary } from '../../lib/modelLibrary';
+import { reportLibraryError } from '../downloads/libraryDiagnostics';
+import families from '../../families/builtin.json' with {type:'json'};
+export const familyEditable=(m:LocalModel)=>['checkpoints','diffusion_models','unet','loras'].includes(m.category);
+export function BulkFamilyDialog({models:initialModels,root,onClose,onUpdated}:{models:LocalModel[];root:string;onClose:()=>void;onUpdated:(paths:string[])=>void}){
+ const {t}=useI18n();const [models]=useState(initialModels);const dialog=useRef<HTMLDialogElement>(null),cancel=useRef(false),live=useRef(true);const [family,setFamily]=useState('');const [busy,setBusy]=useState(false);const [processed,setProcessed]=useState(0);const [failed,setFailed]=useState(0);
+ useEffect(()=>{live.current=true;cancel.current=false;const el=dialog.current!;el.showModal();return()=>{live.current=false;cancel.current=true;if(el.open)el.close();};},[]);
+ const backdrop=useDialogBackdropClose(()=>{if(busy)cancel.current=true;else onClose();});
+ const apply=async()=>{if(busy||!family)return;setBusy(true);setProcessed(0);setFailed(0);cancel.current=false;let done=0,errors=0;try{for(let i=0;i<models.length&&!cancel.current;i+=500){const batch=models.slice(i,i+500);try{const report=await writeModelFamilies(batch.map(m=>m.path),family==='__auto__'?null:family);if(live.current){if(report.updated.length){publishModelLibrary({root,updates:report.updated});onUpdated(report.updated.map(m=>m.path));}errors+=report.failed.length;}}catch{errors+=batch.length;reportLibraryError('family');}done+=batch.length;if(live.current){setProcessed(done);setFailed(errors);}}}finally{if(live.current)setBusy(false);}};
+ return createPortal(<dialog ref={dialog} {...backdrop} className="model-meta-dialog studio-family-dialog" aria-label={t('library.bulkFamily')} onCancel={e=>{e.preventDefault();if(busy)cancel.current=true;else onClose();}}><h2>{t('library.bulkFamily')}</h2><p>{t('library.selectedCount',{count:String(models.length)})}</p><label>{t('modelMeta.family')}<select value={family} disabled={busy} onChange={e=>{setFamily(e.target.value);setProcessed(0);setFailed(0);}}><option value="">{t('library.chooseFamily')}</option><option value="__auto__">{t('modelMeta.reset')}</option>{families.filter(f=>['checkpoint','diffusion'].includes(f.loader)&&(!models.some(m=>m.category==='loras')||f.lora.length>0)).map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label><p className="media-help">{t('library.bulkHelp')}</p>{(busy||processed>0)&&<p role={failed?'alert':'status'}>{t('library.bulkProgress',{done:String(processed),total:String(models.length),failed:String(failed)})}</p>}<div className="model-meta-actions"><button type="button" disabled={busy||!family||processed===models.length} onClick={()=>void apply()}>{t('library.applyFamily')}</button><button type="button" onClick={()=>busy?cancel.current=true:onClose()}>{t(busy?'library.stopBatch':'studio.close')}</button></div></dialog>,document.body);
+}

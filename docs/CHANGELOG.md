@@ -2,6 +2,18 @@
 
 ## 0.2.39 BETA (unreleased)
 
+### Library and Studio quality of life
+
+- Shared Favorites entries in both sidebars include cards from hidden folders;
+  Studio context-menu and bulk star/unstar actions preserve notes, tags and LoRA weights.
+- Explicit Library refresh/fetch/scan completion updates retained Studio inventory
+  and local previews without a second folder walk or focus-triggered reload.
+- Compact Studio selection icons appear beside Done selecting. Select a card and
+  match its displayed family label to target mislabeled groups, then declare/reset
+  the family in bounded native batches. Folder/search scope remains in effect.
+- Export without metadata supports confirmed replacement of an existing file,
+  including the source, with destination identity checks and no-clobber recovery.
+
 ### Fixed
 - **Windows: deleting a video that is being previewed could report success while the player still held the file open.** The name then stayed in a blocked "pending delete" state and rejected any new file at the same path (verified on Windows: the delete handle succeeds, but re-creating the path returns ACCESS_DENIED until the player releases). Media deletion now confirms the file name actually disappeared before reporting success; `deleteMedia` releases matching `<video>`/`<audio>` previews before the native delete runs; and DEAS' own Windows inspection handles no longer block deletion or path reuse (share-delete enabled).
 
