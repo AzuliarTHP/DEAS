@@ -940,7 +940,7 @@ test.each(['qwen-image-2.1','qwen-image-2.1-turbo','krea-2','moss-image'])('nati
  const method=family==='qwen-image-2.1-turbo'?'qwen-image-2.1':family;
  const width=method==='qwen-image-2.1'?1024:1008;
  vi.mocked(scanModels).mockResolvedValue(referenceModels(family));
- vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,...referenceNodes,'DEAS_ImagePromptEncode','UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage'],clipTypes:['moss_image'],visionModels:['clip_vision_g.safetensors']}});
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,...referenceNodes,'DEAS_ImagePromptEncode','UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage','SkipLayerGuidanceDiTSimple'],clipTypes:['moss_image'],visionModels:['clip_vision_g.safetensors']}});
  vi.mocked(runWorkbenchJob).mockResolvedValue(heldJob('qwen-reference','failed'));
  localStorage.setItem('deas.pref.studio.run.checkpoint','"qwen.safetensors"');
  localStorage.setItem('deas.pref.studio.run.width','1008');localStorage.setItem('deas.pref.studio.run.height','1008');
@@ -1008,7 +1008,7 @@ test('vision offer card shows the hosting platform and downloads via the Library
 
 test.each(['qwen-image-2.1','qwen-image-2.1-turbo','krea-2','moss-image'])('reference thumbnails reorder, renumber and submit captured positions (%s)',async family=>{
  vi.mocked(scanModels).mockResolvedValue(referenceModels(family));
- vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,...referenceNodes,'DEAS_ImagePromptEncode','UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage'],clipTypes:['moss_image']}});
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,...referenceNodes,'DEAS_ImagePromptEncode','UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage','SkipLayerGuidanceDiTSimple'],clipTypes:['moss_image']}});
  localStorage.setItem('deas.pref.studio.run.checkpoint','"qwen.safetensors"');
  vi.mocked(runWorkbenchJob).mockResolvedValue(heldJob('reordered-reference','failed'));
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
@@ -1104,7 +1104,7 @@ test('ReVision uploads ordered external references with captured vision model an
 test.each(['qwen-image-2.1','qwen-image-2.1-turbo','krea-2','moss-image'])('native references coexist with the image-to-image source (%s)',async family=>{
  const method=family==='qwen-image-2.1-turbo'?'qwen-image-2.1':family,width=method==='qwen-image-2.1'?992:1008;
  vi.mocked(scanModels).mockResolvedValue(referenceModels(family));
- vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,...referenceNodes,'DEAS_ImagePromptEncode','UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage','VAEEncode'],clipTypes:['moss_image']}});
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,...referenceNodes,'DEAS_ImagePromptEncode','UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage','SkipLayerGuidanceDiTSimple','VAEEncode'],clipTypes:['moss_image']}});
  vi.mocked(invoke).mockImplementation(async()=>({path:'/env/input',parent:'/env',entries:[{name:'source.png',path:'/env/input/source.png',kind:'file',symlink:false,media:'image',size:1,modified:1}],truncated:false}));
  vi.mocked(uploadInput).mockResolvedValue('deas-inputs/ref.png');
  vi.mocked(runWorkbenchJob).mockResolvedValue(heldJob('qwen-i2i','failed'));
@@ -1133,7 +1133,7 @@ test('native reference upload failure never submits an unresolved local filename
 
 test.each(['krea-2','moss-image'])('native adapter references require the installed image-prompt node (%s)',async family=>{
  vi.mocked(scanModels).mockResolvedValue(referenceModels(family));
- vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,'UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage','LoadImage'],clipTypes:['moss_image']}});
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...refsEvidence,allowlist:{...refsEvidence.allowlist,nodes:[...refsEvidence.allowlist.nodes,'UNETLoader','CLIPLoader','VAELoader','EmptyFlux2LatentImage','SkipLayerGuidanceDiTSimple','LoadImage'],clipTypes:['moss_image']}});
  localStorage.setItem('deas.pref.studio.run.checkpoint','"qwen.safetensors"');
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
  await waitFor(()=>expect(document.querySelector<HTMLButtonElement>('[data-run]')!.disabled).toBe(false));

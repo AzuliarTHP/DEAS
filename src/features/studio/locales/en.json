@@ -474,6 +474,8 @@
   "studio.run.negativeHint": "What to avoid…",
   "studio.run.width": "Width",
   "studio.run.height": "Height",
+  "studio.run.moss.skipLayers": "Skip layers (SLG)",
+  "studio.run.moss.skipLayersHint": "Skip Layer Guidance boosts fine detail from the negative branch: comma-separated layer numbers such as 22, 24, 26; leave empty to disable.",
   "studio.run.steps": "Steps",
   "studio.run.customSchedule": "CUSTOM",
   "studio.run.customSchedule.hint": "Custom sigma schedule active (Options tab): steps and scheduler come from it.",

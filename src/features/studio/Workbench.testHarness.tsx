@@ -132,7 +132,7 @@ export /** Right-click a Media dock tile and return its menu. */
 const menuOf=(name:string)=>{fireEvent.contextMenu(screen.getByRole('button',{name}),{clientX:5,clientY:5});return within(screen.getByRole('menu',{name}));};
 export const markOf=(name:string)=>screen.getByRole('button',{name}).closest('li')!.dataset.mark;
 export const loadVideo=(name:string)=>{const v=document.querySelector<HTMLVideoElement>(`.wb-stage video`)!;Object.defineProperties(v,{videoWidth:{value:1280},videoHeight:{value:704}});fireEvent.loadedMetadata(v);void name;};
-export const mossNodes=['UNETLoader','CLIPLoader','VAELoader','CLIPTextEncode','KSampler','VAEDecode','SaveImage','EmptyFlux2LatentImage','LoadImage','VAEEncode','ImageScale','LoadImageMask','SetLatentNoiseMask','ImageCompositeMasked'];
+export const mossNodes=['UNETLoader','CLIPLoader','VAELoader','CLIPTextEncode','KSampler','VAEDecode','SaveImage','EmptyFlux2LatentImage','SkipLayerGuidanceDiTSimple','LoadImage','VAEEncode','ImageScale','LoadImageMask','SetLatentNoiseMask','ImageCompositeMasked'];
 export async function mountMoss(nodes=mossNodes,clipTypes=['moss_image']){
  vi.mocked(scanModels).mockResolvedValue([
   {category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null},

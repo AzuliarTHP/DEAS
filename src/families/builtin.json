@@ -30,8 +30,8 @@
     "latent": "EmptyFlux2LatentImage",
     "architectures": [], "bases": [],
     "model": [["shared.block.modulation.weight", "layers.0.proj.ffn.up.gate.weight"]], "lora": [],
-    "defaults": { "width": 1024, "height": 1024, "steps": 50, "cfg": 3.0, "sampler": "euler", "scheduler": "sgm_uniform" },
-    "defaultsNote": "Defaults follow the official MOSS-Image USERGUIDE (50 steps, CFG 3.0 range 3.0-6.0, euler with sgm_uniform, shift 5.0 baked in the recipe; SLG uncond_skip_layers=[22] and the card negative prompt are recommended in docs/MODEL_DEFAULTS.md; 8-step DMD turbo LoRA runs CFG 1). Bounded adapter omits SLG and prompt upsampling. Reference-image t2i verified at 512 pixels; other resolutions and variants remain unverified."
+    "defaults": { "width": 1024, "height": 1024, "steps": 50, "cfg": 3.0, "sampler": "euler", "scheduler": "sgm_uniform", "negative": "nsfw, worst quality, bad anatomy, watermark, jpeg artifact" },
+    "defaultsNote": "Defaults follow the official MOSS-Image USERGUIDE (50 steps, CFG 3.0 range 3.0-6.0, euler with sgm_uniform, shift 5.0 baked in the recipe; SLG Skip layers defaults to 22 via core SkipLayerGuidanceDiTSimple on the uncond branch; the card negative prompt is prefilled for new drafts; 8-step DMD turbo LoRA runs CFG 1). Reference-image t2i verified at 512 pixels; other resolutions and variants remain unverified."
   },
   {
     "id": "ideogram4", "multiple": 16, "name": "Ideogram 4", "forge": "Ideogram", "loader": "diffusion", "pipelines": ["t2i", "i2i"],

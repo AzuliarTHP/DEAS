@@ -474,6 +474,8 @@
   "studio.run.negativeHint": "Ce qu'il faut éviter…",
   "studio.run.width": "Largeur",
   "studio.run.height": "Hauteur",
+  "studio.run.moss.skipLayers": "Couches ignorées (SLG)",
+  "studio.run.moss.skipLayersHint": "Skip Layer Guidance renforce les détails fins via la branche négative : numéros de couches séparés par des virgules, par ex. 22, 24, 26 ; vide pour désactiver.",
   "studio.run.steps": "Étapes",
   "studio.run.customSchedule": "CUSTOM",
   "studio.run.customSchedule.hint": "Suite de sigmas personnalisée active (onglet Options) : étapes et scheduler en découlent.",

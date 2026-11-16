@@ -51,6 +51,8 @@ export interface DiagnosticImageIntentV1 {
   readonly imageReference?: { readonly visionModel: string; readonly images: readonly { readonly image: string; readonly strength: number }[] };
   /** Family-native conditioning; ordered references, no CLIP-vision model or strength. */
   readonly nativeImageReference?: { readonly method: 'qwen-image-2.1' | 'krea-2' | 'moss-image' | 'minimax-h3'; readonly images: readonly string[] };
+  /** MOSS-Image Skip Layer Guidance: comma-separated layer numbers (e.g. "22, 24, 26") patched onto the uncond branch via core SkipLayerGuidanceDiTSimple; absent means the unchanged graph. */
+  readonly skipLayers?: string;
   /** Workbench Options: model patches (one attention backend, step cache, torch.compile) and tiled VAE. */
   readonly options?: RunOptions;
   /** Model-fixed schedule (steps + 1 values, descending to 0): ManualSigmas → SamplerCustomAdvanced replaces KSampler; `scheduler` is then unused. */
@@ -170,7 +172,7 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
     throw new RecipeCompileError('INVALID_INPUT', field, message, remedy);
   };
   for (const key of Object.keys(input)) {
-    if (!fields.includes(key) && !['loras', 'inputImage', 'denoise', 'diffusion', 'family', 'inputResize', 'inputMask', 'maskBlur', 'inpaintCrop', 'inputLayers', 'options', 'sigmas', 'wildcard', 'upscaleModel', 'refine', 'imageFormat', 'imageCompression', 'imageReference', 'nativeImageReference'].includes(key)) invalid(key, 'Unknown domain intent field.', 'Remove unsupported fields; do not pass widget or canvas state.');
+    if (!fields.includes(key) && !['loras', 'inputImage', 'denoise', 'diffusion', 'family', 'inputResize', 'inputMask', 'maskBlur', 'inpaintCrop', 'inputLayers', 'options', 'sigmas', 'wildcard', 'upscaleModel', 'refine', 'imageFormat', 'imageCompression', 'imageReference', 'nativeImageReference', 'skipLayers'].includes(key)) invalid(key, 'Unknown domain intent field.', 'Remove unsupported fields; do not pass widget or canvas state.');
   }
   for (const field of fields) {
     if (!Object.hasOwn(input, field)) invalid(field, 'Missing required intent field.', 'Supply this explicit DEAS-owned intent field; no defaults are inferred.');
@@ -259,6 +261,11 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
       || (isRecord(input.inputResize) && Object.hasOwn(input.inputResize, 'pad'))) {
       invalid('diffusion', 'MOSS-Image supports plain generation, VAE image-to-image and masked inpaint.', 'Disable unverified LoRAs, layers, refine, custom sigmas, padding and model options.');
     }
+  }
+  // Skip Layer Guidance belongs to MOSS-Image only; empty string means the unchanged graph.
+  if (input.skipLayers !== undefined) {
+    if (typeof input.skipLayers !== 'string' || (input.skipLayers !== '' && !/^\s*[0-9]{1,3}(?:\s*,\s*[0-9]{1,3})*\s*$/u.test(input.skipLayers))) invalid('skipLayers', 'Invalid skip layers.', 'Use comma-separated layer numbers such as "22, 24, 26", or an empty string to disable Skip Layer Guidance.');
+    if (!(isRecord(d) && d.clipType === 'moss_image')) invalid('skipLayers', 'Skip Layer Guidance is only supported on MOSS-Image.', 'Clear skip layers for this family.');
   }
   // Same grammar as native `safe_option`: option enums may carry spaces and `+` (`pytorch attention`, `…fp8_cuda++`).
   const safeOption = (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9 _.+-]{1,64}$/u.test(v) && v.trim() === v;
@@ -379,6 +386,13 @@ export function compileRecipe(input: unknown, verified: unknown, models:readonly
   if (recipe?.patch) {
     chain.M = { class_type: recipe.patch.node, inputs: { shift: recipe.patch.shift ?? 1, model } };
     model = ['M', 0];
+  }
+  // MOSS Skip Layer Guidance: core Simple SLG patches only the uncond branch (the ComfyUI form of the model's uncond_skip_layers).
+  // It chains after the sampling patch so the sigma-based thresholds share the same shift, per the official MOSS ComfyUI README.
+  if (intent.skipLayers) {
+    if (!allowlist.nodes.includes('SkipLayerGuidanceDiTSimple')) throw new RecipeCompileError('MISSING_CAPABILITY', 'SkipLayerGuidanceDiTSimple', 'Skip Layer Guidance needs the core Simple SLG node.', 'Update the owned backend or clear skip layers.');
+    chain.S = { class_type: 'SkipLayerGuidanceDiTSimple', inputs: { model, double_layers: '', single_layers: intent.skipLayers, start_percent: 0.0, end_percent: 1.0 } };
+    model = ['S', 0];
   }
   // Spatial tiles; the temporal values are the node defaults (used by video VAEs only).
   const tiles: Record<string, number> = tiled ? { tile_size: o.vaeTile!, overlap: 64, temporal_size: 64, temporal_overlap: 8 } : {};

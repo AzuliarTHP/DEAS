@@ -540,6 +540,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         return Err("Invalid family: a safe bundled family id".into());
     }
     // `diffusion` loads `checkpoint` as a diffusion model with a separate text encoder and VAE.
+    let skip_layers = object.get("skipLayers");
     let diffusion = object.get("diffusion");
     if diffusion.is_some_and(|d| {
         d.as_object().is_none_or(|o| {
@@ -584,6 +585,21 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             || resize.is_some_and(|r| r.get("pad").is_some())
         {
             return Err("MOSS-Image supports plain text-to-image, VAE image-to-image and masked inpaint; LoRAs, layers, refine, custom sigmas, padding and model options are unverified".into());
+        }
+    }
+    // Skip Layer Guidance (MOSS only): comma-separated layer numbers; empty means the unchanged graph.
+    if let Some(sl) = skip_layers {
+        let s = sl.as_str().ok_or("Invalid skipLayers: use a comma-separated layer list or an empty string")?;
+        if diffusion.is_none_or(|d| d["clipType"] != "moss_image") {
+            return Err("skipLayers is only supported on MOSS-Image".into());
+        }
+        if !s.is_empty()
+            && !s.split(',').all(|p| {
+                let p = p.trim();
+                !p.is_empty() && p.len() <= 3 && p.bytes().all(|b| b.is_ascii_digit())
+            })
+        {
+            return Err("Invalid skipLayers: comma-separated layer numbers such as \"22, 24, 26\"; empty disables Skip Layer Guidance".into());
         }
     }
     // `h3Edit` (MiniMax H3 sigma shifts) marks the H3 image edit; it belongs exactly to the `minimax` text encoder.
@@ -679,6 +695,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             + usize::from(layers.is_some())
             + usize::from(family.is_some())
             + usize::from(latent_upscale.is_some())
+            + usize::from(skip_layers.is_some())
         || fields.iter().any(|key| !object.contains_key(*key))
     {
         return Err("Missing or unknown diagnostic intent fields".into());
@@ -972,6 +989,12 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     if let Some((node, shift)) = recipe.patch {
         graph["M"] = json!({"class_type":node,"inputs":{"model":model.clone(),"shift":shift}});
         model = json!(["M", 0]);
+    }
+    // MOSS Skip Layer Guidance: core Simple SLG patches only the uncond branch (the ComfyUI form of uncond_skip_layers);
+    // chained after the sampling patch so the sigma-based thresholds share the same shift (official MOSS ComfyUI README).
+    if let Some(s) = i["skipLayers"].as_str().filter(|s| !s.is_empty()) {
+        graph["S"] = json!({"class_type":"SkipLayerGuidanceDiTSimple","inputs":{"model":model,"double_layers":"","single_layers":s,"start_percent":0.0,"end_percent":1.0}});
+        model = json!(["S", 0]);
     }
     graph["2"]["inputs"]["clip"] = clip.clone();
     if recipe.encode_node.is_none() {

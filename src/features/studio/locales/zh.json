@@ -474,6 +474,8 @@
   "studio.run.negativeHint": "需要避免的内容…",
   "studio.run.width": "宽度",
   "studio.run.height": "高度",
+  "studio.run.moss.skipLayers": "跳过层 (SLG)",
+  "studio.run.moss.skipLayersHint": "Skip Layer Guidance 从负向分支增强细节：逗号分隔的层号，例如 22, 24, 26；留空禁用。",
   "studio.run.steps": "步数",
   "studio.run.customSchedule": "CUSTOM",
   "studio.run.customSchedule.hint": "自定义 sigma 序列已启用（选项标签）：步数和调度器由它决定。",
