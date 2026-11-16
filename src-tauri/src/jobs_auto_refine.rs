@@ -225,6 +225,7 @@ fn pass_intent(
         "latentUpscale",
         "autoRefine",
         "lyingSigma",
+        "faceRefine",
     ] {
         object.remove(key);
     }
@@ -450,6 +451,7 @@ impl Jobs {
             "maskBlur",
             "autoRefine",
             "lyingSigma",
+            "faceRefine",
         ] {
             check_object.remove(key);
         }
@@ -764,6 +766,20 @@ mod tests {
                 .text
                 .contains(&format!("operation={operation} {context} job={id}"))));
         }
+    }
+
+    #[test]
+    fn auto_refine_strips_face_refine_from_its_independent_passes_and_preflight() {
+        let mut base = super::super::tests::h3_still_intent();
+        base["faceRefine"] = crate::jobs_face_refine::tests::block();
+        let mut options = settings(0);
+        options.denoise = 1.0;
+        let pass = pass_intent(&base,"source.png","deas-masks/12345678-1234-1234-1234-123456789abc.png",(1024,768),
+            json!({"x":0,"y":0,"width":1024,"height":768,"targetWidth":1024,"targetHeight":768}),&options,false).unwrap();
+        assert!(pass.get("faceRefine").is_none());
+        assert!(compile(&pass).unwrap().get("FR").is_none());
+        let source = include_str!("jobs_auto_refine.rs").split("#[cfg(test)]").next().unwrap();
+        assert_eq!(source.matches(r#""faceRefine""#).count(),2);
     }
 
     #[test]

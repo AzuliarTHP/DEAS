@@ -6,6 +6,18 @@ import { GenerationMetadata } from './GenerationMetadata';
 import type { VideoIntentV1 } from '../../lib/videoIntent';
 import type { DiagnosticImageIntentV1 } from '../../lib/execution';
 afterEach(cleanup);
+
+test('H3 image face refinement is visible in the plan and immutable generation metadata',()=>{
+ localStorage.setItem('deas.locale.v1','en');
+ const faceRefine={samCheckpoint:'sam3.1.safetensors',prompt:'sharp face',threshold:0.5,maxObjects:4,detectInterval:1,denoise:0.4,cropFactor:2.5,feather:6};
+ const h3={...intent,refine:undefined,h3Edit:{shiftVideo:10,shiftAudio:3},faceRefine};
+ const view=render(<I18nProvider><RunPlan intent={h3} pipeline="i2i" notices={[]}/></I18nProvider>);
+ expect(view.container.querySelector('[data-plan-stage="refine"]')?.textContent).toContain('sharp face');
+ expect(view.container.querySelector('[data-plan-stage="audio"]')).toBeNull();
+ view.rerender(<I18nProvider><GenerationMetadata job={{id:'still',baseUrl:'http://localhost',promptId:'p',state:'succeeded',error:null,generationReady:false,outputs:[],intent:h3}}/></I18nProvider>);
+ expect(view.container.textContent).toContain('sam3.1.safetensors');expect(view.container.textContent).toContain('sharp face');
+});
+
 const intent:DiagnosticImageIntentV1={recipeId:'checkpoint-text-to-image-diagnostic',version:1,checkpoint:'test.safetensors',positivePrompt:'forest',negativePrompt:'blur',seed:42,width:896,height:1152,steps:20,cfg:5,sampler:'euler',scheduler:'normal',outputPrefix:'image/42',inputImage:'source.png',denoise:0.6,inputResize:{width:896,height:1152,crop:'center'},loras:[{name:'style.safetensors',strength:0.7}],refine:{width:1792,height:2304,denoise:0.25,tiled:{tileWidth:1024,tileHeight:1024,overlap:128}}};
 test.each(['ltx-2','minimax-h3'] as const)('latent post stage and held metadata show final canvas without changing source or audio (%s)',family=>{
  localStorage.setItem('deas.locale.v1','en');

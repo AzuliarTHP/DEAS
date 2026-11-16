@@ -2,6 +2,8 @@
 
 ## 0.2.38 BETA (unreleased)
 
+- H3 Image can opt into the existing face-refinement stage, retaining Original and Processed images. It reuses the SAM/model settings and runs before optional learned latent upscale; real-model still-image quality acceptance remains open.
+
 - Integration review fixes preserve exact MOSS history/prompt choices, keep Lying Sigma out of independent SAM refinement, show the eight-active-LoRA execution limit before Run, invalidate deleted TVE sources, and retain streaming audio fallback and Windows no-overwrite publication.
 
 - H3 latent upscale/Hi-Res gained an opt-in **Stream decode (lower RAM)** mode: Original and Processed are decoded and encoded chunk-by-chunk instead of holding the full pixel batch. Off by default; unsupported combinations show a concrete reason instead of silently falling back.

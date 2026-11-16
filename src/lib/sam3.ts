@@ -82,6 +82,7 @@ export interface H3FaceRefineIntentV1 {
 }
 /** Mirrors native `jobs_face_refine::NODES`. */
 export const faceRefineNodes = ['DEAS_H3FaceRefine','DEAS_VideoPostprocessGate','CheckpointLoaderSimple','CLIPTextEncode','SAM3_VideoTrack','MiniMaxH3ImageToVideo','SplitSigmasDenoise'] as const;
+export const faceRefineStillNodes = faceRefineNodes.map(node => node === 'DEAS_VideoPostprocessGate' ? 'DEAS_ImagePostprocessGate' : node);
 const between = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
 export function isFaceRefineBlock(b: unknown): b is H3FaceRefineBlock {
   const keys = ['samCheckpoint','prompt','threshold','maxObjects','detectInterval','sceneThreshold','denoise','cropFactor','feather','minFace','subjects'];

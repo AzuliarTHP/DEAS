@@ -6,6 +6,7 @@ import {isComponentOverrides,type ComponentSlot} from './modelComponents.ts';
 import { safeOutputPrefix } from './outputNaming.ts';
 import { isWildcardRules, wildcardNode, type WildcardRules } from './wildcard.ts';
 import type { H3LatentUpscale } from './videoIntent.ts';
+import type { H3FaceRefineBlock } from './sam3.ts';
 /** DEAS-owned diagnostic intent, not a Director/video recipe or widget schema. */
 /** Names `native_mask_upload` hands out (`deas-masks/<uuid>.png`): masks and flattened painted layers; object_info never lists that subfolder. */
 export const isUploadedMask = (name: string) => /^deas-masks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/u.test(name);
@@ -47,6 +48,8 @@ export interface DiagnosticImageIntentV1 {
   readonly componentOverrides?:Record<ComponentSlot,boolean>;
   /** MiniMax H3 image edit (native compiler only): sigma shifts; the native graph samples the source as the first frame of a 5-frame pass. */
   readonly h3Edit?: { readonly shiftVideo: number; readonly shiftAudio: number };
+  /** H3 still-image refinement, compiled and validated natively with h3Edit. */
+  readonly faceRefine?: H3FaceRefineBlock;
   /** H3 edits only (native compiler): DaSiWaH3TiledUpscale after the sampler, same settings as H3 video; never with a mask. */
   readonly latentUpscale?: H3LatentUpscale;
   /** SDXL ReVision (checkpoint-loader families only): a reference picture from the backend input folder, encoded by a CLIP-vision model and blended into the positive conditioning at `strength`. */
@@ -97,6 +100,7 @@ export interface RunOptions {
 export const isGguf = (name: string) => /\.gguf$/i.test(name);
 export const clipLoaderName = (name: string, dual = false) => `${dual ? 'DualCLIPLoader' : 'CLIPLoader'}${isGguf(name) ? 'GGUF' : ''}`;
 export interface RecipeAllowlist {
+  readonly faceRefineStill?: boolean;
   readonly deropeKeepBackground?: boolean;
   readonly h3LatentSharpness?: boolean;
   readonly h3RegenerateOriginal?: boolean;
@@ -335,7 +339,7 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
 export function compileRecipe(input: unknown, verified: unknown, models:readonly LocalModel[]=[]): CompiledRecipe {
   const intent = validateIntent(input);
   if(intent.componentOverrides!==undefined&&!isComponentOverrides(intent.componentOverrides))throw new RecipeCompileError('INVALID_INTENT','componentOverrides','Invalid component override flags.','Supply the four boolean slot flags.');
-  if (!isRecord(verified) || ['deropeKeepBackground','h3LatentSharpness','h3RegenerateOriginal','h3RegenerateTuning'].some(k=>verified[k]!==undefined&&typeof verified[k]!=='boolean') || !['nodes', 'checkpoints', 'samplers', 'schedulers'].every(key =>
+  if (!isRecord(verified) || ['faceRefineStill','deropeKeepBackground','h3LatentSharpness','h3RegenerateOriginal','h3RegenerateTuning'].some(k=>verified[k]!==undefined&&typeof verified[k]!=='boolean') || !['nodes', 'checkpoints', 'samplers', 'schedulers'].every(key =>
     Object.hasOwn(verified, key) && Array.isArray(verified[key]) && Array.from(verified[key]).every((v: unknown) => typeof v === 'string' && v.length > 0))) {
     throw new RecipeCompileError('INVALID_ALLOWLIST', 'allowlist', 'Explicit capability/model lists are required.', 'Supply all four string arrays from a verified backend probe.');
   }

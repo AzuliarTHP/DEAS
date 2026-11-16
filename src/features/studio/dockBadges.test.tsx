@@ -69,6 +69,8 @@ test('post category function counts match nested switches and reconcile with the
  const h3Image=postCategoryFunctions({...image,h3Image:true});
  expect(h3Image.refine).toEqual([]);
  expect(h3Image.sam).toEqual(['sam']);
+ expect(h3Image['face-analysis']).toEqual(['faceRefine']);
+ expect(postCategoryFunctions({...image,h3Image:true,faceRefinePrimaryOnly:true})['face-analysis']).toEqual(['faceRefine','faceRefine.primaryOnly']);
 
  const music=postCategoryFunctions({...image,music:true,audio:true,audioMode:'stems'});
  expect(music.refine).toEqual([]);

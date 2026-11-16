@@ -44,11 +44,11 @@
   "studio.samVideo.cutsAdapter": "DEAS_SAM3ShotMask がありません。管理対象バックエンドを再起動・更新するか、カット検出をオフにしてください。",
   "studio.samVideo.title": "H3 顔リファイナー",
   "studio.faceRefine.auto": "H3生成後に顔を補正",
-  "studio.faceRefine.autoHint": "MiniMax H3の各実行に顔補正を追加します。補正前の動画を先に保存し、追跡した顔ごとに再サンプリングして合成します。既定はオフです。",
+  "studio.faceRefine.autoHint": "MiniMax H3の画像・動画生成後に顔補正を追加します。元の出力と処理結果を両方保存します。既定はオフです。",
   "studio.faceRefine.denoise": "補正の強さ",
   "studio.faceRefine.denoiseHint": "各顔クロップで再実行するH3スケジュールの割合（0.3で同一性を維持、高いほど大きく変化）。常に最低2ステップ実行されます。",
   "studio.faceRefine.cropFactor": "クロップの余白",
-  "studio.faceRefine.cropFactorHint": "正方形クロップの一辺を、ショット内で最も高い顔の高さの倍数で指定します。",
+  "studio.faceRefine.cropFactorHint": "正方形クロップの一辺を、画像またはショット内で最も高い顔の高さの倍数で指定します。",
   "studio.faceRefine.feather": "境界ぼかし (px)",
   "studio.faceRefine.featherHint": "顔マスクを広げて柔らかくし、継ぎ目が見えないようにします。",
   "studio.faceRefine.prompt": "補正プロンプト",
@@ -1161,7 +1161,7 @@
   "studio.faceRefine.minFace": "最小顔サイズ（px）",
   "studio.faceRefine.minFaceHint": "この高さを一度も超えない顔は元のピクセルのままです（0＝すべて補正）。小さな顔は768の補正キャンバスに拡大され、少ない効果のためにH3を1回分使います。",
   "studio.faceRefine.primaryOnly": "メインの顔のみ",
-  "studio.faceRefine.primaryOnlyHint": "各ショットで追跡された最大の顔（主な被写体）だけを補正します。他の顔は元のピクセルのままです。オフ＝追跡されたすべての顔。",
+  "studio.faceRefine.primaryOnlyHint": "画像内の最大の顔、または動画の各ショットで追跡された最大の顔（主な被写体）のみを補正します。他の顔は元のピクセルのままです。オフ＝すべての顔。",
   "studio.run.post.card.active": "有効",
   "studio.run.post.card.inactive": "無効",
   "studio.run.post.card.unavailable": "このパイプラインでは利用不可",
@@ -1249,5 +1249,8 @@
   "loraSets.disable": "{name}を無効化",
   "loraSets.disabled": "無効",
   "loraSets.moved": "{name}を{total}件中{position}番目に移動しました。",
-  "loraDetails.copySelected": "選択項目をコピー（{count}）"
+  "loraDetails.copySelected": "選択項目をコピー（{count}）",
+  "studio.faceRefine.stillHint": "H3画像生成後、SAM3.1で顔を検出し、正方形のクロップを補正して合成します。元の画像と処理結果を両方保存します。動画解析や手動の補正操作は不要です。",
+  "studio.faceRefine.stillUnavailable": "H3静止画の顔補正にはBOOLEAN型のstill_imageに対応した互換アダプターが必要です。",
+  "studio.faceRefine.h3Only": "MiniMax H3の画像と動画でのみ利用できます。"
 }

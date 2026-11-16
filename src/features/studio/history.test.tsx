@@ -1,6 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { historicalRows, historyInputSelectionContext, historyRestore, readHistory, readHistoryForMedia, type HistoryRecord, type RestoreContext } from './history';
+import { faceRefineStillNodes } from '../../lib/sam3';
 import { defaultVideoOutput } from '../../lib/videoIntent';
 import type { JobIntent } from '../../lib/jobs';
 import builtinFamilies from '../../families/builtin.json' with { type: 'json' };
@@ -9,6 +10,24 @@ const image={recipeId:'checkpoint-text-to-image-diagnostic',version:1,positivePr
 const record=(intent:JobIntent=image):HistoryRecord=>({id:'history-1',clientId:'client',promptId:'prompt',origin:'studio',appVersion:'0.1.48',admittedAt:10,observedAt:20,revision:3,state:'failed',intent,outputs:[],outputRoot:null,backendOrigin:'http://127.0.0.1:7801',error:null});
 const context:RestoreContext={endpoint:'http://127.0.0.1:7801/',inputRoot:'/selected/input',models:[{name:'exact.safetensors',family:'sdxl'},{name:'style.safetensors',family:'sdxl'}],allow:{nodes:['VAEDecodeTiled','EasyCache'],checkpoints:['exact.safetensors'],samplers:['euler'],schedulers:['normal'],images:['first.png','second.png'],loras:['style.safetensors'],visionModels:['vision.safetensors'],attention:['sdpa'],compile:['inductor'],textEncoders:['clip.safetensors'],vaes:['vae.safetensors']}};
 beforeEach(()=>{vi.clearAllMocks();vi.mocked(invoke).mockResolvedValue(null);});
+
+test('H3 image history preserves exact Face Refine and gates only the still path',()=>{
+ const faceRefine={samCheckpoint:'SAM3/sam3.1.safetensors',prompt:'exact face',threshold:0.45,maxObjects:4,detectInterval:1,denoise:0.4,cropFactor:3,feather:8,minFace:32,subjects:'primary' as const};
+ const intent={...image,family:'minimax-h3',diffusion:{textEncoder:'clip.safetensors',clipType:'minimax',vae:'vae.safetensors',family:'minimax-h3'},h3Edit:{shiftVideo:10,shiftAudio:3},faceRefine};
+ const ctx={...context,models:[{name:image.checkpoint,family:'minimax-h3'}],allow:{...context.allow!,faceRefineStill:true,nodes:[...context.allow!.nodes,...faceRefineStillNodes],checkpoints:[faceRefine.samCheckpoint]}};
+ const saved=record(intent),before=JSON.stringify(saved);
+ const restored=historyRestore(saved,ctx);
+ expect(restored.intent).toMatchObject({faceRefine});expect(restored.unsupported).toEqual([]);expect(restored.unavailable).toEqual([]);
+ expect(JSON.stringify(saved)).toBe(before);
+ expect(historyRestore(saved,{...ctx,allow:{...ctx.allow,faceRefineStill:undefined}}).unavailable).toContain('faceRefineStill');
+ expect(historyRestore(saved,{...ctx,allow:{...ctx.allow,checkpoints:[]}}).unavailable).toContain('samCheckpoint: '+faceRefine.samCheckpoint);
+ expect(historyRestore(saved,{...ctx,allow:{...ctx.allow,nodes:ctx.allow.nodes.filter(n=>n!=='DEAS_ImagePostprocessGate')}}).unavailable).toContain('DEAS_ImagePostprocessGate');
+ for(const bad of [{...intent,h3Edit:undefined},{...intent,family:'sdxl'},{...intent,faceRefine:{...faceRefine,denoise:0}},{...intent,faceRefine:{...faceRefine,extra:true}},{...intent,faceRefine:null}]){
+  expect(historyRestore(record(bad as unknown as JobIntent),ctx).unsupported).toContain('faceRefine');
+ }
+ expect(historyRestore(record({...image,family:'minimax-h3',h3Edit:intent.h3Edit}),{...ctx,allow:context.allow}).unavailable).not.toContain('faceRefineStill');
+});
+
 
 test('image history retains exact Lying Sigma settings and reports an unavailable wrapper',()=>{
  const lyingSigma={factor:-0.05,startPercent:0.2,endPercent:0.8};

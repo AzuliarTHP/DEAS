@@ -491,6 +491,7 @@ class H3FaceRefine:
             "min_face": ("INT", {"default": 0, "min": 0, "max": 4096}),
             # primary = per shot only the tracked object with the largest mask area (the main subject).
             "subjects": (["all", "primary"], {"default": "all"}),
+            "still_image": ("BOOLEAN", {"default": False}),
         }}
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "refine"
@@ -498,7 +499,7 @@ class H3FaceRefine:
 
     def refine(self, images, fps, sam_model, sam_conditioning, detection_threshold, max_objects,
                detect_interval, scene_threshold, noise, guider, sampler, sigmas, vae, crop_factor,
-               feather, audio=None, audio_vae=None, min_face=0, subjects="all"):
+               feather, audio=None, audio_vae=None, min_face=0, subjects="all", still_image=False):
         import torch
         import comfy.utils
         import comfy.nested_tensor
@@ -515,11 +516,13 @@ class H3FaceRefine:
             raise ValueError("DEAS_H3_FACE_REFINE: audio needs the audio_vae input")
         if subjects not in ("all", "primary"):
             raise ValueError("DEAS_H3_FACE_REFINE: subjects must be 'all' or 'primary'")
+        if not isinstance(still_image, bool) or (still_image and (len(images) != 1 or audio is not None)):
+            raise ValueError("DEAS_H3_FACE_REFINE: still_image requires exactly one image without audio")
         boundaries = shot_boundaries(images, scene_threshold or None, "DEAS_H3_FACE_REFINE")
         out = images.clone()
         for first, end in zip(boundaries, boundaries[1:]):
             mm.throw_exception_if_processing_interrupted()
-            if end - first < 5:
+            if end - first < 5 and not still_image:
                 _log.info("DEAS_H3FaceRefine shot=[%d,%d) skipped: shorter than H3's 5-frame minimum", first, end)
                 continue
             track = track_shot(images, first, end, sam_model, sam_conditioning, detection_threshold,

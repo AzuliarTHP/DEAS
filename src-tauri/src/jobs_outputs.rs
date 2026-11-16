@@ -454,9 +454,13 @@ impl Jobs {
                 // shortcut: a model/RTX upscale scale is only known at run time, accept the decoded size within the caps below; upgrade when the chain reports its geometry.
                 (Some(u64::from(width)), Some(u64::from(height)))
             } else if job.plan.graph.get("B7").is_some() && image["role"] == "processed" {
-                if crate::jobs_video::is_video(&job.plan.intent) {
+                if crate::jobs_video::is_video(&job.plan.intent)
+                    || (job.plan.intent.get("h3Edit").is_some() && job.plan.intent.get("latentUpscale").is_some())
+                {
                     let (w, h) = crate::jobs_video::latent_upscale_size(&job.plan.intent);
                     (Some(w), Some(h))
+                } else if job.plan.intent.get("faceRefine").is_some() {
+                    (job.plan.intent["width"].as_u64(), job.plan.intent["height"].as_u64())
                 } else {
                     (
                         job.plan.intent["refine"]["width"].as_u64(),

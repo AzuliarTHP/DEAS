@@ -3,6 +3,7 @@ import { isImageIntent, type JobIntent, type JobStatus } from '../../lib/jobs';
 import { lyingSigmaNode } from '../../lib/lyingSigma';
 import { safeOutputPrefix } from '../../lib/outputNaming';
 import type { RecipeAllowlist } from '../../lib/execution';
+import { faceRefineStillNodes, isFaceRefineBlock } from '../../lib/sam3';
 import { defaultVideoOutput, isVideoEnhanceIntent, isVideoIntent, videoFrames } from '../../lib/videoIntent';
 import { aceDurationStep, aceMusicProfile, isAceMusicIntent, isAceSettings, isMusicIntent, type AceStepMusicIntent } from '../../lib/musicIntent';
 import { defaultOptions, type OptionsPref } from './OptionsPanel';
@@ -185,6 +186,12 @@ export function historyRestore(record:HistoryRecord,context:RestoreContext):Hist
    if(family?.clipType!==intent.diffusion.clipType)unsupported.push('diffusion.clipType');
   }
   if(intent.h3Edit&&modelFamily!=='minimax-h3')unsupported.push('h3Edit');
+  if(intent.faceRefine!==undefined){
+   if(!intent.h3Edit||intent.family!=='minimax-h3'||modelFamily!=='minimax-h3'||!isFaceRefineBlock(intent.faceRefine))unsupported.push('faceRefine');
+   if(context.allow?.faceRefineStill!==true)unavailable.push('faceRefineStill');
+   for(const node of faceRefineStillNodes)if(!context.allow?.nodes.includes(node))unavailable.push(node);
+   if(isFaceRefineBlock(intent.faceRefine)&&!context.allow?.checkpoints.includes(intent.faceRefine.samCheckpoint))unavailable.push(`samCheckpoint: ${intent.faceRefine.samCheckpoint}`);
+  }
   if(intent.latentUpscale){
    if(!context.allow?.h3LatentUpscaleModels?.includes(intent.latentUpscale.model))unavailable.push(`latentUpscale: ${intent.latentUpscale.model}`);
    if(!context.allow?.nodes.includes('DaSiWaH3TiledUpscale'))unavailable.push('DaSiWaH3TiledUpscale');

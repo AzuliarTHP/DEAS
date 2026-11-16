@@ -56,6 +56,32 @@ fn png_bytes(width: u32, height: u32) -> Vec<u8> {
 }
 
 #[test]
+fn h3_image_face_refine_pngs_keep_roles_and_exact_base_or_upscaled_sizes() {
+    for upscale in [false,true] {
+        let mut i = super::super::tests::h3_still_intent();
+        i["faceRefine"] = crate::jobs_face_refine::tests::block();
+        if upscale {
+            i["family"] = json!("minimax-h3");
+            i["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors","scale":1.5,"steps":4,"denoise":0.35});
+        }
+        let graph = compile(&i).unwrap();
+        let outputs = job_outputs(&json!({"outputs":{"7":{"images":[{"filename":"processed.png","subfolder":"","type":"output"}]},"B7":{"images":[{"filename":"original.png","subfolder":"","type":"output"}]}}}),&graph).unwrap();
+        assert_eq!(outputs[0]["role"], "processed");
+        assert_eq!(outputs[1]["role"], "original");
+        let jobs = completed("http://127.0.0.1:9/");
+        let mut session = jobs.lock().unwrap();
+        let job = session.job.as_mut().unwrap();
+        job.plan.intent = i;
+        job.plan.graph = graph;
+        let (w,h) = if upscale { (1536,1152) } else { (1024,768) };
+        assert_eq!(jobs.validate_png(job,&outputs[0],&png_bytes(w,h)).unwrap(),(w,h));
+        assert!(jobs.validate_png(job,&outputs[0],&png_bytes(w-1,h)).is_err());
+        assert_eq!(jobs.validate_png(job,&outputs[1],&png_bytes(1024,768)).unwrap(),(1024,768));
+        assert!(jobs.validate_png(job,&outputs[1],&png_bytes(1024,767)).is_err());
+    }
+}
+
+#[test]
 fn audio_terminal_output_authority_stays_inside_owned_root() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("outputs");

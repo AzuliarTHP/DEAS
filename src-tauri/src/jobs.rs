@@ -642,6 +642,15 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
                 .into(),
         );
     }
+    let face_refine = object.get("faceRefine");
+    if let Some(f) = face_refine {
+        if h3.is_none() || [object.get("family"), diffusion.and_then(|d| d.get("family"))]
+            .into_iter().flatten().any(|f| f != "minimax-h3")
+        {
+            return Err("faceRefine on images needs a MiniMax H3 edit".into());
+        }
+        crate::jobs_face_refine::validate(f)?;
+    }
     // `latentUpscale` (H3 edits only): DaSiWaH3TiledUpscale after the sampler, the same settings as H3 video.
     // The node rejects masked source latents, so a mask (and with it Inpaint only masked) is refused here.
     let latent_upscale = object.get("latentUpscale");
@@ -690,6 +699,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         != fields.len()
             + usize::from(upscale.is_some())
             + usize::from(refine.is_some())
+            + usize::from(face_refine.is_some())
             + usize::from(format.is_some())
             + usize::from(compression.is_some())
             + usize::from(options.is_some())
@@ -876,7 +886,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     }
     if !i["outputPrefix"].as_str().is_some_and(|prefix| {
         safe_output_prefix(prefix)
-            && (refine.is_none() || safe_output_prefix(&format!("{prefix}_original")))
+            && ((refine.is_none() && face_refine.is_none()) || safe_output_prefix(&format!("{prefix}_original")))
     }) {
         return Err("Unsafe output prefix".into());
     }
@@ -1220,6 +1230,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         let tiles = json!({"tile_size":tile,"overlap":64,"temporal_size":64,"temporal_overlap":8});
         for (id, node) in [
             ("6", "VAEDecodeTiled"),
+            ("U6", "VAEDecodeTiled"),
             ("9", "VAEEncodeTiled"),
             ("R6", "VAEDecodeTiled"),
             ("RE", "VAEEncodeTiled"),
@@ -1373,10 +1384,34 @@ fn h3_edit(graph: &mut Value, i: &Value, h: &Value) -> Result<(), String> {
             "U".into(),
             crate::jobs_video::h3_upscale_node(i, cond, json!(["5", 0])),
         );
-        g.get_mut("SEP").unwrap()["inputs"]["av_latent"] = json!(["U", 0]);
+        // Face refinement keeps the base separator; its re-encode reuses the untouched audio latent.
+        if i.get("faceRefine").is_none() {
+            g.get_mut("SEP").unwrap()["inputs"]["av_latent"] = json!(["U", 0]);
+        }
     }
     g.get_mut("6").unwrap()["inputs"]["samples"] = json!(["SEP", 0]);
     g.insert("F".into(), json!({"class_type":"ImageFromBatch","inputs":{"image":["6",0],"batch_index":0,"length":1}}));
+    if let Some(f) = i.get("faceRefine") {
+        let images = graph["7"]["inputs"]["images"].clone();
+        graph["B7"] = graph["7"].clone();
+        graph["B7"]["inputs"]["filename_prefix"] = json!(format!("{}_original", i["outputPrefix"].as_str().unwrap()));
+        let refined = crate::jobs_face_refine::insert(graph, images, None, json!(24), json!(["SS",0]), f, (clip, vae.clone()));
+        graph["FR"]["inputs"]["still_image"] = json!(true);
+        let final_image = if i.get("latentUpscale").is_some() {
+            graph["RE"] = json!({"class_type":"VAEEncode","inputs":{"pixels":refined,"vae":vae}});
+            graph["RC"] = json!({"class_type":"LTXVConcatAVLatent","inputs":{"video_latent":["RE",0],"audio_latent":["SEP",1]}});
+            graph["U"]["inputs"]["latent"] = json!(["RC",0]);
+            graph["USEP"] = json!({"class_type":"LTXVSeparateAVLatent","inputs":{"av_latent":["U",0]}});
+            graph["U6"] = graph["6"].clone();
+            graph["U6"]["inputs"]["samples"] = json!(["USEP",0]);
+            graph["UF"] = json!({"class_type":"ImageFromBatch","inputs":{"image":["U6",0],"batch_index":0,"length":1}});
+            json!(["UF",0])
+        } else {
+            refined
+        };
+        graph["PG"] = json!({"class_type":"DEAS_ImagePostprocessGate","inputs":{"baseline":["B7",0],"image":final_image}});
+        graph["7"]["inputs"]["images"] = json!(["PG",0]);
+    }
     Ok(())
 }
 
@@ -1783,7 +1818,10 @@ impl Jobs {
             let sam3 = crate::jobs_sam3::is_sam3(&intent) || sam3_video;
             if !video && !music && !sam3 {
                 civitai_saver(&mut graph, &allow["nodes"], &intent);
-                if intent.get("refine").is_some()
+                if intent.get("faceRefine").is_some() && allow["faceRefineStill"] != true {
+                    return Err("H3 image face refinement requires the still_image BOOLEAN adapter input. Update/reopen the owned backend or disable face refinement".into());
+                }
+                if (intent.get("refine").is_some() || intent.get("faceRefine").is_some())
                     && !allow["nodes"].as_array().is_some_and(|n| n.contains(&json!("DEAS_ImagePostprocessGate")))
                 {
                     return Err("Refine requires the DEAS baseline-first lazy gate and a compatible post-save saver output. Update/reopen the owned backend or disable post-processing; unsupported external backends cannot run it".into());
@@ -1886,6 +1924,11 @@ impl Jobs {
                     ),
                 ]
             };
+            if !video && !music && !sam3 {
+                if let Some(sam) = intent["faceRefine"]["samCheckpoint"].as_str() {
+                    required.push(("checkpoints", vec![sam]));
+                }
+            }
             required.extend([
                 (
                     "nodes",
