@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.39 BETA (unreleased)
+
+### Fixed
+- **Windows: deleting a video that is being previewed could report success while the player still held the file open.** The name then stayed in a blocked "pending delete" state and rejected any new file at the same path (verified on Windows: the delete handle succeeds, but re-creating the path returns ACCESS_DENIED until the player releases). Media deletion now confirms the file name actually disappeared before reporting success; `deleteMedia` releases matching `<video>`/`<audio>` previews before the native delete runs; and DEAS' own Windows inspection handles no longer block deletion or path reuse (share-delete enabled).
+
 ## 0.2.38 BETA
 
 - **H3 face refinement for still images.** Advanced H3 Image uses the existing default-OFF face-refinement settings and SAM checkpoint, without video-analysis or standalone-video controls. The existing adapter explicitly pads a still to H3's minimum clip, refines tracked face crops and returns one stitched image; short video shots keep their previous behavior. The native graph saves Original before refinement, preserves Processed separately, and composes reference/masked edits and optional latent upscale (face refinement before upscale). Capability discovery requires the new still-image ABI without disabling older video refinement. Runtime/model-quality acceptance remains separate.

@@ -198,7 +198,24 @@ fn remove_checked(
         {
             return Err("Cannot delete media file; it may be in use".into());
         }
-        Ok(())
+        // A disposed name stays PENDING (still listed, and re-creating the same path
+        // fails with ACCESS_DENIED) while a live WebView2 <video> preview or backend
+        // stream keeps a share-delete handle open. Drop ours, then require the name
+        // to actually disappear before reporting success.
+        drop(file);
+        for attempt in 0..10 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            if !candidate
+                .path
+                .try_exists()
+                .map_err(|_| "Cannot verify deletion")?
+            {
+                return Ok(());
+            }
+        }
+        Err("Media was marked for deletion but is still open in a preview or the backend; it clears once the player closes; do not reuse this filename".into())
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     Err("Safe media deletion requires Linux or Windows".into())
@@ -447,6 +464,25 @@ mod tests {
         .unwrap_err()
         .contains("retained at"));
         assert_eq!(std::fs::read(&paths[0]).unwrap(), b"unfinished writer");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "live Windows handle probe"]
+    fn pending_deletion_is_reported_while_a_share_delete_holder_is_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let (_dir, roots, paths) = fixture();
+        let candidates = prepare(&roots, &paths[..1]).unwrap();
+        // A WebView2-style preview holder: share READ|WRITE|DELETE keeps the name
+        // pending after disposition, which must surface as an actionable failure.
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0x1 | 0x2 | 0x4)
+            .open(&paths[0])
+            .unwrap();
+        let error = remove(&candidates[0]).unwrap_err();
+        assert!(error.contains("still open in a preview"), "{error}");
+        drop(holder);
     }
 
     #[test]

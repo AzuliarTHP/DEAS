@@ -18,7 +18,7 @@ use windows_sys::Win32::{
     Storage::FileSystem::{
         GetFileInformationByHandle, MoveFileExW, BY_HANDLE_FILE_INFORMATION,
         FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
-        FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     },
     System::{
         JobObjects::{
@@ -84,6 +84,9 @@ pub fn cache_file_identity(file: &File) -> Result<(u64, [u8; 16], u64), String> 
 pub fn open_no_follow(path: &Path) -> Result<File, String> {
     let file = OpenOptions::new()
         .read(true)
+        // FILE_SHARE_DELETE: DEAS' own inspection handles must never become the
+        // holder that blocks media deletion or path reuse on Windows.
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)
         .map_err(|e| format!("Cannot open {}: {e}", path.display()))?;

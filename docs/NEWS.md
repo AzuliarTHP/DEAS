@@ -1,5 +1,10 @@
 # News
 
+
+## 0.2.39 BETA (unreleased)
+
+Löschen und neue Ausgabe unter demselben Dateinamen schlägt auf Windows nicht mehr fehl, wenn das Video gerade in der Vorschau läuft: Die Vorschau wird vor dem Löschen freigegeben, und ein Löschen meldet nur noch Erfolg, wenn die Datei wirklich verschwunden ist.
+
 ## 0.2.38 BETA
 
 - H3 Image can opt into the existing face-refinement stage, retaining Original and Processed images. It reuses the SAM/model settings and runs before optional learned latent upscale; real-model still-image quality acceptance remains open.

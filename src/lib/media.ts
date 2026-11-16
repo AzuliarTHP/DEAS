@@ -8,6 +8,13 @@ export interface MediaItem {name:string;src:string;media:MediaKind;path?:string}
 export interface MediaDeletion {deleted:string[];failed:string[];errors?:string[];deletedVideoSourceIds?:string[]}
 /** Explicit confirmation is owned by the caller. Native code authorizes every path. */
 export async function deleteMedia(paths:string[]):Promise<MediaDeletion> {
+ // Windows keeps a played file's name blocked (even after a successful native delete)
+ // while a live <video>/<audio> still holds its stream; release matching previews first.
+ const urls=paths.map(p=>convertFileSrc(p));
+ for(const el of document.querySelectorAll<HTMLMediaElement>('video,audio')){
+  const src=el.getAttribute('src');
+  if(src&&urls.some(url=>src===url||src.startsWith(`${url}?`))){el.pause();el.removeAttribute('src');el.load();}
+ }
  const report=await invoke<MediaDeletion>('native_media_delete',{paths});
  if(!report||!Array.isArray(report.deleted)||!Array.isArray(report.failed)||
   (report.deletedVideoSourceIds!==undefined&&(!Array.isArray(report.deletedVideoSourceIds)||report.deletedVideoSourceIds.length>report.deleted.length||report.deletedVideoSourceIds.some(id=>typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id))))||
