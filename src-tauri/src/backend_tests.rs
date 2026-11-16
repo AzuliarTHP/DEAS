@@ -349,6 +349,10 @@ fn image_prompting_installed_before_owned_child_start() {
         fs::read(directory.join("deas_sam3_video_window.py")).unwrap(),
         include_bytes!("sam3_video_window.py")
     );
+    assert_eq!(
+        fs::read(directory.join("deas_h3_stream_video.py")).unwrap(),
+        include_bytes!("h3_stream_video.py")
+    );
     let mut entries: Vec<_> = fs::read_dir(&directory)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
@@ -357,6 +361,7 @@ fn image_prompting_installed_before_owned_child_start() {
     assert_eq!(
         entries,
         [
+            "deas_h3_stream_video.py",
             "deas_image_postprocess.py",
             "deas_image_prompting.py",
             "deas_output_naming.py",

@@ -156,6 +156,93 @@ class CoreWindowTests(unittest.TestCase):
         # Type-only loader fixture: no weights, GPU allocation or inference.
         return SimpleNamespace(model=SAM3.__new__(SAM3))
 
+    def test_whole_source_sentinel_resolves_before_both_admission_checks(self):
+        with patch("folder_paths.get_input_directory", return_value=self.root), \
+                patch.object(window, "window_plan", wraps=window.window_plan) as planner:
+            bounded, = window.SAM3VideoWindow().window(self.source(), self.model(), 0, 0, 4)
+            self.assertEqual(bounded.get_active_trim_window(), (0, 1.0))
+            self.assertEqual(tuple(bounded.get_components().images.shape), (24, 48, 64, 3))
+            self.assertEqual(planner.call_count, 2)
+            for call in planner.call_args_list:
+                self.assertEqual(call.args[5:7], (0, 1.0))
+
+    def test_invalid_window_values_cannot_become_whole_source_sentinels(self):
+        for start, duration in [(False, 0), (0, False), (True, 0), (0, True),
+                                ("0", 0), (0, "0"), (None, 0), (0, None),
+                                (math.nan, 0), (0, math.nan), (math.inf, 0), (0, math.inf)]:
+            with self.subTest(start=start, duration=duration), \
+                    patch("folder_paths.get_input_directory", return_value=self.root), \
+                    patch.object(window, "window_plan", wraps=window.window_plan) as planner:
+                with self.assertRaisesRegex(ValueError, "finite numeric"):
+                    window.SAM3VideoWindow().window(self.source(), self.model(), start, duration, 4)
+                planner.assert_not_called()
+        with patch("folder_paths.get_input_directory", return_value=self.root):
+            with self.assertRaises(ValueError):
+                window.SAM3VideoWindow().window(self.source(), self.model(), 0.25, 0, 4)
+
+    def test_five_second_audio_source_whole_legacy_and_silent_saver_readback(self):
+        import av
+        import subprocess
+        from types import SimpleNamespace
+        from comfy_api.latest import InputImpl
+        from comfy_extras.nodes_video import GetVideoComponents
+        from server import PromptServer
+        # Use the installed saver without starting a server or loading any models.
+        core = Path(sys.argv[sys.argv.index("--comfy-root") + 1])
+        saver_path = core / "custom_nodes/ComfyUI-DaSiWa-Nodes/nodes"
+        if not (saver_path / "nodes_enhanced_video_combine.py").is_file():
+            self.skipTest("DaSiWa saver is not installed in the selected Core")
+        sys.path.insert(0, str(saver_path))
+        try:
+            with patch.object(PromptServer, "instance", SimpleNamespace(
+                    routes=SimpleNamespace(get=lambda path: lambda f: f)), create=True):
+                import nodes_enhanced_video_combine as combine
+        finally:
+            sys.path.remove(str(saver_path))
+        source = os.path.join(self.root, "five-seconds.mp4")
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=24:duration=5",
+                        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=5",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-threads", "1",
+                        "-c:a", "aac", "-shortest", source], check=True)
+        for start, duration, audio, count in [(0, 0, True, 120), (0, 5, True, 120),
+                                             (0, 2, True, 48), (1, 2, True, 48),
+                                             (0, 0, False, 120)]:
+            with self.subTest(start=start, duration=duration, audio=audio), \
+                    patch("folder_paths.get_input_directory", return_value=self.root):
+                bounded, = window.SAM3VideoWindow().window(
+                    InputImpl.VideoFromFile(source), self.model(), start, duration, 1, include_audio=audio)
+                images, sound, fps = GetVideoComponents.execute(bounded).result[:3]
+                self.assertEqual((len(images), fps), (count, 24.0))
+                if audio:
+                    self.assertEqual(sound["sample_rate"], 48000)
+                    self.assertEqual(sound["waveform"].shape[-1], count * 2000)
+                    self.assertGreater(float(sound["waveform"].square().mean().sqrt()), 0.01)
+                else:
+                    self.assertIsNone(sound)
+                with patch("folder_paths.get_output_directory", return_value=self.root), \
+                        patch.dict(combine._ENCODER_NAMES, {"H.264": ("libx264",)}):
+                    result = combine.DaSiWa_EnhancedVideoCombine().combine(
+                        images=images, frame_rate=fps, codec="H.264", container="MP4", bit_depth="8-bit",
+                        quality=20, pingpong=False, save_metadata=False, filename_prefix="whole-source",
+                        save_output=True, pass_frames=False, crop_to_audio=False, audio_codec="AAC",
+                        audio_bitrate="192k", audio=sound)
+                desc = result["ui"]["gifs"][0]
+                output = os.path.join(self.root, desc["subfolder"], desc["filename"])
+                with av.open(output) as container:
+                    video = container.streams.video[0]
+                    self.assertEqual(video.average_rate, Fraction(24))
+                    self.assertAlmostEqual(float(video.duration * video.time_base), count / 24)
+                    self.assertEqual(len(list(container.decode(video))), count)
+                    self.assertEqual(len(container.streams.audio), int(audio))
+                if audio:
+                    with av.open(output) as container:
+                        stream = container.streams.audio[0]
+                        self.assertAlmostEqual(float(stream.duration * stream.time_base), count / 24, delta=0.03)
+                        energy = sum(float(f.to_ndarray().astype("float64").__abs__().sum())
+                                     for f in container.decode(stream))
+                        self.assertGreater(energy, 0)
+
     def test_core_trim_is_applied_before_silent_bounded_decode(self):
         from comfy_extras.nodes_video import GetVideoComponents
         with patch("folder_paths.get_input_directory",return_value=self.root):

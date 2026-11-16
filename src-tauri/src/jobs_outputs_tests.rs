@@ -125,7 +125,8 @@ fn completed(base: &str) -> Jobs {
 }
 
 #[tokio::test]
-async fn latent_video_history_requires_encoded_pairs_and_retains_terminal_products() {
+async fn stream_and_legacy_video_history_requires_encoded_pairs_and_retains_terminal_products() {
+    for class_type in ["DaSiWa_EnhancedVideoCombine", "DEAS_H3StreamVideoSave"] {
     for (status, present, expected) in [
         ("success", "both", "succeeded"),
         ("success", "frames", "failed"),
@@ -139,8 +140,8 @@ async fn latent_video_history_requires_encoded_pairs_and_retains_terminal_produc
         ("interrupted", "none", "cancelled"),
     ] {
         let graph = json!({
-            "7":{"class_type":"DaSiWa_EnhancedVideoCombine","inputs":{}},
-            "B7":{"class_type":"DaSiWa_EnhancedVideoCombine","inputs":{}}
+            "7":{"class_type":class_type,"inputs":{}},
+            "B7":{"class_type":class_type,"inputs":{}}
         });
         let tuple = json!([0,"prompt-video",graph,{"client_id":"client"},["7","B7"]]);
         let (base, task) = super::super::tests::server(move |path, _| {
@@ -221,6 +222,7 @@ async fn latent_video_history_requires_encoded_pairs_and_retains_terminal_produc
             assert!(job.error.is_some());
         }
         task.abort();
+    }
     }
 }
 

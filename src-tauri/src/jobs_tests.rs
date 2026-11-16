@@ -1965,6 +1965,36 @@ fn h3_regenerate_prepare_nodes(intent: &Value) -> Value {
 }
 
 #[tokio::test]
+async fn h3_stream_prepare_requires_its_actual_lazy_saver_not_the_rgb_gate() {
+    let mut intent = crate::jobs_video::tests::h3();
+    intent["streamDecode"] = json!(true);
+    intent["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
+    let mut all = h3_regenerate_prepare_nodes(&intent);
+    all.as_object_mut().unwrap().remove("DEAS_VideoPostprocessGate");
+    let mut required = json!({"samples":["LATENT",{"lazy":true}],"vae":["VAE"],"audio_vae":["VAE"],"frame_rate":["FLOAT"],"quality":["INT"],"filename_prefix":["STRING"]});
+    for key in ["save_metadata","save_output","crop_to_audio","save_first_frame","save_last_frame"] { required[key] = json!(["BOOLEAN"]); }
+    for (key,choices) in [("codec",json!(crate::jobs_video::CODECS)),("container",json!(crate::jobs_video::CONTAINERS)),("bit_depth",json!(crate::jobs_video::BIT_DEPTHS)),("audio_codec",json!(crate::jobs_video::AUDIO_CODECS)),("audio_bitrate",json!(crate::jobs_video::AUDIO_BITRATES)),("log_level",json!(["Standard","Verbose"]))] { required[key] = json!([choices]); }
+    all["DEAS_H3StreamVideoSave"] = json!({"input":{"required":required,"optional":{"baseline":["STRING",{"default":""}],"seed":["INT"]}},"output":["IMAGE","STRING"],"output_node":true});
+    for case in ["compatible","missing","eager samples","lazy baseline"] {
+        let mut info = all.clone();
+        match case {
+            "missing" => { info.as_object_mut().unwrap().remove("DEAS_H3StreamVideoSave"); },
+            "eager samples" => info["DEAS_H3StreamVideoSave"]["input"]["required"]["samples"][1]["lazy"] = json!(false),
+            "lazy baseline" => info["DEAS_H3StreamVideoSave"]["input"]["optional"]["baseline"][1]["lazy"] = json!(true),
+            _ => {},
+        }
+        let (base,task) = server(move |path,_| {
+            assert_eq!(path,"GET /comfy/object_info HTTP/1.1","prepare must never execute");
+            (200,info.to_string())
+        }).await;
+        let result = Jobs::default().prepare(base,intent.clone()).await;
+        if case == "compatible" { assert!(result.is_ok(),"{result:?}"); }
+        else { assert!(result.unwrap_err().contains("DEAS_H3StreamVideoSave"),"{case}"); }
+        task.abort();
+    }
+}
+
+#[tokio::test]
 async fn h3_regenerate_tuning_prepare_requires_compatible_optional_inputs() {
     for target in ["1080P", "2K", "4K", "Original"] {
         let mut intent = crate::jobs_video::tests::h3();

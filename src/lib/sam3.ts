@@ -59,7 +59,7 @@ export interface H3FaceRefineBlock {
   /** `primary` refines only the largest tracked face per shot; absent = every tracked face. */
   subjects?: 'all' | 'primary';
 }
-/** Standalone refinement of an existing 24 fps video (native `jobs_face_refine::compile`). */
+/** Standalone refinement of an existing 24 fps video (native `jobs_face_refine::compile`). A zero start/duration pair requests the entire source; positive durations retain explicit legacy windows. */
 export interface H3FaceRefineIntentV1 {
   recipeId: 'h3-face-refine';
   version: 1;

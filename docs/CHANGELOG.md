@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.38 BETA (unreleased)
+
+- **Opt-in streaming H3 decode/export.** A new default-OFF **Stream decode (lower RAM)** checkbox in the H3 latent-upscale/Hi-Res group replaces both full-frame decode+saver paths with a DEAS-owned fused node that decodes through the stock H3 VAE output buffer and encodes each finished chunk immediately, so the complete RGB frame batch never sits in RAM. Original is streamed before Processed (lazy ordering keeps the existing naming and Continuity publication), house codecs/audio/metadata/Stop semantics are kept, and incompatible setups are refused with a concrete reason: segment-only continuity, full-IMAGE post (TVE/De-rope/Seamless/Face Refine), animated-image containers or a missing backend adapter. It bounds decode/export memory only, not sampling or upscaler latent staging; real-VAE/GPU acceptance is recorded in VERIFICATION and PLAN.
+- **Autotune is opt-in.** Backend Speed+ and Compatibility presets no longer enable cuDNN kernel autotuning by default. Supported Speed+ attention/fp16 choices remain; explicitly saved Custom settings and manual autotune selection are preserved. No running backend is restarted by this source change.
+
+- **Manual H3 face refinement targets the whole source.** The action no longer copies the face-mask analysis start/duration (default two seconds) into the refinement job. Analysis settings remain unchanged and only trim the diagnostic mask preview; the standalone refinement requests exact full-source timing at the backend boundary. Explicit legacy window jobs keep their meaning. Audio preservation and actual model-quality acceptance are recorded separately in VERIFICATION and PLAN.
+
 ## 0.2.37 BETA
 
 - **SAM Auto Refine uses Mask Blur.** The SAM panel shares Inpaint's saved 0–31 Mask Blur value (default 4; explicit saved 0 remains off). Automatic, manual-source and imported-mask passes send it to the existing native sampling/composite blur chain, with context padding expanded by the blur radius. Legacy settings without the field keep zero blur; invalid values and explicit-mask geometry are rejected before uploads. This corrects mask feathering, not a proven fix for KREA2 detail loss.

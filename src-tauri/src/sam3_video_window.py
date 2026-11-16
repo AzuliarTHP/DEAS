@@ -184,6 +184,9 @@ class SAM3VideoWindow:
         from comfy_api.latest import InputImpl
         from comfy.model_base import SAM3
 
+        if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+               for v in (start_seconds, duration_seconds)):
+            raise ValueError("SAM3_VIDEO_WINDOW: finite numeric window required")
         if not isinstance(video, InputImpl.VideoFromFile):
             raise ValueError("SAM3_VIDEO_WINDOW: a Core LoadVideo file is required")
         if not isinstance(getattr(model, "model", None), SAM3):
@@ -211,6 +214,8 @@ class SAM3VideoWindow:
             frames = stream.frames
             seconds = float(stream.duration * stream.time_base)
         # Window times are absolute in the full source file, not an inherited input trim.
+        if start_seconds == 0 and duration_seconds == 0:
+            duration_seconds = seconds
         window_plan(width, height, fps, frames, seconds, start_seconds, duration_seconds,
                     max_objects, available_memory())
         # Bounds are already checked against admitted metadata. Core as_trimmed() reopens

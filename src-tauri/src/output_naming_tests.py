@@ -20,6 +20,19 @@ exec(compile(sys.argv.pop(1), 'output_naming.py', 'exec'), adapter.__dict__)
 
 
 class PublicationTests(unittest.TestCase):
+    def test_stream_saver_is_wrapped_at_its_actual_registration(self):
+        class Saver:
+            FUNCTION = 'save'
+            def save(self, **kwargs):
+                return {'result': (None, 'published.mp4')}
+        with patch.dict(nodes.NODE_CLASS_MAPPINGS, {'DEAS_H3StreamVideoSave': Saver}, clear=True):
+            adapter.prepare({'extra_data': {'extra_pnginfo': {'deas_output_naming': True}}})
+            self.assertTrue(getattr(Saver.save, '_deas_naming', False))
+            wrapped = Saver.save
+            adapter.prepare({'extra_data': {'extra_pnginfo': {'deas_output_naming': True}}})
+            self.assertIs(Saver.save, wrapped)
+            self.assertEqual(Saver().save(extra_pnginfo={'deas_output_naming': True})['result'][1], 'published.mp4')
+
     def setUp(self):
         mode = patch.object(adapter, '_USE_RENAME', False)
         mode.start()

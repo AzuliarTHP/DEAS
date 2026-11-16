@@ -742,6 +742,11 @@ impl Lifecycle {
             "deas_sam3_video_window.py",
             include_bytes!("sam3_video_window.py"),
         )?;
+        install_adapter(
+            root,
+            "deas_h3_stream_video.py",
+            include_bytes!("h3_stream_video.py"),
+        )?;
         // Optional capability: unsupported sources must not prevent normal backend startup.
         let mut interrupt_source = InterruptSource::capture(root).ok().and_then(|mut proof| {
             install_adapter(

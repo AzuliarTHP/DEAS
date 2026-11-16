@@ -1,5 +1,10 @@
 # News
 
+## 0.2.38 BETA (unreleased)
+
+- H3 latent upscale/Hi-Res gained an opt-in **Stream decode (lower RAM)** mode: Original and Processed are decoded and encoded chunk-by-chunk instead of holding the full pixel batch. Off by default; unsupported combinations show a concrete reason instead of silently falling back.
+- Manual H3 **Refine faces** processes the whole selected source video rather than the short mask-analysis preview window. The original and processed products remain separate.
+
 ## 0.2.37 BETA — Library and Studio workflow
 
 - Image/video model switches no longer get blocked by retained other-family LoRAs; their draft selections and weights are preserved. Explicit selections remain scoped to the current model draft.

@@ -314,6 +314,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [tve,setTve]=usePref('studio.run.tve',defaultTve,isTvePref);
  const [deropePref,setDerope]=usePref('studio.run.derope',defaultDerope,isDeropePref);
  const audioEnhance=useAudioEnhance('post');
+ const [streamDecode,setStreamDecode]=usePref('studio.run.streamDecode',false,isBoolean);
  const [h3Latent,setH3Latent]=usePref('studio.run.latent.h3',defaultLatent,isLatentPref);
  const [ltxLatent,setLtxLatent]=usePref('studio.run.latent.ltx',defaultLatent,isLatentPref);
  const [regeneratePref,setRegenerate]=usePref('studio.run.regenerate.h3',defaultRegenerate,isRegeneratePref);
@@ -577,7 +578,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const regenerateModel=regeneratePref.model||latentChoices.find(m=>/3d_conv/i.test(m))||latentChoices[0]||'';
  const regenerateSharpness=!regenerateOriginal&&/2d_conv/i.test(regenerateModel);
  const sharedSharpness=h3Latent.advanced?.sharpness??1;
- const latentNodes=[...(isVideo?['DEAS_VideoPostprocessGate']:[]),...(videoFamily==='minimax-h3'?['DaSiWaH3TiledUpscale']:['LatentUpscaleModelLoader','LTXVLatentUpsampler'])];
+ const latentNodes=[...(isVideo&&!(isH3Video(videoFamily)&&streamDecode)?['DEAS_VideoPostprocessGate']:[]),...(videoFamily==='minimax-h3'?['DaSiWaH3TiledUpscale']:['LatentUpscaleModelLoader','LTXVLatentUpsampler'])];
  useEffect(()=>{setLatentDownload(null);},[videoFamily,isVideo,planVisible]);
  // The backend may still be booting, or optional models were added since the last probe: re-read when their controls open.
  // Re-read on every open: files placed into model folders after the first read must appear without a restart.
@@ -631,6 +632,12 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  // De-rope re-renders a plain MiniMax H3 generation from its own latent (not HyperFlow, not TVE).
  const derope=videoFamily==='minimax-h3'?deropePref:defaultDerope;
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
+ const streamRequested=isVideo&&videoFamily==='minimax-h3'&&streamDecode;
+ const streamReason=!(latentEnabled||regenerateEnabled)?t('studio.run.streamDecode.requires')
+  :continuityOn&&plan.outputMode==='segment'?t('studio.run.streamDecode.fullTimeline')
+  :videoPost||faceRefine.auto?t('studio.run.streamDecode.fullImage')
+  :['Animated WebP','Animated AVIF'].includes(optionsPref.output?.container??'Auto')?t('studio.run.streamDecode.container')
+  :choices&&!choices.nodes.includes('DEAS_H3StreamVideoSave')?t('studio.run.streamDecode.nodeMissing'):'';
  const loraNames=allLoraModels.map(m=>m.name);
 
  // Explicit enables belong to this model draft; inherited selections keep family-filtered inactivity.
@@ -706,6 +713,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  ];
  if((isMusic||isVideo&&videoFamily!=='wan')&&!audioEnhance.ready)unavailable.push(t('studio.audioEnhance.notReady'));
  // A chained refinement that cannot run blocks Run instead of being silently dropped.
+ if(streamRequested&&streamReason)unavailable.push(streamReason);
  if(isVideo&&isH3Video(videoFamily)&&faceRefine.auto&&faceRefineAutoUnavailable)unavailable.push(faceRefineAutoUnavailable);
  const lowModel=isVideo&&model?lowOf(model,family):'';
  const lowFile=lowModel?(models??[]).find(m=>m.name===lowModel&&m.category===model?.category):undefined;
@@ -787,7 +795,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const regenerateCanvas=regenerateSize(outputSize.width,outputSize.height,regeneratePref.target);
  // Before the capability probe answers there is nothing to report yet (same as latentProblems).
  const regenerateProblems=!regenerateEnabled?[]:[...(!choices?[]:[
-  ...['DEAS_VideoPostprocessGate','DaSiWaH3HiResRegenerate'].filter(n=>!choices.nodes.includes(n)).map(name=>t('studio.run.regenerate.nodeMissing',{name})),
+  ...[...(streamRequested?[]:['DEAS_VideoPostprocessGate']),'DaSiWaH3HiResRegenerate'].filter(n=>!choices.nodes.includes(n)).map(name=>t('studio.run.regenerate.nodeMissing',{name})),
   ...(!regenerateLoras.includes(regenerateLora)?[t('studio.run.regenerate.loraMissing')]:[]),
    ...(!choices.h3RegenerateTuning&&(h3Latent.denoise!==1||regenerateSharpness&&sharedSharpness!==1)?[t('studio.run.regenerate.tuningMissing')]:[]),
    ...(regenerateOriginal&&!choices.h3RegenerateOriginal?[t('studio.run.regenerate.originalUnavailable')]:[]),
@@ -1078,6 +1086,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    if(vf==='minimax-h3'&&intent.family==='minimax-h3'&&regenerateEnabled)intent={...intent,latentUpscale:{model:regenerateOriginal?'interpolation':regenerateModel,regenerate:{lora:regenerateLora,target:regeneratePref.target,...((regeneratePref.strength??1)===1?{}:{strength:regeneratePref.strength}),...(h3Latent.denoise===1?{}:{denoise:h3Latent.denoise}),...(regenerateSharpness&&sharedSharpness!==1?{sharpness:sharedSharpness}:{}),...(regeneratePref.spatialTiling?{}:{spatialTiling:false})}}};
    if(vf==='minimax-h3'&&intent.family==='minimax-h3'&&latentEnabled)intent={...intent,latentUpscale:{model:latentModel,scale:latentPref.scale,steps:latentPref.steps,denoise:latentPref.denoise,...(latentAdvanced?{advanced:latentAdvanced}:{})}};
    if(isH3Video(vf)&&faceRefine.auto)intent={...intent,faceRefine:faceRefineBlock};
+   if(vf==='minimax-h3'&&streamDecode)intent={...intent,streamDecode:true};
    return intent;
  }
  async function runVideo(naming:string,out:VideoOutput,capturedSeed:number,step?:{index:number;all:boolean}){
@@ -1402,7 +1411,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   const capturedSeed=seedMode==='random'?nextSeed.current:seed;
   if(seedMode==='random'){nextSeed.current=randomSeed();setSeed(nextSeed.current);}
   const sourcePath=samVideoSource.path,capturedEndpoint=endpoint;
-  const draft:Omit<H3FaceRefineIntentV1,'sourceVideo'>=Object.freeze({recipeId:'h3-face-refine',version:1,family:videoFamily,model:checkpoint,textEncoder,vae,audioVae,startSeconds:samVideoStart,durationSeconds:samVideoDuration,
+  const draft:Omit<H3FaceRefineIntentV1,'sourceVideo'>=Object.freeze({recipeId:'h3-face-refine',version:1,family:videoFamily,model:checkpoint,textEncoder,vae,audioVae,startSeconds:0,durationSeconds:0,
    seed:capturedSeed,steps,sampler,scheduler,shiftVideo:video.shiftVideo,shiftAudio:video.shiftAudio,outputPrefix:'raw/video/DEAS_face_refine',faceRefine:faceRefineBlock});
   observation.current++;setObservationRetry(n=>n+1);const ticket=beginRun();let admitted=false;
   try{
@@ -1789,6 +1798,7 @@ const promptTools=forgeContext&&<>
   setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setInputScaling('off');setEdit('resample');
   if(isVideoIntent(intent)){
    setTve(fromVideoPost(intent.videoPost));setDerope(fromDerope(intent.videoPost?.derope));audioEnhance.restore(intent.audioEnhance);
+   setStreamDecode(intent.streamDecode===true);
    if(intent.family==='minimax-h3'){
     const u=intent.latentUpscale;
     setH3Latent(u&&!u.regenerate?{...defaultLatent,...u,enabled:true}:u?.regenerate?{...h3Latent,enabled:false,denoise:u.regenerate.denoise??1,advanced:{...h3Latent.advanced,sharpness:u.regenerate.sharpness??1}}:{...h3Latent,enabled:false});
@@ -1912,6 +1922,7 @@ const promptTools=forgeContext&&<>
   video:isVideo,
   audio:isMusic||(isVideo&&videoFamily!=='wan'),
   latent:latentEnabled,
+  streamDecode:streamRequested,
   tve,
   refine:post,
   imageUpscaleModel:upscaleModelPref,
@@ -2213,6 +2224,7 @@ const promptTools=forgeContext&&<>
        <div className="wb-post-category" data-post-category="latent" hidden={openPostCategory!=='latent'}>
         {latent?<fieldset className="wb-group" data-post-group="latent"><legend>{t('studio.run.post.group.latent')}</legend><div className="wb-options">
          <div className="wb-option"><label className="wb-option-row"><input data-latent-upscale-enabled type="checkbox" checked={latentPref.enabled} disabled={regenerateEnabled} onChange={e=>{setLatentPref({...latentPref,enabled:e.target.checked,model:latentPref.model||latentModel});if(e.target.checked&&choices&&!latentChoices.includes(latentModel))setLatentDownload(videoFamily!);}}/>{t('studio.run.latent.enabled')}</label><small>{t('studio.run.latent.hint',{width:String(latentSize.width),height:String(latentSize.height)})}</small>{regenerateEnabled&&<small data-latent-regenerate-on>{t('studio.run.latent.regenerateOn')}</small>}</div>
+         {isVideo&&isH3Video(videoFamily)&&<div className="wb-option"><label className="wb-option-row"><input data-stream-decode type="checkbox" checked={streamDecode} disabled={!streamDecode&&!!streamReason} aria-describedby="wb-stream-help" onChange={e=>setStreamDecode(e.target.checked)}/>{t('studio.run.streamDecode.label')}</label><small id="wb-stream-help">{streamReason||t('studio.run.streamDecode.hint')}</small></div>}
          <label className="wb-option"><span>{t('studio.run.latent.model')}</span><select data-latent-upscale-model value={latentModel} onChange={e=>setLatentPref({...latentPref,model:e.target.value})}>{!latentChoices.includes(latentModel)&&<option value={latentModel}>{latentModel||t('studio.run.latent.choose')}</option>}{latentChoices.map(m=><option key={m} value={m}>{m}</option>)}</select></label>
          <label className="wb-option"><span>{t('studio.run.upscale')}</span><input data-latent-upscale-scale type="number" min={1} max={8} step={0.25} disabled={videoFamily==='ltx-2'} value={videoFamily==='ltx-2'?2:latentPref.scale} onChange={e=>setLatentPref({...latentPref,scale:Number(e.target.value)})}/></label>
          {videoFamily==='minimax-h3'&&<><label className="wb-option"><span>{t('studio.run.latent.steps')}</span><input data-latent-upscale-steps type="number" min={1} max={100} step={1} value={latentPref.steps} onChange={e=>setLatentPref({...latentPref,steps:Number(e.target.value)})}/><small>{t('studio.run.latent.stepsHint')}</small></label><label className="wb-option"><span>{t('studio.run.latent.denoise')}</span><input data-latent-upscale-denoise type="number" min={0} max={1} step={0.05} value={latentPref.denoise} title={t('studio.run.regenerate.denoiseHint')} onChange={e=>{const n=e.target.valueAsNumber;if(Number.isFinite(n))setLatentPref({...latentPref,denoise:clamp(n,0,1)});}}/></label></>}

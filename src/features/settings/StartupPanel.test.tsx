@@ -5,7 +5,7 @@ import { I18nProvider } from '../../i18n/I18nProvider';
 import { StartupPanel } from './StartupPanel';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true)}));
 let job:unknown=null;let bench:unknown={jobs:[]};
-const presets={speed:{flags:['--use-ck-attention'],fast:['fp16_accumulation','autotune']},compatibility:{flags:[],fast:['autotune']},off:{flags:[],fast:[]}};
+const presets={speed:{flags:['--use-ck-attention'],fast:['fp16_accumulation']},compatibility:{flags:[],fast:[]},off:{flags:[],fast:[]}};
 beforeEach(()=>{localStorage.clear();localStorage.setItem('deas.locale.v1','en');vi.mocked(isTauri).mockReturnValue(true);job=null;bench={jobs:[]};
  vi.mocked(invoke).mockImplementation(async(c,a)=>c==='native_startup_read'?{startup:{preset:'speed',flags:[],fast:[]},packages:[],presets}:c==='native_job_current'?job:c==='native_workbench_current'?bench:(a as {startup:unknown}).startup);});
 afterEach(()=>{cleanup();vi.resetAllMocks();});
@@ -16,7 +16,7 @@ it('defaults to Speed+, shows its resolved flags and saves presets by name', asy
  const attention=await screen.findByRole('combobox',{name:'Attention backend'}) as HTMLSelectElement;
  expect(screen.getByRole('button',{name:'Speed+'}).getAttribute('aria-pressed')).toBe('true');
  expect(attention.value).toBe('--use-ck-attention');
- expect((screen.getByRole('checkbox',{name:/^Autotune/}) as HTMLInputElement).checked).toBe(true);
+ expect((screen.getByRole('checkbox',{name:/^Autotune/}) as HTMLInputElement).checked).toBe(false);
  const apply=screen.getByRole('button',{name:'Apply (restarts backend)'}) as HTMLButtonElement;
  expect(apply.disabled).toBe(true);
  fireEvent.click(screen.getByRole('button',{name:'Optimizations off'}));
@@ -27,12 +27,14 @@ it('defaults to Speed+, shows its resolved flags and saves presets by name', asy
  expect(onRestart).toHaveBeenCalledOnce();
 });
 
-it('turns an edited preset into custom flags and restarts only without a running job', async()=>{
+it('manually opts into autotune as custom flags and restarts only without a running job', async()=>{
  const onRestart=mount();
  const attention=await screen.findByRole('combobox',{name:'Attention backend'});
  expect((screen.getByRole('option',{name:/^Sage · needs sageattention/}) as HTMLOptionElement).disabled).toBe(true);
  expect(screen.queryByRole('checkbox',{name:/cuBLAS|Async/})).toBeNull();
  fireEvent.click(screen.getByRole('button',{name:'Compatibility'}));
+ expect((screen.getByRole('checkbox',{name:/^Autotune/}) as HTMLInputElement).checked).toBe(false);
+ fireEvent.click(screen.getByRole('checkbox',{name:/^Autotune/}));
  fireEvent.click(screen.getByRole('checkbox',{name:/^Keep models in VRAM/}));
  expect(screen.getByText('Custom settings.')).toBeTruthy();
  expect(screen.getByRole('button',{name:'Compatibility'}).getAttribute('aria-pressed')).toBe('false');

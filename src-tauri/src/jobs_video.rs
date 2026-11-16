@@ -28,7 +28,8 @@ const FIELDS: [&str; 17] = [
     "sampler",
     "scheduler",
 ];
-const OPTIONAL: [&str; 12] = [
+const OPTIONAL: [&str; 13] = [
+    "streamDecode",
     "faceRefine",
     "enhancedPreview",
     "latentUpscale",
@@ -70,7 +71,8 @@ const H3_INPUT_SCALING: [&str; 7] = [
     "Long side with divisible crop",
 ];
 /// Every class the three graphs can emit; prepare() checks each against object_info.
-pub(crate) const VIDEO_NODES: [&str; 41] = [
+pub(crate) const VIDEO_NODES: [&str; 42] = [
+    "DEAS_H3StreamVideoSave",
     "ModelPreviewOverrideKJ",
     "DaSiWaH3TiledUpscale",
     "DaSiWaH3HiResRegenerate",
@@ -1048,6 +1050,23 @@ pub(crate) fn validate(i: &Value) -> Result<&str, String> {
         || !object.contains_key(block)
     {
         return Err("Missing or unknown video intent fields".into());
+    }
+    if let Some(stream) = i.get("streamDecode") {
+        if stream != &json!(true) {
+            return Err("streamDecode must be true or omitted".into());
+        }
+        if !is_h3(family) || i.get("latentUpscale").is_none() {
+            return Err("streamDecode requires H3 latent upscale or regenerate".into());
+        }
+        if i["h3"]["continuity"]["outputMode"] == "segment" {
+            return Err("streamDecode requires the full timeline; new-segment decode needs the pack's exact crop and audio wiring".into());
+        }
+        if i.get("videoPost").is_some() || i.get("faceRefine").is_some() {
+            return Err("streamDecode cannot run full-IMAGE post-processing (TVE, De-rope, Seamless loop or Face Refine)".into());
+        }
+        if matches!(i["output"]["container"].as_str(), Some("Animated WebP" | "Animated AVIF")) {
+            return Err("streamDecode requires a video container, not an animated image".into());
+        }
     }
     if i["version"].as_f64() != Some(1.0) {
         return Err("Unsupported video recipe version".into());
@@ -2094,6 +2113,23 @@ fn h3(i: &Value) -> Value {
         "7"
     };
     g["P"] = json!({"class_type":"DaSiWaH3ContinuityPublish","inputs":{"filename":[exporter,1],"ticket":["SP",2]}});
+    if i["streamDecode"] == true {
+        // Keep the exact house encoding/naming settings; no IMAGE or eager audio can pull U before B7.
+        for (id, samples) in [("B7", json!(["SP",0])), ("7", json!(["U",0]))] {
+            let saver = &mut g[id];
+            saver["class_type"] = json!("DEAS_H3StreamVideoSave");
+            let inputs = saver["inputs"].as_object_mut().unwrap();
+            inputs.remove("images");
+            inputs.remove("audio");
+            inputs.remove("pingpong");
+            inputs.remove("pass_frames");
+            inputs.insert("samples".into(), samples);
+            inputs.insert("vae".into(), json!(["V",0]));
+            inputs.insert("audio_vae".into(), json!(["AV",0]));
+        }
+        g["7"]["inputs"]["baseline"] = json!(["B7",1]);
+        for id in ["BSD", "SD", "PG"] { g.as_object_mut().unwrap().remove(id); }
+    }
     g
 }
 
