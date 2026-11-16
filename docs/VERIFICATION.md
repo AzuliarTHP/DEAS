@@ -1,5 +1,42 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.2.39 (published) — 2026-11-16
+
+Published [v0.2.39](https://github.com/darksidewalker/DEAS/releases/tag/v0.2.39)
+as the latest beta, incorporating PR #37 with integration fixes plus the existing
+Windows preview/delete correction. Source commit
+`0d4b235e5c43f42d2df28f6992a9a16dc52dc0e3` (tree
+`bfa1a6995117f3f09df37c14c7ac10d0f3970af5`); source and tag verified on both
+maintained remotes. GitHub Verify/Release workflows remain manually disabled;
+no hosted CI run was claimed or enabled.
+
+Fresh publication gates: typecheck, **166 core**, **2,120 UI / 120 files**,
+whole-tree rustfmt, serial native suite (**1,060 library passed / 77 ignored**,
+**three binary tests passed**, doc tests empty), strict release Clippy and Windows
+all-target Clippy passed. Independent pre-commit review found no actionable
+security or logic defect; its stale source-preservation comment was corrected.
+Earlier same-source browser evidence is recorded in the integration entry below.
+
+`build-linux.sh --release` completed successfully. Both executables embed
+`index-kfod-iMU.js`. Linux ELF direct glibc symbol minimum: **2.39**; `ldd`
+resolved every library on the build host. Windows PE32+ is cross-compiled with
+MSVC; benign LNK4099 missing-toolchain-PDB warnings are recorded in the manifest.
+Assets were downloaded back from GitHub, `sha256sum -c` passed, and all four files
+were byte-compared with the staged set:
+
+- `BUILD-MANIFEST.json`: `d0a49858f7e27867f10daf2d2798081ab3f9e2e360c74e8530a5f80fbeb86030`
+- `SHA256SUMS`: `7e01660005aaa785060c8d1472f748ebb531cbf953776bb6458ca090316982b0`
+- `deas-linux-amd64`: `b5147a1000d88bf1a204c2b5b04eaae48714b4f08551f15a490837c63f4d3b56`
+- `deas.exe`: `9aa0991a893a7c056cc1fed57322abbb6589d43302382e1517871a8f1ca7aa4a`
+
+The canonical files remain under `artifacts/releases/v0.2.39/`; the loose Linux
+launcher target `artifacts/deas-linux-amd64` matches the staged Linux binary.
+No live app/backend was restarted. These locally built binaries are **unsigned**;
+deb/AppImage/NSIS/portable ZIP bundles are omitted (bundle tools unavailable).
+Windows/WebView2 and Linux/WebKitGTK interactive acceptance remain separate.
+Confirmed clean replacement has no automatic crash recovery; inspect hidden
+`.deas-replaced-*` files after interruption as described in MEDIA.
+
 ## Library/Studio PR #37 integration (0.2.39) — 2026-11-16
 
 Integrated contributor head `18770a4ddc6b2796ee1f9e06909dfe690b6d18c0`
