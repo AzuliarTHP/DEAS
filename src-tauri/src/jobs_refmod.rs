@@ -164,8 +164,12 @@ struct Submitted {
 }
 static SUBMITTED: Mutex<Vec<Submitted>> = Mutex::new(Vec::new());
 
-pub(crate) fn with_idle_media_edit<T>(edit: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    let submitted = SUBMITTED.lock().map_err(|_| "RefMod ownership lock failed")?;
+pub(crate) fn with_idle_media_edit<T>(
+    edit: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let submitted = SUBMITTED
+        .lock()
+        .map_err(|_| "RefMod ownership lock failed")?;
     if submitted.iter().any(|entry| entry.active) {
         return Err("Wait for RefMod exports to finish and check their status before deleting media; an uncertain submission requires checking the backend queue before restarting DEAS".into());
     }
@@ -173,8 +177,12 @@ pub(crate) fn with_idle_media_edit<T>(edit: impl FnOnce() -> Result<T, String>) 
 }
 
 fn release_media(base: &reqwest::Url, id: &str) {
-    if let Some(entry) = SUBMITTED.lock().unwrap_or_else(|e| e.into_inner())
-        .iter_mut().find(|entry| &entry.base == base && entry.prompt_id == id) {
+    if let Some(entry) = SUBMITTED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter_mut()
+        .find(|entry| &entry.base == base && entry.prompt_id == id)
+    {
         entry.active = false;
     }
 }
@@ -399,14 +407,23 @@ pub async fn native_h3_refmod_submit(
     let client_id = format!("deas-refmod-{}", uuid::Uuid::new_v4());
     // Reserve before POST: a lost reply is not evidence the backend rejected the job.
     {
-        let mut list = SUBMITTED.lock().map_err(|_| "RefMod ownership lock failed")?;
+        let mut list = SUBMITTED
+            .lock()
+            .map_err(|_| "RefMod ownership lock failed")?;
         if list.len() >= 16 {
-            let index = list.iter().position(|entry| !entry.active)
+            let index = list
+                .iter()
+                .position(|entry| !entry.active)
                 .ok_or("Check pending RefMod exports before submitting another")?;
             list.remove(index);
         }
-        list.push(Submitted { prompt_id: String::new(), base: base.clone(),
-            client_id: client_id.clone(), graph: graph.clone(), active: true });
+        list.push(Submitted {
+            prompt_id: String::new(),
+            base: base.clone(),
+            client_id: client_id.clone(),
+            graph: graph.clone(),
+            active: true,
+        });
     }
     let (status, v) = request_json(
         &base,
@@ -420,7 +437,9 @@ pub async fn native_h3_refmod_submit(
     match (status.is_success(), id) {
         (true, Some(id)) => {
             let mut list = SUBMITTED.lock().unwrap_or_else(|e| e.into_inner());
-            let entry = list.iter_mut().find(|entry| entry.client_id == client_id)
+            let entry = list
+                .iter_mut()
+                .find(|entry| entry.client_id == client_id)
                 .ok_or("RefMod ownership reservation lost")?;
             entry.prompt_id = id.to_owned();
             log(&format!("INFO: RefMod export queued: prompt={id}"));
@@ -429,7 +448,9 @@ pub async fn native_h3_refmod_submit(
         _ => {
             // A successful HTTP reply without an id remains uncertain and must keep its reservation.
             if !status.is_success() {
-                SUBMITTED.lock().unwrap_or_else(|e| e.into_inner())
+                SUBMITTED
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
                     .retain(|entry| entry.client_id != client_id);
             }
             let reason = bounded(&rejection(&v));
@@ -550,8 +571,9 @@ pub async fn native_h3_refmod_status(base_url: String, prompt_id: String) -> Res
     }
     let queue = get(&client()?, &base, "queue").await?;
     if !["queue_running", "queue_pending"].iter().all(|key| {
-        queue[*key].as_array().is_some_and(|entries| entries.iter()
-            .all(|entry| entry[1].as_str().is_some()))
+        queue[*key]
+            .as_array()
+            .is_some_and(|entries| entries.iter().all(|entry| entry[1].as_str().is_some()))
     }) {
         return Err("Invalid RefMod queue reply; media ownership remains active".into());
     }

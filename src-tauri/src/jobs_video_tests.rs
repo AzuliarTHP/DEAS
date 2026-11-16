@@ -4,23 +4,29 @@ use serde_json::json;
 #[test]
 fn h3_stream_decode_replaces_both_whole_rgb_decoders() {
     let mut i = h3();
-    i["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
+    i["latentUpscale"] =
+        json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
     let original = compile(&i).unwrap();
     i["streamDecode"] = json!(true);
     let g = compile(&i).unwrap();
     for id in ["B7", "7"] {
         assert_eq!(g[id]["class_type"], "DEAS_H3StreamVideoSave");
-        assert_eq!(g[id]["inputs"]["vae"], json!(["V",0]));
-        assert_eq!(g[id]["inputs"]["audio_vae"], json!(["AV",0]));
-        assert_eq!(g[id]["inputs"]["frame_rate"], json!(["D",8]));
-        assert_eq!(g[id]["inputs"]["filename_prefix"], original[id]["inputs"]["filename_prefix"]);
+        assert_eq!(g[id]["inputs"]["vae"], json!(["V", 0]));
+        assert_eq!(g[id]["inputs"]["audio_vae"], json!(["AV", 0]));
+        assert_eq!(g[id]["inputs"]["frame_rate"], json!(["D", 8]));
+        assert_eq!(
+            g[id]["inputs"]["filename_prefix"],
+            original[id]["inputs"]["filename_prefix"]
+        );
         assert!(g[id]["inputs"].get("audio").is_none());
         assert!(g[id]["inputs"].get("images").is_none());
     }
-    assert_eq!(g["B7"]["inputs"]["samples"], json!(["SP",0]));
-    assert_eq!(g["7"]["inputs"]["samples"], json!(["U",0]));
-    assert_eq!(g["7"]["inputs"]["baseline"], json!(["B7",1]));
-    for id in ["BSD", "SD", "PG"] { assert!(g.get(id).is_none(), "whole RGB node {id}"); }
+    assert_eq!(g["B7"]["inputs"]["samples"], json!(["SP", 0]));
+    assert_eq!(g["7"]["inputs"]["samples"], json!(["U", 0]));
+    assert_eq!(g["7"]["inputs"]["baseline"], json!(["B7", 1]));
+    for id in ["BSD", "SD", "PG"] {
+        assert!(g.get(id).is_none(), "whole RGB node {id}");
+    }
     assert_eq!(g["SP"], original["SP"]);
     assert_eq!(g["U"], original["U"]);
     assert_eq!(g["P"], original["P"]);
@@ -32,23 +38,43 @@ fn h3_stream_decode_replaces_both_whole_rgb_decoders() {
 fn h3_stream_decode_refuses_unsupported_explicit_requests() {
     let mut base = h3();
     base["streamDecode"] = json!(true);
-    base["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
-    for bad in [json!(false),json!(null),json!(1),json!("true")] {
-        let mut i = base.clone(); i["streamDecode"] = bad;
+    base["latentUpscale"] =
+        json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
+    for bad in [json!(false), json!(null), json!(1), json!("true")] {
+        let mut i = base.clone();
+        i["streamDecode"] = bad;
         assert!(compile(&i).unwrap_err().contains("streamDecode"));
     }
     for (field, value, reason) in [
-        ("faceRefine",face_block(),"full-IMAGE"),
-        ("videoPost",json!({"derope":{"preset":"balanced","inject":0.48}}),"full-IMAGE"),
-        ("videoPost",json!({"upscaleModel":"2x.safetensors"}),"full-IMAGE"),
-        ("videoPost",json!({"loop":{"backend":"rtx","audio":"crossfade"}}),"full-IMAGE"),
-        ("output",json!({"container":"Animated WebP"}),"video container"),
+        ("faceRefine", face_block(), "full-IMAGE"),
+        (
+            "videoPost",
+            json!({"derope":{"preset":"balanced","inject":0.48}}),
+            "full-IMAGE",
+        ),
+        (
+            "videoPost",
+            json!({"upscaleModel":"2x.safetensors"}),
+            "full-IMAGE",
+        ),
+        (
+            "videoPost",
+            json!({"loop":{"backend":"rtx","audio":"crossfade"}}),
+            "full-IMAGE",
+        ),
+        (
+            "output",
+            json!({"container":"Animated WebP"}),
+            "video container",
+        ),
     ] {
-        let mut i = base.clone(); i[field] = value;
+        let mut i = base.clone();
+        i[field] = value;
         assert!(compile(&i).unwrap_err().contains(reason), "{field}");
     }
     let mut segment = base.clone();
-    segment["h3"]["continuity"] = json!({"session":"deas","sourceId":"","action":"","capture":true,"outputMode":"segment"});
+    segment["h3"]["continuity"] =
+        json!({"session":"deas","sourceId":"","action":"","capture":true,"outputMode":"segment"});
     assert!(compile(&segment).unwrap_err().contains("full timeline"));
     base.as_object_mut().unwrap().remove("latentUpscale");
     for mut i in [base, ltx(), wan()] {
@@ -59,23 +85,35 @@ fn h3_stream_decode_refuses_unsupported_explicit_requests() {
 
 #[test]
 fn h3_stream_decode_full_capture_and_regenerate_preserve_the_publish_ticket() {
-    for regenerate in [false,true] {
+    for regenerate in [false, true] {
         let mut i = h3();
         i["streamDecode"] = json!(true);
-        i["h3"]["continuity"] = json!({"session":"deas","sourceId":"","action":"","capture":true,"outputMode":"full"});
+        i["h3"]["continuity"] =
+            json!({"session":"deas","sourceId":"","action":"","capture":true,"outputMode":"full"});
         i["latentUpscale"] = if regenerate {
             json!({"model":"minimax_h3_latent_upscaler.safetensors","regenerate":{"lora":"H3/regenerate.safetensors","target":"2K"}})
         } else {
             json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2})
         };
         let g = compile(&i).unwrap();
-        assert_eq!(g["P"]["inputs"],json!({"ticket":["SP",2],"filename":["7",1]}));
-        assert_eq!(g["7"]["inputs"]["baseline"],json!(["B7",1]));
-        assert_eq!(g["7"]["inputs"]["samples"],json!(["U",0]));
-        assert_eq!(g["B7"]["inputs"]["samples"],json!(["SP",0]));
-        assert_eq!(g["U"]["inputs"]["continuity_context"],json!(["SP",1]));
+        assert_eq!(
+            g["P"]["inputs"],
+            json!({"ticket":["SP",2],"filename":["7",1]})
+        );
+        assert_eq!(g["7"]["inputs"]["baseline"], json!(["B7", 1]));
+        assert_eq!(g["7"]["inputs"]["samples"], json!(["U", 0]));
+        assert_eq!(g["B7"]["inputs"]["samples"], json!(["SP", 0]));
+        assert_eq!(g["U"]["inputs"]["continuity_context"], json!(["SP", 1]));
         for node in g.as_object().unwrap().values() {
-            assert!(!matches!(node["class_type"].as_str(),Some("DaSiWaH3ContinuitySegmentDecode"|"VAEDecode"|"VAEDecodeTiled"|"VAEDecodeAudio")));
+            assert!(!matches!(
+                node["class_type"].as_str(),
+                Some(
+                    "DaSiWaH3ContinuitySegmentDecode"
+                        | "VAEDecode"
+                        | "VAEDecodeTiled"
+                        | "VAEDecodeAudio"
+                )
+            ));
         }
     }
 }
@@ -86,10 +124,11 @@ fn dump_h3_stream_graphs_and_validate_full_capture_contract() {
     use std::io::Write;
     let validator = std::env::var("H3_CAPTURE_VALIDATOR").expect("actual pack validation.py path");
     let mut graphs = json!({});
-    for regenerate in [false,true] {
+    for regenerate in [false, true] {
         let mut i = h3();
         i["streamDecode"] = json!(true);
-        i["h3"]["continuity"] = json!({"session":"deas","sourceId":"","action":"","capture":true,"outputMode":"full"});
+        i["h3"]["continuity"] =
+            json!({"session":"deas","sourceId":"","action":"","capture":true,"outputMode":"full"});
         i["latentUpscale"] = if regenerate {
             json!({"model":"minimax_h3_latent_upscaler.safetensors","regenerate":{"lora":"H3/regenerate.safetensors","target":"2K"}})
         } else {
@@ -99,10 +138,23 @@ fn dump_h3_stream_graphs_and_validate_full_capture_contract() {
         let mut child = std::process::Command::new("python3").args(["-B","-c",
             "import json,runpy,sys; validate=runpy.run_path(sys.argv[1])['validate_capture_graph']; graph=json.load(sys.stdin); validate(graph,'G','full'); graph['7']['inputs'].pop('baseline'); graph['U']['inputs']['latent']=['5',0]; graph['U']['inputs'].pop('continuity_context'); graph['U']['inputs'].pop('director_guide');\ntry: validate(graph,'G','full')\nexcept ValueError: pass\nelse: raise AssertionError('validator negative control accepted foreign latent')", &validator])
             .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
-        child.stdin.take().unwrap().write_all(graph.to_string().as_bytes()).unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(graph.to_string().as_bytes())
+            .unwrap();
         let output = child.wait_with_output().unwrap();
-        assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));
-        graphs[if regenerate {"h3_stream_regenerate"} else {"h3_stream_upscale"}] = graph;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        graphs[if regenerate {
+            "h3_stream_regenerate"
+        } else {
+            "h3_stream_upscale"
+        }] = graph;
     }
     println!("{graphs}");
 }

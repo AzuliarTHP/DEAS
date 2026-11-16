@@ -373,7 +373,10 @@ async fn explicitly_applied_lora_family_label_is_advisory_before_submission() {
         .prepare_with_models(base, draft, vec![root.path().into()])
         .await
         .unwrap();
-    assert_eq!(plan["graph"]["L1"]["inputs"]["lora_name"], "style/a.safetensors");
+    assert_eq!(
+        plan["graph"]["L1"]["inputs"]["lora_name"],
+        "style/a.safetensors"
+    );
     assert_eq!(plan["graph"]["L1"]["inputs"]["strength_model"], 1);
     assert_eq!(posts.load(Ordering::SeqCst), 0);
     task.abort();

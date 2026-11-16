@@ -265,26 +265,46 @@ fn h3_stream_saver_ready(nodes: &Value) -> bool {
     let optional = &node["input"]["optional"];
     let eager = |spec: &Value| spec[1].get("lazy").is_none_or(|lazy| lazy == false);
     let primitives = [
-        ("vae", "VAE"), ("audio_vae", "VAE"), ("frame_rate", "FLOAT"),
-        ("quality", "INT"), ("filename_prefix", "STRING"),
+        ("vae", "VAE"),
+        ("audio_vae", "VAE"),
+        ("frame_rate", "FLOAT"),
+        ("quality", "INT"),
+        ("filename_prefix", "STRING"),
         ("save_metadata", "BOOLEAN"),
         ("save_output", "BOOLEAN"),
-        ("crop_to_audio", "BOOLEAN"), ("save_first_frame", "BOOLEAN"), ("save_last_frame", "BOOLEAN"),
+        ("crop_to_audio", "BOOLEAN"),
+        ("save_first_frame", "BOOLEAN"),
+        ("save_last_frame", "BOOLEAN"),
     ];
     let combos: [(&str, &[&str]); 6] = [
-        ("codec", &crate::jobs_video::CODECS), ("container", &crate::jobs_video::CONTAINERS),
-        ("bit_depth", &crate::jobs_video::BIT_DEPTHS), ("audio_codec", &crate::jobs_video::AUDIO_CODECS),
-        ("audio_bitrate", &crate::jobs_video::AUDIO_BITRATES), ("log_level", &["Standard"]),
+        ("codec", &crate::jobs_video::CODECS),
+        ("container", &crate::jobs_video::CONTAINERS),
+        ("bit_depth", &crate::jobs_video::BIT_DEPTHS),
+        ("audio_codec", &crate::jobs_video::AUDIO_CODECS),
+        ("audio_bitrate", &crate::jobs_video::AUDIO_BITRATES),
+        ("log_level", &["Standard"]),
     ];
-    node["output_node"] == true && node["output"] == json!(["IMAGE", "STRING"])
-        && required.as_object().is_some_and(|fields| fields.len() == primitives.len() + combos.len() + 1)
-        && required["samples"][0] == "LATENT" && required["samples"][1]["lazy"] == true
-        && optional["baseline"][0] == "STRING" && eager(&optional["baseline"])
+    node["output_node"] == true
+        && node["output"] == json!(["IMAGE", "STRING"])
+        && required
+            .as_object()
+            .is_some_and(|fields| fields.len() == primitives.len() + combos.len() + 1)
+        && required["samples"][0] == "LATENT"
+        && required["samples"][1]["lazy"] == true
+        && optional["baseline"][0] == "STRING"
+        && eager(&optional["baseline"])
         && optional["baseline"][1]["default"] == ""
-        && optional["seed"][0] == "INT" && eager(&optional["seed"])
-        && primitives.iter().all(|(key, kind)| required[*key][0] == *kind && eager(&required[*key]))
-        && combos.iter().all(|(key, choices)| required[*key][0].as_array().is_some_and(|values|
-            choices.iter().all(|choice| values.contains(&json!(choice)))) && eager(&required[*key]))
+        && optional["seed"][0] == "INT"
+        && eager(&optional["seed"])
+        && primitives
+            .iter()
+            .all(|(key, kind)| required[*key][0] == *kind && eager(&required[*key]))
+        && combos.iter().all(|(key, choices)| {
+            required[*key][0]
+                .as_array()
+                .is_some_and(|values| choices.iter().all(|choice| values.contains(&json!(choice))))
+                && eager(&required[*key])
+        })
 }
 
 // The video baseline saver B7 feeds the gate through its `filename` STRING socket.
@@ -542,15 +562,30 @@ mod tests {
     fn h3_face_still_discovery_is_additive_and_requires_optional_boolean() {
         let base = reqwest::Url::parse("http://127.0.0.1:8188/").unwrap();
         let mut info = nodes();
-        info.as_object_mut().unwrap().extend(crate::jobs_face_refine::tests::live_object_info().as_object().unwrap().clone());
-        for schema in [json!(null), json!(["INT"]), json!(["BOOLEAN",{"default":false}])] {
+        info.as_object_mut().unwrap().extend(
+            crate::jobs_face_refine::tests::live_object_info()
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        for schema in [
+            json!(null),
+            json!(["INT"]),
+            json!(["BOOLEAN",{"default":false}]),
+        ] {
             info["DEAS_H3FaceRefine"]["input"]["optional"]["still_image"] = schema.clone();
             let allow = parse(&base, &info).unwrap()["allowlist"].clone();
             assert_eq!(allow["faceRefineStill"], schema[0] == "BOOLEAN");
-            assert!(allow["nodes"].as_array().unwrap().contains(&json!("DEAS_H3FaceRefine")));
+            assert!(allow["nodes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("DEAS_H3FaceRefine")));
         }
         info["DEAS_H3FaceRefine"]["input"]["required"]["sigmas"] = json!(["FLOAT"]);
-        assert_eq!(parse(&base, &info).unwrap()["allowlist"]["faceRefineStill"], false);
+        assert_eq!(
+            parse(&base, &info).unwrap()["allowlist"]["faceRefineStill"],
+            false
+        );
     }
 
     #[test]
@@ -745,12 +780,16 @@ mod tests {
     #[test]
     #[ignore = "read-only actual streaming adapter schema replay; set DEAS_H3_STREAM_SCHEMA"]
     fn h3_stream_saver_actual_schema_replay() {
-        let path = std::env::var("DEAS_H3_STREAM_SCHEMA").expect("actual adapter object_info entry");
+        let path =
+            std::env::var("DEAS_H3_STREAM_SCHEMA").expect("actual adapter object_info entry");
         let node: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let mut info = nodes();
         info["DEAS_H3StreamVideoSave"] = node;
         let base = reqwest::Url::parse("http://127.0.0.1:8188/").unwrap();
-        assert!(parse(&base, &info).unwrap()["allowlist"]["nodes"].as_array().unwrap().contains(&json!("DEAS_H3StreamVideoSave")));
+        assert!(parse(&base, &info).unwrap()["allowlist"]["nodes"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("DEAS_H3StreamVideoSave")));
     }
 
     #[test]
@@ -758,28 +797,46 @@ mod tests {
         let base = reqwest::Url::parse("http://127.0.0.1:8188/").unwrap();
         let mut info = nodes();
         let mut required = json!({"samples":["LATENT",{"lazy":true}],"vae":["VAE"],"audio_vae":["VAE"],"frame_rate":["FLOAT"],"quality":["INT"],"filename_prefix":["STRING"]});
-        for key in ["save_metadata","save_output","crop_to_audio","save_first_frame","save_last_frame"] { required[key] = json!(["BOOLEAN"]); }
+        for key in [
+            "save_metadata",
+            "save_output",
+            "crop_to_audio",
+            "save_first_frame",
+            "save_last_frame",
+        ] {
+            required[key] = json!(["BOOLEAN"]);
+        }
         for (key, choices) in [
-            ("codec",json!(crate::jobs_video::CODECS)), ("container",json!(crate::jobs_video::CONTAINERS)),
-            ("bit_depth",json!(crate::jobs_video::BIT_DEPTHS)), ("audio_codec",json!(crate::jobs_video::AUDIO_CODECS)),
-            ("audio_bitrate",json!(crate::jobs_video::AUDIO_BITRATES)), ("log_level",json!(["Standard","Verbose"]))
-        ] { required[key] = json!([choices]); }
+            ("codec", json!(crate::jobs_video::CODECS)),
+            ("container", json!(crate::jobs_video::CONTAINERS)),
+            ("bit_depth", json!(crate::jobs_video::BIT_DEPTHS)),
+            ("audio_codec", json!(crate::jobs_video::AUDIO_CODECS)),
+            ("audio_bitrate", json!(crate::jobs_video::AUDIO_BITRATES)),
+            ("log_level", json!(["Standard", "Verbose"])),
+        ] {
+            required[key] = json!([choices]);
+        }
         let saver = json!({"input":{"required":required,"optional":{"baseline":["STRING",{"default":""}],"seed":["INT"]}},"output":["IMAGE","STRING"],"output_node":true});
-        let listed = |info: &Value| parse(&base, info).unwrap()["allowlist"]["nodes"].as_array().unwrap().contains(&json!("DEAS_H3StreamVideoSave"));
+        let listed = |info: &Value| {
+            parse(&base, info).unwrap()["allowlist"]["nodes"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("DEAS_H3StreamVideoSave"))
+        };
         assert!(!listed(&info));
         info["DEAS_H3StreamVideoSave"] = saver.clone();
         assert!(listed(&info));
-        for (section,key,spec) in [
-            ("required","samples",json!(["LATENT"])),
-            ("required","samples",json!(["LATENT",{"lazy":false}])),
-            ("required","audio_vae",json!(["AUDIO"])),
-            ("required","frame_rate",json!(["INT"])),
-            ("required","foreign",json!(["STRING"])),
-            ("required","codec",json!([["H.264"]])),
-            ("optional","seed",json!(["STRING"])),
-            ("optional","baseline",json!(["STRING",{"lazy":true}])),
-            ("optional","baseline",json!(["STRING",{"lazy":"false"}])),
-            ("optional","baseline",json!(["IMAGE"])),
+        for (section, key, spec) in [
+            ("required", "samples", json!(["LATENT"])),
+            ("required", "samples", json!(["LATENT",{"lazy":false}])),
+            ("required", "audio_vae", json!(["AUDIO"])),
+            ("required", "frame_rate", json!(["INT"])),
+            ("required", "foreign", json!(["STRING"])),
+            ("required", "codec", json!([["H.264"]])),
+            ("optional", "seed", json!(["STRING"])),
+            ("optional", "baseline", json!(["STRING",{"lazy":true}])),
+            ("optional", "baseline", json!(["STRING",{"lazy":"false"}])),
+            ("optional", "baseline", json!(["IMAGE"])),
         ] {
             info["DEAS_H3StreamVideoSave"]["input"][section][key] = spec;
             assert!(!listed(&info), "accepted {section}.{key}");

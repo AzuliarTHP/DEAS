@@ -2921,22 +2921,34 @@ fn h3_image_face_refine_preserves_metadata_format_options_and_validation() {
     i["family"] = json!("minimax-h3");
     i["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors","scale":1.5,"steps":4,"denoise":0.35});
     let mut g = compile(&i).unwrap();
-    for id in ["6","U6"] { assert_eq!(g[id]["class_type"],"VAEDecodeTiled"); }
+    for id in ["6", "U6"] {
+        assert_eq!(g[id]["class_type"], "VAEDecodeTiled");
+    }
     assert_eq!(g["RE"]["class_type"], "VAEEncodeTiled");
-    civitai_saver(&mut g,&json!(["DaSiWa_MetadataImageSaver","DaSiWa_MetadataConfig"]),&i);
-    for id in ["B7","7"] {
+    civitai_saver(
+        &mut g,
+        &json!(["DaSiWa_MetadataImageSaver", "DaSiWa_MetadataConfig"]),
+        &i,
+    );
+    for id in ["B7", "7"] {
         assert_eq!(g[id]["class_type"], "DaSiWa_MetadataImageSaver");
         assert_eq!(g[id]["inputs"]["file_format"], "webp");
-        assert_eq!(g[id]["inputs"]["compression"],80);
-        assert_eq!(g[id]["inputs"]["metadata_config"], json!(["M",0]));
+        assert_eq!(g[id]["inputs"]["compression"], 80);
+        assert_eq!(g[id]["inputs"]["metadata_config"], json!(["M", 0]));
     }
-    assert_eq!(g["M"]["inputs"]["node_positive"],json!(["HR",0]));
-    assert_eq!(g["7"]["inputs"]["images"],json!(["PG",0]));
-    assert_eq!(g["B7"]["inputs"]["images"],json!(["F",0]));
-    for (key,value) in [("family",json!("sdxl")),("faceRefine",json!(false)),("faceRefine",json!(null)),("faceRefine",json!({})),("outputPrefix",json!("x".repeat(180)))] {
+    assert_eq!(g["M"]["inputs"]["node_positive"], json!(["HR", 0]));
+    assert_eq!(g["7"]["inputs"]["images"], json!(["PG", 0]));
+    assert_eq!(g["B7"]["inputs"]["images"], json!(["F", 0]));
+    for (key, value) in [
+        ("family", json!("sdxl")),
+        ("faceRefine", json!(false)),
+        ("faceRefine", json!(null)),
+        ("faceRefine", json!({})),
+        ("outputPrefix", json!("x".repeat(180))),
+    ] {
         let mut bad = i.clone();
         bad[key] = value;
-        assert!(compile(&bad).is_err(),"accepted {key}");
+        assert!(compile(&bad).is_err(), "accepted {key}");
     }
     let mut foreign = intent();
     foreign["faceRefine"] = h3_face_block();
@@ -2961,17 +2973,30 @@ fn h3_image_face_refine_precedes_latent_upscale_without_changing_the_off_graph()
         let off = compile(&i).unwrap();
         i["faceRefine"] = h3_face_block();
         let g = compile(&i).unwrap();
-        assert_eq!(g["SEP"]["inputs"]["av_latent"], json!(["5",0]));
-        assert_eq!(g["B7"]["inputs"]["images"], json!(["F",0]));
-        assert_eq!(g["FR"]["inputs"]["images"], json!(["F",0]));
+        assert_eq!(g["SEP"]["inputs"]["av_latent"], json!(["5", 0]));
+        assert_eq!(g["B7"]["inputs"]["images"], json!(["F", 0]));
+        assert_eq!(g["FR"]["inputs"]["images"], json!(["F", 0]));
         assert_eq!(g["RE"]["inputs"], json!({"pixels":["FR",0],"vae":["V",0]}));
-        assert_eq!(g["RC"]["inputs"], json!({"video_latent":["RE",0],"audio_latent":["SEP",1]}));
-        assert_eq!(g["U"]["inputs"]["latent"], json!(["RC",0]));
-        assert_eq!(g["USEP"]["inputs"]["av_latent"], json!(["U",0]));
-        assert_eq!(g["U6"]["inputs"]["samples"], json!(["USEP",0]));
-        assert_eq!(g["UF"]["inputs"], json!({"image":["U6",0],"batch_index":0,"length":1}));
-        assert_eq!(g["PG"]["inputs"]["image"], json!(["UF",0]));
-        assert_eq!(g.as_object().unwrap().values().filter(|n| n["class_type"] == "SamplerCustomAdvanced").count(), 1);
+        assert_eq!(
+            g["RC"]["inputs"],
+            json!({"video_latent":["RE",0],"audio_latent":["SEP",1]})
+        );
+        assert_eq!(g["U"]["inputs"]["latent"], json!(["RC", 0]));
+        assert_eq!(g["USEP"]["inputs"]["av_latent"], json!(["U", 0]));
+        assert_eq!(g["U6"]["inputs"]["samples"], json!(["USEP", 0]));
+        assert_eq!(
+            g["UF"]["inputs"],
+            json!({"image":["U6",0],"batch_index":0,"length":1})
+        );
+        assert_eq!(g["PG"]["inputs"]["image"], json!(["UF", 0]));
+        assert_eq!(
+            g.as_object()
+                .unwrap()
+                .values()
+                .filter(|n| n["class_type"] == "SamplerCustomAdvanced")
+                .count(),
+            1
+        );
         let mut restored = i.clone();
         restored.as_object_mut().unwrap().remove("faceRefine");
         assert_eq!(compile(&restored).unwrap().to_string(), off.to_string());
@@ -2987,10 +3012,10 @@ fn h3_image_face_refine_precedes_latent_upscale_without_changing_the_off_graph()
             }
             active.pop();
         }
-        visit(&g,"7", &mut vec![]);
+        visit(&g, "7", &mut vec![]);
         let baseline = g["B7"]["inputs"]["images"][0].as_str().unwrap();
         assert_eq!(baseline, "F");
-        assert_eq!(g["6"]["inputs"]["samples"], json!(["SEP",0]));
+        assert_eq!(g["6"]["inputs"]["samples"], json!(["SEP", 0]));
     }
 }
 
@@ -3018,15 +3043,24 @@ fn h3_image_face_refine_saves_complete_baseline_then_refines_with_own_strength()
             for absent in ["audio", "audio_vae"] {
                 assert!(g["FR"]["inputs"].get(absent).is_none());
             }
-            assert_eq!(g["FRC"]["inputs"]["clip"], json!(["C",0]));
-            assert_eq!(g["FRC"]["inputs"]["vae"], json!(["V",0]));
-            assert_eq!(g["FRG"]["inputs"]["model"], json!(["SS",0]));
+            assert_eq!(g["FRC"]["inputs"]["clip"], json!(["C", 0]));
+            assert_eq!(g["FRC"]["inputs"]["vae"], json!(["V", 0]));
+            assert_eq!(g["FRG"]["inputs"]["model"], json!(["SS", 0]));
             assert_eq!(g["Z"]["inputs"]["denoise"], 0.25);
             assert_eq!(g["FRB"]["inputs"]["denoise"], 1.0);
-            assert_eq!(g["FRZ"]["inputs"], json!({"sigmas":["FRB",0],"denoise":0.35}));
-            assert_eq!(g["PG"], json!({"class_type":"DEAS_ImagePostprocessGate","inputs":{"baseline":["B7",0],"image":["FR",0]}}));
-            assert_eq!(g["7"]["inputs"]["images"], json!(["PG",0]));
-            assert_eq!(g["B7"]["inputs"]["filename_prefix"], format!("{}_original",i["outputPrefix"].as_str().unwrap()));
+            assert_eq!(
+                g["FRZ"]["inputs"],
+                json!({"sigmas":["FRB",0],"denoise":0.35})
+            );
+            assert_eq!(
+                g["PG"],
+                json!({"class_type":"DEAS_ImagePostprocessGate","inputs":{"baseline":["B7",0],"image":["FR",0]}})
+            );
+            assert_eq!(g["7"]["inputs"]["images"], json!(["PG", 0]));
+            assert_eq!(
+                g["B7"]["inputs"]["filename_prefix"],
+                format!("{}_original", i["outputPrefix"].as_str().unwrap())
+            );
             let mut restored = i.clone();
             restored.as_object_mut().unwrap().remove("faceRefine");
             assert_eq!(compile(&restored).unwrap().to_string(), off.to_string());
@@ -3890,27 +3924,47 @@ async fn h3_image_face_refine_prepare_requires_still_abi_gate_and_sam_checkpoint
         let mut info = image_postprocess_nodes();
         for node in graph.as_object().unwrap().values() {
             let class = node["class_type"].as_str().unwrap();
-            if info.get(class).is_none() { info[class] = json!({}); }
+            if info.get(class).is_none() {
+                info[class] = json!({});
+            }
         }
-        info.as_object_mut().unwrap().extend(crate::jobs_face_refine::tests::live_object_info().as_object().unwrap().clone());
-        info["DEAS_H3FaceRefine"]["input"]["optional"]["still_image"] = json!(["BOOLEAN",{"default":false}]);
-        info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"] = json!([[i["faceRefine"]["samCheckpoint"]]]);
+        info.as_object_mut().unwrap().extend(
+            crate::jobs_face_refine::tests::live_object_info()
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        info["DEAS_H3FaceRefine"]["input"]["optional"]["still_image"] =
+            json!(["BOOLEAN",{"default":false}]);
+        info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"] =
+            json!([[i["faceRefine"]["samCheckpoint"]]]);
         info["UNETLoader"] = json!({"input":{"required":{"unet_name":[[i["checkpoint"]]]}}});
         info["CLIPLoader"] = json!({"input":{"required":{"clip_name":[[i["diffusion"]["textEncoder"]]],"type":[["minimax"]]}}});
         info["VAELoader"] = json!({"input":{"required":{"vae_name":[[i["diffusion"]["vae"]]]}}});
         info["KSampler"]["input"]["required"]["scheduler"] = json!([["simple"]]);
         match bad {
-            "old ABI" => { info["DEAS_H3FaceRefine"]["input"]["optional"].as_object_mut().unwrap().remove("still_image"); }
-            "wrong ABI" => info["DEAS_H3FaceRefine"]["input"]["optional"]["still_image"] = json!(["INT"]),
-            "gate" => info["DEAS_ImagePostprocessGate"]["input"]["required"]["image"][1]["lazy"] = json!(false),
+            "old ABI" => {
+                info["DEAS_H3FaceRefine"]["input"]["optional"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("still_image");
+            }
+            "wrong ABI" => {
+                info["DEAS_H3FaceRefine"]["input"]["optional"]["still_image"] = json!(["INT"])
+            }
+            "gate" => {
+                info["DEAS_ImagePostprocessGate"]["input"]["required"]["image"][1]["lazy"] =
+                    json!(false)
+            }
             "saver" => info["SaveImage"]["output"] = json!([]),
             "SAM" => info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"] = json!([[]]),
             _ => {}
         }
         let (base, task) = server(move |path, _| {
             assert_eq!(path, "GET /comfy/object_info HTTP/1.1");
-            (200,info.to_string())
-        }).await;
+            (200, info.to_string())
+        })
+        .await;
         let jobs = Jobs::default();
         let result = jobs.prepare(base, i.clone()).await;
         if bad == "none" {
@@ -3918,7 +3972,15 @@ async fn h3_image_face_refine_prepare_requires_still_abi_gate_and_sam_checkpoint
             assert_eq!(plan["graph"]["FR"]["inputs"]["still_image"], true);
             let session = jobs.lock().unwrap();
             assert_eq!(session.plan.as_ref().unwrap().intent, i);
-            assert!(session.plan.as_ref().unwrap().local_models.selected.iter().any(|(field,name)| field == "checkpoints" && name == i["faceRefine"]["samCheckpoint"].as_str().unwrap()));
+            assert!(session
+                .plan
+                .as_ref()
+                .unwrap()
+                .local_models
+                .selected
+                .iter()
+                .any(|(field, name)| field == "checkpoints"
+                    && name == i["faceRefine"]["samCheckpoint"].as_str().unwrap()));
         } else {
             assert!(result.is_err(), "accepted {bad}");
             assert!(jobs.lock().unwrap().plan.is_none());
@@ -5136,16 +5198,19 @@ fn preview_frames_need_known_format_and_magic() {
 #[ignore]
 fn dump_h3_image_face_refine_graphs() {
     let mut graphs = serde_json::Map::new();
-    for refs in [false,true] {
-        for mode in ["base","mask","crop","upscale"] {
+    for refs in [false, true] {
+        for mode in ["base", "mask", "crop", "upscale"] {
             let mut i = h3_still_intent();
             i["checkpoint"] = json!("MiniMaxH3/fl2va.safetensors");
             i["diffusion"]["textEncoder"] = json!("qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors");
             i["inputImage"] = json!("ref.png");
             i["faceRefine"] = h3_face_block();
-            if refs { i["nativeImageReference"]["images"] = json!(["first.png","ref.png"]); }
-            else { i.as_object_mut().unwrap().remove("nativeImageReference"); }
-            if ["mask","crop"].contains(&mode) {
+            if refs {
+                i["nativeImageReference"]["images"] = json!(["first.png", "ref.png"]);
+            } else {
+                i.as_object_mut().unwrap().remove("nativeImageReference");
+            }
+            if ["mask", "crop"].contains(&mode) {
                 i["denoise"] = json!(0.25);
                 i["inputMask"] = json!("deas-masks/3f2b1c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d.png");
             }
@@ -5157,8 +5222,12 @@ fn dump_h3_image_face_refine_graphs() {
                 i["latentUpscale"] = json!({"model":"minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors","scale":1.5,"steps":4,"denoise":0.35});
             }
             let mut g = compile(&i).unwrap();
-            civitai_saver(&mut g,&json!(["DaSiWa_MetadataImageSaver","DaSiWa_MetadataConfig"]),&i);
-            graphs.insert(format!("h3_image_face_{mode}_refs_{refs}"),g);
+            civitai_saver(
+                &mut g,
+                &json!(["DaSiWa_MetadataImageSaver", "DaSiWa_MetadataConfig"]),
+                &i,
+            );
+            graphs.insert(format!("h3_image_face_{mode}_refs_{refs}"), g);
         }
     }
     println!("{}", Value::Object(graphs));
