@@ -474,6 +474,8 @@
   "studio.run.negativeHint": "Was vermieden werden soll…",
   "studio.run.width": "Breite",
   "studio.run.height": "Höhe",
+  "studio.run.moss.skipLayers": "Übersprungene Ebenen (SLG)",
+  "studio.run.moss.skipLayersHint": "Skip Layer Guidance verstärkt feine Details über die Negativhälfte: kommagetrennte Ebenennummern wie 22, 24, 26; leer zum Deaktivieren.",
   "studio.run.steps": "Schritte",
   "studio.run.customSchedule": "CUSTOM",
   "studio.run.customSchedule.hint": "Eigene Sigma-Folge aktiv (Options-Tab): Schritte und Scheduler kommen aus ihr.",

@@ -1,5 +1,12 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## MOSS Skip Layer Guidance and card negative prefill (0.2.38, unreleased, CPU slice) — 2026-11-16
+
+- **What ran.** The new MOSS **Skip layers** field (default `22`) compiles to the core `SkipLayerGuidanceDiTSimple` node (`single_layers` = field, `double_layers` empty, start 0.0/end 1.0) chained between the model and `KSampler` in both the TS compiler and the native `jobs.rs` compiler; empty keeps the graph byte-unchanged. New MOSS drafts prefill `nsfw, worst quality, bad anatomy, watermark, jpeg artifact` into an empty Negative field via family defaults only.
+- **Grounding.** Core `comfy_extras/nodes_slg.py` Simple SLG modifies only the uncond path (verified in the owned Core source); the official OpenMOSS ComfyUI README wires the same node with `single_layers="22"` and clear-to-disable semantics, and `comfy/ldm/moss_image/model.py` registers the `single_block` hook the node patches. MOSS rejects all model options, so the README's torch.compile/SLG conflict cannot occur here.
+- **CPU gates.** Typecheck clean. TS compiler suite: 35/35 including the new chain/refusal/optional case. `Workbench.part4` 86/86 including the new capability-gate case and the default prefill/skip-layers intent test (field present only for MOSS; empty omits `skipLayers` from the intent). Rust `cargo test --lib` 1034 passed with the new `moss_skip_layers_chains_simple_slg_before_the_sampler`; the single failure was the unrelated timing-flaky `llm::tests::listing_scans_local_and_fetches_remote_in_parallel` under load, green when re-run alone.
+- **Not established:** any real MOSS run on a live backend (SLG 22 base run sits in the GPU backlog), native running-preflight admission of the new emitted node, image-quality effect claims, and the turbo/DMD variants (no local LoRA file to header-verify; guard stays closed).
+
 ## H3 Join smooth-seams: owner listening approval and node pack 0.5.57 release/installation — 2026-11-16
 
 - **Listening (owner, explicit approval).** A/B audition built from the retained 2026-11-15 evidence joins only; nothing regenerated, no backend or GPU touched. Files under `artifacts/verification/audio-seam-listening-20261116/`: T3-join seam 1 (OFF boundary step 0.4242 vs ON 0.0027 at 1.75 s) zoom clip, full 3 s T3 joins both policies, and both full dungeon joins (`preserve` vs `smooth-seams`). The owner listened and authorized publication/installation. No further blind test was requested; objective seam metrics unchanged from the 2026-11-15 record.

@@ -13,7 +13,7 @@ const REQUIRED_NODES: [&str; 6] = [
 ];
 /// Image-to-image (`LoadImage`, `VAEEncode`), split diffusion-model loading and the DaSiWa
 /// Civitai-metadata saver; their absence blocks only the recipe variant that needs them.
-const OPTIONAL_NODES: [&str; 37] = [
+const OPTIONAL_NODES: [&str; 38] = [
     "DEAS_ImagePostprocessGate",
     "DEAS_VideoPostprocessGate",
     "TextEncodeQwenImage21",
@@ -23,6 +23,7 @@ const OPTIONAL_NODES: [&str; 37] = [
     "EmptySD3LatentImage",
     "ModelSamplingAuraFlow",
     "ConditioningZeroOut",
+    "SkipLayerGuidanceDiTSimple",
     "LoraLoader",
     "CLIPVisionLoader",
     "CLIPVisionEncode",

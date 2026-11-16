@@ -64,6 +64,7 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.height', target: '[data-num="height"]', aliases: ['resolution', 'size'], reason: 'search.reason.models' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.steps', target: '[data-num="steps"]', aliases: ['sampling'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.cfg', target: '[data-num="cfg"]', aliases: ['guidance'] },
+  { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.moss.skipLayers', target: '[data-moss-skip-layers]', aliases: ['slg', 'skip layer guidance', 'moss'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.recipe.sampler', target: '[data-pick="studio.recipe.sampler"]' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.recipe.scheduler', target: '[data-pick="studio.recipe.scheduler"]' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.settings', label: 'studio.run.seed', target: '[data-seed]' },

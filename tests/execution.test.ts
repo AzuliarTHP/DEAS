@@ -137,6 +137,20 @@ test('Krea and MOSS native references use the adapter without changing their lat
   }
 });
 
+test('MOSS skip layers chain core Simple SLG between the model and sampler, optional and MOSS-only', () => {
+  const d = { ...qwenDiffusion, clipType: 'moss_image' };
+  const a = { ...qwenAllowlist, clipTypes: ['moss_image'], nodes: [...qwenAllowlist.nodes.filter(n => !['TextEncodeQwenImage21', 'ImageScale'].includes(n)), 'EmptyFlux2LatentImage', 'CLIPTextEncode', 'SkipLayerGuidanceDiTSimple'] };
+  const input = { ...intent, diffusion: d };
+  assert.equal(compileRecipe(input, a).graph.S, undefined);
+  assert.equal(compileRecipe({ ...input, skipLayers: '' }, a).graph.S, undefined);
+  const g = compileRecipe({ ...input, skipLayers: '22, 24, 26' }, a).graph;
+  assert.deepEqual(g.S, { class_type: 'SkipLayerGuidanceDiTSimple', inputs: { model: ['1', 0], double_layers: '', single_layers: '22, 24, 26', start_percent: 0.0, end_percent: 1.0 } });
+  assert.deepEqual(g['5'].inputs.model, ['S', 0]);
+  for (const bad of [22, '22,,24', 'a22', '1234', '22 24']) rejects({ ...input, skipLayers: bad }, a, 'INVALID_INPUT', 'skipLayers');
+  rejects({ ...intent, skipLayers: '22' }, qwenAllowlist, 'INVALID_INPUT', 'skipLayers');
+  rejects({ ...input, skipLayers: '22' }, { ...a, nodes: a.nodes.filter(n => n !== 'SkipLayerGuidanceDiTSimple') }, 'MISSING_CAPABILITY', 'SkipLayerGuidanceDiTSimple');
+});
+
 test('baseline diagnostic compiles deterministic built-in graph, never Director readiness', () => {
   const result = compileRecipe(intent, allowlist);
   assert.equal(result.recipeId, intent.recipeId);

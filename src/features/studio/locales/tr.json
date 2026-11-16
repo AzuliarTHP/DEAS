@@ -474,6 +474,8 @@
   "studio.run.negativeHint": "Kaçınılacaklar…",
   "studio.run.width": "Genişlik",
   "studio.run.height": "Yükseklik",
+  "studio.run.moss.skipLayers": "Atlanan katmanlar (SLG)",
+  "studio.run.moss.skipLayersHint": "Skip Layer Guidance negatif dallardan ince ayrıntıları güçlendirir: virgülle ayrılmış katman numaraları, örn. 22, 24, 26; devre dışı bırakmak için boş bırakın.",
   "studio.run.steps": "Adım",
   "studio.run.customSchedule": "CUSTOM",
   "studio.run.customSchedule.hint": "Özel sigma dizisi etkin (Seçenekler sekmesi): adım ve Scheduler ondan gelir.",

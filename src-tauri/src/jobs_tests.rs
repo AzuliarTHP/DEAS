@@ -4709,6 +4709,29 @@ fn moss_rejects_unaligned_dimensions_and_unproved_combinations() {
     assert!(compile(&value).is_ok());
 }
 
+#[test]
+fn moss_skip_layers_chains_simple_slg_before_the_sampler() {
+    let mut value = intent();
+    value["diffusion"] = json!({"textEncoder":"encoder.safetensors","clipType":"moss_image","vae":"flux2.safetensors"});
+    value["skipLayers"] = json!("22, 24, 26");
+    let g = compile(&value).unwrap();
+    assert_eq!(
+        g["S"],
+        json!({"class_type":"SkipLayerGuidanceDiTSimple","inputs":{"model":["1",0],"double_layers":"","single_layers":"22, 24, 26","start_percent":0.0,"end_percent":1.0}})
+    );
+    assert_eq!(g["5"]["inputs"]["model"], json!(["S", 0]));
+    value["skipLayers"] = json!("");
+    assert!(compile(&value).unwrap().get("S").is_none());
+    for bad in [json!(22), json!("22,,24"), json!("a22"), json!("1234"), json!("22 24")] {
+        let mut wrong = value.clone();
+        wrong["skipLayers"] = bad.clone();
+        assert!(compile(&wrong).unwrap_err().contains("Invalid skipLayers"), "{bad}");
+    }
+    let mut plain = intent();
+    plain["skipLayers"] = json!("22");
+    assert!(compile(&plain).unwrap_err().contains("only supported on MOSS-Image"));
+}
+
 #[tokio::test]
 async fn moss_prepare_requires_exact_emitted_nodes_and_components_only() {
     for (image, metadata) in [(false, false), (false, true), (true, false), (true, true)] {

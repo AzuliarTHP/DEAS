@@ -474,6 +474,8 @@
   "studio.run.negativeHint": "避けたいもの…",
   "studio.run.width": "幅",
   "studio.run.height": "高さ",
+  "studio.run.moss.skipLayers": "スキップレイヤー (SLG)",
+  "studio.run.moss.skipLayersHint": "Skip Layer Guidance はネガティブ分岐から細部の強調を強化します。カンマ区切りのレイヤー番号（例: 22, 24, 26）、空欄で無効。",
   "studio.run.steps": "ステップ",
   "studio.run.customSchedule": "CUSTOM",
   "studio.run.customSchedule.hint": "カスタムシグマ列が有効（オプションタブ）：ステップ数とスケジューラはそこから決まります。",
