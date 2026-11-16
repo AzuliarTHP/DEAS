@@ -64,7 +64,7 @@ test('Media deletion before a chooser response prevents late publication and rel
   expect(screen.getByRole('button')).toHaveProperty('disabled', false);
 });
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: vi.fn(() => true) }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: vi.fn(() => true), convertFileSrc: (path: string) => path }));
 beforeEach(() => { localStorage.setItem(LOCALE_STORAGE_KEY, 'en'); vi.mocked(isTauri).mockReturnValue(true); });
 afterEach(() => { cleanup(); localStorage.clear(); vi.resetAllMocks(); });
 const view = () => <I18nProvider><VideoPostProcessing /></I18nProvider>;
