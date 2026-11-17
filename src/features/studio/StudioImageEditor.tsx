@@ -314,7 +314,7 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
       <label>{label('diameter')}<input type="number" min={1} max={1024} value={diameter} onChange={e=>{const n=Number(e.target.value);if(diameterOK(n))setDiameter(n);}}/></label>
       <input type="range" className="sie-diameter" aria-label={label('diameter')} min={1} max={1024} value={diameter} onChange={e=>setDiameter(Number(e.target.value))}/>
       <span className="sie-seg" role="group" aria-label={label('shape')}>{(['round','square'] as const).map(v=><button type="button" className="sie-tool" key={v} aria-pressed={shape===v} onClick={()=>setShape(v)}><i className={`sie-shape is-${v}`} aria-hidden="true"/>{label(v)}</button>)}</span>
-      {activeImage&&<span className="sie-color" role="group" aria-label={label('color')}>
+      {images.length>0&&<span className="sie-color" role="group" aria-label={label('color')}>
        <input type="color" aria-label={label('color')} value={color} onChange={e=>setColor(e.target.value)}/>
        <button type="button" className={`sie-tool sie-pipette${picking?' is-active':''}`} aria-pressed={picking} aria-label={label('pipette')} disabled={picking} onClick={()=>void pickColor()}>{label('pipette')}</button>
        <input type="text" className="sie-hex" aria-label={label('colorHex')} value={hex} size={7} maxLength={7} spellCheck={false} onChange={e=>{setHex(e.target.value);if(hexOK(e.target.value))setColor(e.target.value.toLowerCase());}}/>

@@ -1838,7 +1838,7 @@ const promptTools=forgeContext&&<>
    else setMusicGeneration({...intent.generation});
    if(intent.mode==='t2m'){setMusicDuration({...musicDuration,t2m:intent.maxDuration});if(!isAceMusicIntent(intent)&&intent.abc)setMusicAbc({...intent.abc});}
    else {setMusicDuration({...musicDuration,cover:intent.maxDuration});setMusicEncoder(intent.audioEncoder);}
-   fixedSeed(intent.seed);setCheckpoint(intent.checkpoint);setSteps(intent.steps);setCfg(intent.cfg);setSampler(intent.sampler);setScheduler(intent.scheduler);setOptions(value.options);
+   fixedSeed(intent.seed);setCheckpoint(intent.checkpoint);setSteps(intent.steps);setCfg(intent.cfg);setSampler(intent.sampler);setScheduler(intent.scheduler);setOptions({...value.options,outputNaming:outputNamingTemplate(optionsPref.outputNaming)});
    setPipeline(value.pipeline);return true;
   }
   const restoredFace=isFaceRefineBlock(intent.faceRefine)?intent.faceRefine:undefined;
@@ -1852,7 +1852,7 @@ const promptTools=forgeContext&&<>
   setLyingSigma(isImageIntent(intent)&&intent.lyingSigma?{...intent.lyingSigma}:{...defaultLyingSigma});
   setMossSkip(isImageIntent(intent)?intent.skipLayers??'':'');
   setWidth(intent.width);setHeight(intent.height);setResolution('fixed');setAspect('auto');
-  setLoras((intent.loras??[]).map(l=>({...l,enabled:true})));setOptions(value.options);
+  setLoras((intent.loras??[]).map(l=>({...l,enabled:true})));setOptions({...value.options,outputNaming:outputNamingTemplate(optionsPref.outputNaming)});
   setPipeline(value.pipeline);setComponentOverrides({textEncoders:true,vaes:true,audioVaes:true,textProjections:true});
   setImageRefs(value.references.map(ref=>({item:{name:ref.name,media:'image',src:''},strength:ref.strength})));
   setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setInputScaling('off');setEdit('resample');

@@ -17,6 +17,19 @@
   Cancelling keeps the previous colour; unsupported runtimes keep manual
   selection and say so.
 
+### Output naming stays a template after history restore
+
+- Restoring a finished job into the editor no longer writes the job's
+  already-resolved output prefix (date/seed/model filled in) back into the
+  Options naming field. The live template is kept; the restored seed and model
+  flow through the `%seed%`/`%model%` variables as before.
+
+### Inpaint colour pipette always reachable
+
+- The colour group (picker, pipette, hex, swatches) no longer disappears when a
+  mask layer is selected — it shows whenever the image stack has a base image,
+  so the screen pipette is findable in the usual inpaint workflow.
+
 ### Video compare slider
 
 - The Slider next to finished jobs now works for videos too: the original and the
