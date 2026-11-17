@@ -26,17 +26,30 @@ without an extra request. See [Library](LIBRARY.md) and the
   (isolated scratch profile, real restart, 960px minimum resize; evidence in
   [VERIFICATION.md](VERIFICATION.md#pr-38-integration-and-catalog-continuation--2026-11-17)).
   DOM-dispatched input, not OS-level key injection; reference assignment/reordering
-  and prompt-tag options were covered in Chromium fixtures only. WebView2 remains open.
-- [ ] Live provider/authentication and real multi-file download acceptance. The
-  fixture runs perform only simulated explicit browsing/download operations.
+  and prompt-tag options were covered in Chromium fixtures only.
+- [x] Windows WebView2 Catalog smoke: fresh run directory with isolated WebView profile,
+  loopback CDP through SSH, real Playwright input — page live at `http://tauri.localhost/`,
+  native IPC answered, 15 catalog cards, favorite toggle, details dialog with note
+  persistence and Escape close. Evidence in
+  [VERIFICATION.md](VERIFICATION.md#0240-gate-closes--windows-runtime-webview2-smoke-and-live-provider-downloads-2026-11-17).
+- [x] Live provider and real multi-file download acceptance (anonymous GitHub): discovery
+  search → repo listing (with the pagination and hidden-entry fixes) → two files per basket
+  entry → Download all → engine `succeeded` 2/2 → files plus manifest persisted under the
+  configured models folder, and clean app restart. CivitAI anonymous listing is not testable
+  from these hosts (Cloudflare HTML challenge to non-browser clients); the UI handles the
+  empty result and login-gated marks without error. Token-authenticated paths were not
+  exercised anonymously.
 - [ ] Real H3 image/video and audio-reference generation/quality acceptance;
   role intent, duplicate-slot uploads and existing limits are regression tested,
   but no new model run or backend restart is authorized by these UI checks.
-- [ ] Windows native runtime acceptance of the updated retained-source deletion
-  and duplicate-physical-file batch admission tests. Do not substitute the earlier
-  isolated handle probe or contribution-branch test report for this integrated run.
+- [x] Windows native runtime acceptance of the updated retained-source deletion and
+  duplicate-physical-file batch admission tests: the current working-tree test binary ran
+  on the real Windows host, `media_delete` 11/11 including share-delete pending reporting,
+  delayed preview release with filename reuse and duplicate case/hardlink rejection.
 
-No commit, push, tag or release is implied by local integration.
+The GitHub adapter fixes, inpaint pipette, named native request errors and these
+acceptance records are committed on `main` as part of the 0.2.40 working line; no
+tag or release yet.
 
 ## Image Lying Sigma contribution — remaining acceptance
 
@@ -61,9 +74,9 @@ with explicit Save and write-failure recovery. Media has confirmed single/bulk
 native deletion of owned Input/Output files. Fixture validation covers both;
 native WebView user acceptance remains open. Native deletion/cache/RefMod code
 compiled and passed the full serial Rust suite, including disposable Linux
-capture/rollback fixtures; Windows cross-check and strict Clippy passed. Real
-Windows handle/reparse deletion and interactive Linux/Windows acceptance remain
-separate gates. These changes do not authorize a real library scan or generation
+capture/rollback fixtures; Windows cross-check and strict Clippy passed. Real Windows
+handle/reparse deletion ran on the Windows host (module 11/11, see the 2026-11-17
+VERIFICATION entry); interactive Linux/Windows acceptance remains a separate gate. These changes do not authorize a real library scan or generation
 during verification.
 
 ## Local selected-LoRA popup and sets
@@ -329,9 +342,9 @@ Constraints kept from the implementation plan: signatures from one checkpoint do
 
 ### 4.4 Image: masking, references, regional prompting
 
-- **Inpaint colour pipette / screen eyedropper. Status: planned, not implemented.** Owner request. Add a pipette control beside the Inpaint editor's colour picker to select a colour from the screen and apply it to the existing colour setting. Source baseline: `src/features/studio/StudioImageEditor.tsx` exposes `<input type="color">` with `setColor`, but no explicit eyedropper control was found. Reuse that colour state; picking a colour must not paint, alter a mask or start generation.
-  - [ ] Check screen-wide eyedropper support in the actual Linux WebKitGTK and Windows WebView2 runtimes before choosing browser `EyeDropper` or an existing native/desktop-portal path. Sampling only the image canvas does **not** satisfy screen-wide picking. Use explicit user activation and any required platform consent; no persistent screen capture, screenshot storage or silent permissions. If unavailable, explain the limitation and retain manual colour selection rather than claiming screen-wide support.
-  - [ ] Provide an accessible pipette button and active picking feedback; a confirmed pick updates the colour swatch/value, while Escape, cancellation or permission refusal leaves the previous colour and editor state intact. Preserve brush/mask semantics, focus, zoom/pan, layers and existing input/intent/recipe contracts.
+- **Inpaint colour pipette / screen eyedropper. Status: implemented in the working tree; runtime acceptance pending.** Gate 1 ran: this WebKitGTK build (2.54.2) contains no `EyeDropper` API (no symbol in libwebkit2gtk), while the xdg-desktop-portal on this desktop offers `Screenshot.PickColor`; WebView2/Chromium has `EyeDropper`. The shipped control uses `window.EyeDropper` when present and the Tauri command `native_pick_screen_color` (portal PickColor via zbus, consent-based, RGB only) otherwise, with an explicit unsupported-runtime note that keeps manual selection. jsdom regression covers success, cancel and unsupported; the Chromium inpaint fixture clicks the pipette and verifies the swatch. Remaining: real Linux portal pick and real WebView2 pick outside the app, then this line becomes accepted. Owner request. Add a pipette control beside the Inpaint editor's colour picker to select a colour from the screen and apply it to the existing colour setting. Source baseline: `src/features/studio/StudioImageEditor.tsx` exposes `<input type="color">` with `setColor`, but no explicit eyedropper control was found. Reuse that colour state; picking a colour must not paint, alter a mask or start generation.
+  - [x] Gate done: WebKitGTK 2.54.2 exposes no `EyeDropper` (symbol-less; probe `ERR Invalid type`) while the desktop's xdg-desktop-portal offers `Screenshot.PickColor`; WebView2/Chromium has `EyeDropper`. Chosen: browser API when present, else `native_pick_screen_color` portal call with explicit consent, RGB-only, no capture stored; unsupported runtimes keep manual selection with an explanatory note. The original requirement was to choose browser `EyeDropper` or an existing native/desktop-portal path. Sampling only the image canvas does **not** satisfy screen-wide picking. Use explicit user activation and any required platform consent; no persistent screen capture, screenshot storage or silent permissions. If unavailable, explain the limitation and retain manual colour selection rather than claiming screen-wide support.
+  - [x] Provided: `.sie-pipette` button with picking state, confirmed pick updates swatch/hex, cancel or unsupported keeps the previous colour; search entry `studio.editor.color` added; six locales; `docs/STUDIO.md` section; jsdom 47/47; Chromium inpaint fixture clicks the button end-to-end (mock IPC) and the toolbar kept the 1440×960/320 layout budgets. Preserve brush/mask semantics, focus, zoom/pan, layers and existing input/intent/recipe contracts.
   - [ ] Add `StudioImageEditor.test.tsx` coverage for success, cancellation, unsupported capability and errors; extend `tools/verify_inpaint.py` for control placement/accessibility without pretending a mocked pick proves OS support. Native Linux and Windows acceptance must pick a known colour outside the app. Update six locales, global search and `docs/STUDIO.md`; run the layout gate for toolbar changes.
 
 - **SAM 3.1 masking and native Auto Refine. Status: implemented (0.2.19); real-model Linux GPU evidence recorded in VERIFICATION.md; WebKitGTK/WebView2 runtime acceptance open.** Owner decisions: core `SAM3_Detect` supplies text, positive/negative point and box masks; a picked result creates a separate editor mask layer, never replaces an existing mask. Alt-click adds a negative point; source-pixel mapping must remain correct through zoom/pan. SAM video tracking is out of scope.

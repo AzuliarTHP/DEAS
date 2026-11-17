@@ -720,6 +720,8 @@
   "studio.editor.hide": "Masquer {name}",
   "studio.editor.color": "Couleur du pinceau",
   "studio.editor.colorHex": "Hex",
+  "studio.editor.pipette": "Pipette d’écran",
+  "studio.editor.pipetteUnsupported": "Ce moteur ne propose pas de pipette d’écran ; utilisez le sélecteur de couleurs ou une valeur hex.",
   "studio.editor.maskValue": "Valeur du masque (noir–blanc)",
   "studio.editor.remove": "Supprimer {name}",
   "studio.editor.raise": "Monter l’image sélectionnée",

@@ -9,6 +9,30 @@
   T2VA. History and pinned Continuity retain their explicit missing-input gates;
   frame/reference assignment still selects the mode automatically.
 
+### Inpaint colour pipette
+
+- New eyedropper button beside the editor's brush colour: WebView2/Chromium uses
+  the built-in EyeDropper, Linux opens the xdg-desktop-portal colour picker
+  (consent-based; only the picked RGB reaches DEAS, no screenshot is stored).
+  Cancelling keeps the previous colour; unsupported runtimes keep manual
+  selection and say so.
+
+### Native request errors name their cause
+
+- The Catalog alerts ("Could not load the files…", "Native request failed") now
+  append the actual native or provider error (rate limit, invalid folder, unsafe
+  name) instead of only the generic label, so failed Browse and Download-all
+  attempts can be diagnosed without logs.
+
+### GitHub catalog browsing
+
+- Fixed user repository listings failing outright on accounts with more than 50
+  repositories: GitHub rewrites the pagination link to `/user/{id}/repos` and the
+  adapter guard now accepts exactly that numeric alias and nothing else.
+- Fixed opening any repository whose files include a hidden entry (for example
+  `.gitattributes`): hidden repository metadata is now skipped like the Hugging
+  Face adapter instead of aborting the whole listing.
+
 ### enhanced video preview playback
 
 - The animated denoising preview of a running Video generation no longer restarts

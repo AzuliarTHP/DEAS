@@ -720,6 +720,8 @@
   "studio.editor.hide": "隐藏 {name}",
   "studio.editor.color": "画笔颜色",
   "studio.editor.colorHex": "Hex",
+  "studio.editor.pipette": "屏幕吸管",
+  "studio.editor.pipetteUnsupported": "此运行时没有屏幕吸管；请使用颜色选择器或输入十六进制值。",
   "studio.editor.maskValue": "蒙版值（黑–白）",
   "studio.editor.remove": "删除 {name}",
   "studio.editor.raise": "上移所选图像",

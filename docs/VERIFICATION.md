@@ -3702,3 +3702,44 @@ Gates re-run at the 0.1.8 docs commit: typecheck, 14 Vitest files / 167 UI-IPC t
 Relocation (`settings_move.rs`) is covered by Rust fixtures: all-tree conflict/overlap rejection, exclusive streamed copy, byte verification, atomic settings save, unchanged-source removal, retained-original warnings, symlinked/overlapping tree rejection. Relocation is Linux-only; other platforms fail closed. Real large-tree relocation on live data and crash/power-loss recovery remain unverified. `native_pick_directory` canonicalizes symlink aliases at the chooser boundary; execution still refuses substitutions.
 
 Windows remains compiled and CI-built only; no Windows runtime acceptance. Artifact re-staging for 0.1.8 is pending the next `./build-linux.sh` release build.
+
+## 0.2.40 gate closes — Windows runtime, WebView2 smoke and live provider downloads (2026-11-17)
+
+Windows runtime (`SCARYMACHINE`, 192.168.0.102, user `hermes-test`, session 0 via SSH):
+- `cargo xwin test --no-run --lib` on the working tree (GitHub pagination/hidden-file fixes,
+  pipette, named request errors); the produced `deas-*.exe` was transferred and run natively.
+- `media_delete` module: 11/11 passed on real Windows, including the four previously blocked
+  runtime cases (`pending_deletion_is_reported_while_a_share_delete_holder_is_open`,
+  `delayed_preview_release_completes_deletion_and_allows_filename_reuse`,
+  `duplicate_case_and_hardlink_identities_reject_the_entire_batch`,
+  `deletion_correlates_only_the_unchanged_retained_video_identity`).
+- Full library run on Windows: 955 passed, 7 failed, 73 ignored. All 7 failures are
+  host-environment fixtures (repo-relative resources missing from the scratch run directory
+  or requiring python/node on PATH, which the test PC does not carry); the same tests are
+  green in the native Linux suite. Not product failures.
+
+WebView2 Catalog smoke (fresh `catalog-smoke` run directory, isolated WEBVIEW2 profile,
+loopback CDP 127.0.0.1:19223 through an SSH tunnel, Playwright connect_over_cdp, real input):
+- Page target `http://tauri.localhost/` live; `window.__TAURI_INTERNALS__` present;
+  `native_download_status` answered `idle` over real Tauri IPC.
+- Welcome/persona dialog handled; downloads workspace view opened; Catalog tab rendered
+  15 cards; favorite star toggled with real mouse input; Details native `<dialog>` opened,
+  note text saved, Escape closed it and the note was back on reopen.
+- Artifacts: `artifacts/verification/win-catalog-smoke/{cards,final}.png`.
+- Test app stopped by exact path (`catalog-smoke`), tunnel closed; nothing left listening on 19223.
+
+Live provider acceptance on native WebKitGTK (isolated profile, anonymous only):
+- GitHub: user search → discovery cards → repo file listing (after the pagination and
+  hidden-file fixes) → 2 files into the basket → Download all → engine status `succeeded`
+  2/2 → files plus `deas-download-manifest.json` on disk under the configured models folder;
+  a later session pulled two ~50 MB binaries the same way. App restart afterwards came up
+  clean; the completed files/manifest persist (the live status panel is in-memory engine
+  state and is not claimed as a persisted promise).
+- Root cause of the earlier silent failure was harness-side: the isolated profile pointed at
+  a ComfyUI environment directory that had been pruned, so `native_download_plan` rejected
+  the target. The UI showed only "Native request failed" — that is why the alerts now append
+  the concrete native/provider error.
+- CivitAI anonymous listing is not currently acceptable from either host:
+  `api.civitai.com` answers the Cloudflare HTML challenge to non-browser clients, so the
+  adapter sees zero entries; the UI renders the empty list without error and marks the
+  bundled creator resources login-gated. No CivitAI download was attempted (login-gated upstream).

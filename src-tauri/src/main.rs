@@ -159,6 +159,7 @@ fn main() {
             deas::native_json_open,
             deas::native_media_list,
             deas::native_media_delete,
+            deas::native_pick_screen_color,
             deas::native_media_star,
             deas::native_media_unstar,
             deas::native_media_star_status,
