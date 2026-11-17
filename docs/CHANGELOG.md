@@ -9,6 +9,13 @@
   T2VA. History and pinned Continuity retain their explicit missing-input gates;
   frame/reference assignment still selects the mode automatically.
 
+### enhanced video preview playback
+
+- The animated denoising preview of a running Video generation no longer restarts
+  from 0:00 on every preview update. Each growing revision reopens with the new
+  clip but resumes at the watched position, so a whole preview clip can be
+  followed across steps on both the native Linux player and WebView2.
+
 ### Windows media deletion
 
 - Fixed ordinary and bulk deletion falsely failing while DEAS kept its own file

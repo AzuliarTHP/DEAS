@@ -10,11 +10,12 @@ export type NativeVideoStatus = {position:number;duration:number;width:number;he
 export type NativeVideoControl = {seek:(seconds:number)=>void;pause:()=>void;play:()=>void;playCrop:(start:number,end:number)=>void};
 const clock=(seconds:number)=>{const whole=Math.max(0,Math.floor(seconds));return `${Math.floor(whole/60)}:${String(whole%60).padStart(2,'0')}`;};
 const initial:NativeVideoStatus={position:0,duration:0,width:0,height:0,paused:true,muted:false,volume:100};
-export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,onSize,onStatus,controlRef,muted,audioOnly=false,controls}:{source:VideoSource;label:string;active?:boolean;autoPlay?:boolean;loop?:boolean;onSize?:(w:number,h:number)=>void;onStatus?:(status:NativeVideoStatus)=>void;controlRef?:RefObject<NativeVideoControl|null>;muted?:boolean;audioOnly?:boolean;controls?:ReactNode}) {
+export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,onSize,onStatus,controlRef,muted,audioOnly=false,controls,resume}:{source:VideoSource;label:string;active?:boolean;autoPlay?:boolean;loop?:boolean;onSize?:(w:number,h:number)=>void;onStatus?:(status:NativeVideoStatus)=>void;controlRef?:RefObject<NativeVideoControl|null>;muted?:boolean;audioOnly?:boolean;controls?:ReactNode;resume?:number}) {
  const {t}=useI18n();
  const surface=useRef<HTMLDivElement>(null),size=useRef(onSize);size.current=onSize;
  const report=useRef(onStatus);report.current=onStatus;
  const modes=useRef({muted,audioOnly});modes.current={muted,audioOnly};
+ const resumeRef=useRef(resume);resumeRef.current=resume;
  const owner=useRef('');
  const [id,setId]=useState(''),[error,setError]=useState(''),[status,setStatus]=useState<NativeVideoStatus>(initial),[maximized,setMaximized]=useState(false);
  const sourceKey=JSON.stringify(source);
@@ -50,7 +51,11 @@ export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,
   };
   void invoke('native_video_open',{id:token,source:JSON.parse(sourceKey),autoPlay,repeat:loop,muted:modes.current.muted??false}).then(()=>{
    if(disposed){void close();return;}
-   ready=true;setId(token);void update();
+   ready=true;setId(token);
+   // Growing previews reopen per revision; resume keeps the watched position (one seek per open).
+   const from=resumeRef.current;
+   if(from&&Number.isFinite(from)&&from>0)void invoke('native_video_update',{id:token,action:{kind:'seek',seconds:from}}).catch(()=>{});
+   void update();
   }).catch(e=>{if(!disposed)setError(String(e));});
   const timer=window.setInterval(()=>void update(),150);
   const refresh=()=>void update();

@@ -8,6 +8,12 @@ An empty H3 Video draft now recovers from an old remembered reference/frame mode
 without demanding nonexistent references. History and pinned Continuity keep their
 intended mode. See [Studio](STUDIO.md).
 
+### Enhanced video preview keeps your position
+
+The animated denoising preview during a running Video generation no longer jumps
+back to the start on every update; it resumes at the position you were watching,
+so the growing clip plays through. See [Studio](STUDIO.md).
+
 ### Windows deletion fixes
 
 Media deletion now releases DEAS's own inspection handles before confirming that
