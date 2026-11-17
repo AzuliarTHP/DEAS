@@ -48,6 +48,9 @@ def open_editor(page):
     page.get_by_role('button', name='Inpaint', exact=True).click()
     page.locator('[data-editor-viewport]').wait_for()
     expect(page.get_by_role('button', name='Mask 1', exact=True)).to_have_attribute('aria-pressed', 'true')
+    # Fix: the colour group and screen pipette stay reachable while a mask layer is the active one.
+    expect(page.locator('.sie-pipette')).to_be_visible()
+    expect(page.locator('.sie-color input[type=color]')).to_be_visible()
 
 
 def click_tool(page, name):
