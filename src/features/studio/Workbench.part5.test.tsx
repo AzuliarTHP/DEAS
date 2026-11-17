@@ -264,7 +264,7 @@ test('history restores exact rich settings without probing or submitting and kee
  vi.mocked(runWorkbenchJob).mockResolvedValue({...heldJob('new-history-run','failed'),baseUrl:evidence.baseUrl});
  fireEvent.click(document.querySelector('[data-run]')!);
  await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledTimes(1));
- expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({...historicalImage,loras:[{name:'style.safetensors',strength:0.75}],options:{attention:'sdpa',cache:{node:'EasyCache',threshold:0.03},compile:'inductor',vaeTile:1536},imageReference:{visionModel:'vision.safetensors',images:[{image:'uploaded-second.png',strength:0.2},{image:'uploaded-first.png',strength:0.9}]},refine:{width:2432,height:1664,denoise:0.35},imageFormat:'webp',imageCompression:83});
+ expect(vi.mocked(runWorkbenchJob).mock.calls[0][1]).toMatchObject({...historicalImage,seed:historicalImage.seed,outputPrefix:expect.stringMatching(/^raw\/image\/\d{4}-\d{2}-\d{2}\/\d{2}-\d{2}-\d{2}-987654321-a$/),loras:[{name:'style.safetensors',strength:0.75}],options:{attention:'sdpa',cache:{node:'EasyCache',threshold:0.03},compile:'inductor',vaeTile:1536},imageReference:{visionModel:'vision.safetensors',images:[{image:'uploaded-second.png',strength:0.2},{image:'uploaded-first.png',strength:0.9}]},refine:{width:2432,height:1664,denoise:0.35},imageFormat:'webp',imageCompression:83});
  expect(JSON.stringify(original)).toBe(encoded);expect(JSON.stringify(live)).toBe(liveBefore);
 });
 
