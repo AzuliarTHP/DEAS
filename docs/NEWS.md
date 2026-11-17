@@ -1,5 +1,39 @@
 # News
 
+## In development — empty H3 drafts start in T2VA
+
+An empty H3 Video draft now recovers from an old remembered reference/frame mode
+without demanding nonexistent references. History and pinned Continuity keep their
+intended mode. See [Studio](STUDIO.md).
+
+## In development — Windows deletion fixes
+
+Media deletion now releases DEAS's own inspection handles before confirming that
+files are gone. Bulk deletion and filename reuse work without false failure reports.
+TVE source cleanup preserves identity checks and protects active source operations.
+See [Media](MEDIA.md).
+
+## In development — more local prompt tags
+
+The prompt's tag-plus button opens autocomplete options: turn suggestions on/off,
+choose a larger floating list outside the prompt, increase result count and enable
+the local merged Danbooru/e621 dictionary. The compact popup keeps controls and
+labels together. Separate CSV presets were removed; user CSV files are never bundled.
+Every CSV source, including the merged entry, can be removed with its trash icon;
+the original CSV stays intact. Built-in Danbooru keeps its checkbox without a trash icon.
+Sources are indexed once and queried locally while typing.
+See [Studio](STUDIO.md).
+
+## In development — compact H3 Video References
+
+Video References has dedicated Images, Video, Audio and RefMod panes, a compact
+assignment bar and aligned pack controls. Pane positions stay stable as references
+change. Visible action icons include a red Remove button, and a picture can be
+assigned to multiple independent slots. Audio cards have crop play/pause, drag grips
+snap with pointer capture, and trim warnings no longer move the editor. H3 image edit
+now has a pinned main preview, controls below it and a compact reference grid.
+See [Studio](STUDIO.md).
+
 
 ## 0.2.39 BETA
 

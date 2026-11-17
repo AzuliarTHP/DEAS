@@ -333,7 +333,8 @@ export function revealTarget(target: string): RevealOutcome {
       delete dock.dataset.revealOpen;
     }
   }
-  const element = document.querySelector<HTMLElement>(target);
+  // H3's compact role picker shares one select instead of a button per role.
+  const element = document.querySelector<HTMLElement>(target) ?? (/^\[data-video-role="(?:first|last|both|reference|source)"\]$/.test(target)?document.querySelector<HTMLElement>('.reference-assignment select'):null);
   if (!element) return { state: 'missing' };
   const postCategory = element.closest<HTMLElement>('[data-post-category]');
   if (postCategory?.dataset.postCategory) {
