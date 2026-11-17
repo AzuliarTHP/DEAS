@@ -1,5 +1,89 @@
 # Changelog
 
+## 0.2.40 BETA (unreleased)
+
+### empty H3 video mode
+
+- Fixed an ordinary empty H3 Video draft reopening in remembered REF2VA/I2VA mode
+  and disabling Run for inputs that were not restored. Empty drafts fall back to
+  T2VA. History and pinned Continuity retain their explicit missing-input gates;
+  frame/reference assignment still selects the mode automatically.
+
+### Windows media deletion
+
+- Fixed ordinary and bulk deletion falsely failing while DEAS kept its own file
+  inspection handles open. Released handles no longer keep filenames pending.
+- Retained TVE inspection is released under admission and restored after a failed
+  deletion only for the unchanged original file; active source users block deletion.
+- Permission-denied metadata queries on a pending Windows deletion are retried
+  within the existing bounded wait. Success still requires the filename to disappear.
+- Windows batch admission rejects duplicate physical identities, including case
+  aliases and hard links, before touching any selected file.
+
+### configurable prompt tag completion
+
+- Added a tag-plus options button beside the positive prompt, with shared on/off,
+  inline/larger floating suggestions, 8–64 results, substring and CSV alias matching,
+  minimum post count and an optional local merged Danbooru/e621 source.
+- Tightened the options popup with compact rows, fixed checkbox/radio widths and
+  side-by-side display/numeric controls. Removed the separate Danbooru, e621 and
+  classified presets and their old enabled selections. No user CSV is bundled.
+- All CSV sources, including a previously indexed merged source, have a red Remove
+  icon that forgets the DEAS index and source
+  selection while preserving the original CSV file.
+- Explicit source enabling builds a cached native SQLite index. Typing never reads
+  the source CSV; overlapping tags are deduplicated, and descriptions stay separate
+  from aliases. Imports retain the previous index on failure and leave originals intact.
+- Integration hardens CSV admission against FIFOs, links and other nonregular
+  objects without blocking a worker. Alias matches are deduplicated by canonical
+  tag before the SQL result limit, so one alias-heavy tag cannot hide other hits.
+
+### Video References workspace
+
+- MiniMax H3 Video References now uses a compact three-column image grid and separate,
+  independently scrolling Video, Audio and RefMod panes beside the media browser.
+  Adding/removing references never collapses or resizes their panes. Nine images
+  fit together at desktop sizes; smaller windows retain an internal scrolling fallback.
+- Save, Load and Clear share the header. A selected-file role picker replaces the
+  large preview; thumbnails open the existing reference editor. Visible icons hold
+  edit/reorder/insert/remove actions, with a red Remove icon and keyboard reordering
+  also available on drag grips. Each icon has a translated tooltip and accessible name.
+- The same H3 reference picture can occupy multiple independent slots. Editing,
+  reordering, pasting onto or removing a copy affects that slot. Duplicate slots
+  survive packs and drafts, count toward normal limits and share one upload at Run.
+- The lower media/RefMod divider can be resized and remembers its position.
+  Existing reference limits, pack contents, trims and generation behavior are preserved.
+- Reference grips use pointer capture with live grid/list snapping and edge scrolling,
+  sharing the existing LoRA reorder behavior. Escape cancels a drag.
+- Audio reference cards can play/pause their saved crop without opening Edit. Only
+  the active card mounts a player; switching cards or opening an editor stops it.
+  Trim warnings/errors occupy a reserved area above the fields, avoiding layout jumps.
+- H3 image-edit References now has the same compact browser/cards and visible icons,
+  a large pinned Picture 1 preview with controls underneath, and all eight following
+  references in a stable grid. A compact Add button replaces the large assignment box.
+  Source swapping/promotion, history reselection and the native edit intent are preserved.
+
+### Library Catalog
+
+- Integration review fixes compact H3 global-search role selection, stale image
+  reference-picker selections after relocation/deletion, and discoverability of
+  the prompt-tag options. Search never assigns references or imports dictionaries.
+- Catalog browsing retains its exact provider/destination, prevents competing card
+  requests from invalidating a pending browse, and clears provider-search state on
+  explicit return to the bundled catalog. Narrow panes retain usable internal height.
+- Downloadable discovery cards honor the latest explicit anonymous access choice.
+  Installed companion links clear stale remote discovery, and Details preserve
+  focused tag edits when dismissed with Escape or the backdrop.
+- Library lists Installed before Catalog. Catalog now follows the Installed gallery
+  layout for categories, provider/family groups, filters, sorting and grid/list
+  views, with separate personal Favorites, tags and notes for online entries.
+- Catalog source, Search catalog & CivitAI and Download all share the top action
+  row. Creator/search model cards retain their gallery while browsing one model's
+  files; download selection, destination and explicit execution remain unchanged.
+- Placeholder hexagons are centered in the card preview even when download styles
+  load after gallery styles. Installed-file organization and native scan actions
+  remain separate from catalog organization.
+
 ## 0.2.39 BETA
 
 ### Library and Studio quality of life

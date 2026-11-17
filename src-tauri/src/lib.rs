@@ -667,3 +667,5 @@ mod tests {
         }
     }
 }
+
+pub mod tag_completion;

@@ -991,7 +991,7 @@ test('vision offer card shows the hosting platform and downloads via the Library
  expect(promptDrop().dropEffect).toBe('copy');
  const dialog=await screen.findByRole('dialog',{name:/No CLIP vision model installed/});
  expect(document.querySelector('[data-vision-download]')).not.toBeNull();
- for(const [text,tag] of [['SDXL ReVision vision tower','span'],['ReVision CivitAI mirror','span'],['Hugging Face','em.download-auth'],['CivitAI','em.download-auth']] as const)expect(within(dialog).getByText(text,{selector:tag})).not.toBeNull();
+ for(const [text,tag] of [['SDXL ReVision vision tower','strong'],['ReVision CivitAI mirror','strong'],['Hugging Face','em.download-auth'],['CivitAI','em.download-auth']] as const)expect(within(dialog).getByText(text,{selector:tag})).not.toBeNull();
  const before=vi.mocked(checkRecipePrerequisites).mock.calls.length;
  await within(dialog).findByLabelText('clip_vision_g.safetensors');
  fireEvent.click(within(dialog).getByLabelText('clip_vision_g.safetensors'));
