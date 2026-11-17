@@ -367,7 +367,7 @@ it('shows loading and a browse failure inside the clicked card picker',async()=>
  mount();click('Library');fireEvent.click(await screen.findByRole('button',{name:'Curated index'}));await waitFor(()=>expect(fail).toBeTypeOf('function'));
  expect(document.querySelector('.library-card-grid .download-picker [role="status"]')).toBeTruthy();
  await act(async()=>fail('Unsupported CivitAI file selector query'));
- expect(document.querySelector('.library-card-grid .download-picker [role="alert"]')?.textContent).toMatch(/Could not load the files/);expect(screen.getAllByRole('alert')).toHaveLength(1);
+ expect(document.querySelector('.library-card-grid .download-picker [role="alert"]')?.textContent).toMatch(/Could not load the files/);expect(document.querySelector('.library-card-grid .download-picker [role="alert"]')?.textContent).toMatch(/Unsupported CivitAI file selector query/);expect(screen.getAllByRole('alert')).toHaveLength(1);
 });
 it('opens the file picker under the clicked card with one version selected at a time',async()=>{
  vi.mocked(invoke).mockImplementation(async c=>c==='native_auth_status'?[]:c==='native_download_catalog'?catalog:{resources:[{...resource,id:'a',label:'model-fp8.safetensors',variant:'fp8 · pruned · ≈13.5 GB',version:'v2',publishedAt:'2026-02-01T00:00:00Z'},{...resource,id:'b',label:'model-fp16.safetensors',version:'v2',publishedAt:'2026-02-01T00:00:00Z'},{...resource,id:'c',label:'model-old.safetensors',version:'v1',publishedAt:'2025-01-01T00:00:00Z'}],nextCursor:null,warnings:[]});

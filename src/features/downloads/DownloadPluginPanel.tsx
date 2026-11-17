@@ -25,14 +25,14 @@ const validSort=(v:unknown):v is {by:'newest'|'name';dir:1|-1}=>typeof v==='obje
 /** One operation at a time; generation changes and unmount discard late responses. */
 function useNativeRequest() {
  const native=isTauri();const live=useRef(false);const epoch=useRef(0);const lock=useRef(false);
- const [busy,setBusy]=useState(false);const [error,setError]=useState(false);
+ const [busy,setBusy]=useState(false);const [error,setError]=useState<string|null>(null); // native/provider message shown verbatim in alerts
  useEffect(()=>{live.current=true;return()=>{live.current=false;epoch.current++;};},[]);
- const invalidate=useCallback(()=>{epoch.current++;setError(false);},[]);
+ const invalidate=useCallback(()=>{epoch.current++;setError(null);},[]);
  const request=useCallback(async <T,>(operation:()=>Promise<T>,publish:(value:T)=>void)=>{
   if(!native||!live.current||lock.current)return;
   lock.current=true;setBusy(true);const generation=epoch.current;
-  try {const value=await operation();if(live.current&&generation===epoch.current){publish(value);setError(false);}}
-  catch {if(live.current&&generation===epoch.current)setError(true);}
+  try {const value=await operation();if(live.current&&generation===epoch.current){publish(value);setError(null);}}
+  catch(e){if(live.current&&generation===epoch.current)setError(String(e));}
   finally {lock.current=false;if(live.current)setBusy(false);}
  },[native]);
  return {native,busy,error,request,invalidate};
@@ -262,7 +262,7 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
  // Loading and failure of the clicked card's listing show in its picker, not at the far end of the panel.
  const browsingInline=(pickerInline||!!remoteId)&&!listing&&(io.busy||io.error);
  const picker=(listing||browsingInline)&&<div className="download-picker">
-    {browsingInline&&(io.busy?<p role="status"><span className="aio-spinner" aria-hidden="true"/> {t('downloads.pending')}</p>:<p role="alert">{t('downloads.browseError')}</p>)}
+    {browsingInline&&(io.busy?<p role="status"><span className="aio-spinner" aria-hidden="true"/> {t('downloads.pending')}</p>:<p role="alert">{t('downloads.browseError')} {io.error}</p>)}
     {versions.length>0&&<div className="download-categories download-media-filter download-sort" role="group" aria-label={t('downloads.version')}><span aria-hidden="true">{t('downloads.version')}</span>{versions.map(v=><button key={v} type="button" aria-pressed={activeVersion===v} disabled={locked} onClick={()=>setVersion(v)}>{v}</button>)}</div>}
     {listing&&!resources.length&&<p>{t('downloads.empty')}</p>}
     {resources.map(r=><div className={`download-resource${picked(r)?' is-selected':''}${r.locator&&present.has(r.locator)?' is-local':''}`} key={key(r)}><Preview src={r.preview} alt=""/><div>{needsLogin(r.auth,providerId)&&<em className="download-auth">{t('downloads.authNeeded')}</em>}{r.nsfw&&<em className="download-auth download-nsfw-tag" title={t('downloads.nsfwHelp')}>{t('downloads.nsfwTag')}</em>}{r.downloadable&&r.locator&&present.has(r.locator)?<p className="download-local"><span aria-hidden="true">✓</span> {r.label} · {t('downloads.local')}</p>:r.downloadable?<label className="download-check"><input type="checkbox" disabled={locked} checked={picked(r)} onChange={()=>toggle(r)}/><span>{r.label}{r.variant&&<small className="download-variant">{r.variant}</small>}</span></label>:r.kind==='repo'&&r.locator&&provider?<button className="action-button" disabled={io.busy||locked} onClick={()=>openResource(r,provider.kind==='civitai'?'model':'repo')}>{t('downloads.openRepo',{name:r.label})}</button>:<p><strong>{r.label}</strong> · {t('downloads.backendResource')}</p>}<details><summary>{t('downloads.resourceDetails')}</summary>{resourceDetails(r)}</details>{r.downloadable&&<ModelAdvice check={checkModel(undefined,{remote:true,name:r.label})}/>}</div></div>)}
@@ -305,7 +305,7 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
    </>}
    {view==='catalog'&&<>{blocked&&<div className="download-plan"><p role="alert">{t('downloads.blocked')}</p><p className="download-identity">{blocked.target}</p>{blocked.warnings.map((w,i)=><p key={i}>{w}</p>)}</div>}
    <div className="aio-actions"><button className="action-button" disabled={!io.native||io.busy} onClick={()=>void io.request(readDownloadStatus,value=>{setBlocked(null);publishStatus(value);})}>{t('downloads.refresh')}</button>{running&&<button className="action-button" disabled={io.busy} onClick={()=>void io.request(cancelDownloads,publishStatus)}>{t('downloads.cancel')}</button>}</div>
-   {io.busy&&!browsingInline&&<p role="status">{t('downloads.pending')}</p>}{status&&<div><p role="status">{t(`downloads.state.${status.state}`)}</p><p>{t('downloads.bytes')}: <output>{status.bytesDownloaded}</output> · {status.completed}/{status.total}</p>{status.error&&<p role="alert">{t('downloads.error')}: {status.error}</p>}</div>}{io.error&&!browsingInline&&<p role="alert">{t('downloads.error')}</p>}</>}
+   {io.busy&&!browsingInline&&<p role="status">{t('downloads.pending')}</p>}{status&&<div><p role="status">{t(`downloads.state.${status.state}`)}</p><p>{t('downloads.bytes')}: <output>{status.bytesDownloaded}</output> · {status.completed}/{status.total}</p>{status.error&&<p role="alert">{t('downloads.error')}: {status.error}</p>}</div>}{io.error&&!browsingInline&&<p role="alert">{t('downloads.error')}: {io.error}</p>}</>}
   </div>}
  </section>;
 }

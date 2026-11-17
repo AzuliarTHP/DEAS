@@ -720,6 +720,8 @@
   "studio.editor.hide": "{name} gizle",
   "studio.editor.color": "Fırça rengi",
   "studio.editor.colorHex": "Hex",
+  "studio.editor.pipette": "Ekran damlalığı",
+  "studio.editor.pipetteUnsupported": "Bu çalışma ortamında ekran damlalığı yok; renk seçiciyi kullanın veya hex değeri girin.",
   "studio.editor.maskValue": "Maske değeri (siyah–beyaz)",
   "studio.editor.remove": "{name} sil",
   "studio.editor.raise": "Seçili görseli yükselt",

@@ -720,6 +720,8 @@
   "studio.editor.hide": "Hide {name}",
   "studio.editor.color": "Brush color",
   "studio.editor.colorHex": "Hex",
+  "studio.editor.pipette": "Screen eyedropper",
+  "studio.editor.pipetteUnsupported": "This runtime has no screen eyedropper; use the colour picker or type a hex value.",
   "studio.editor.maskValue": "Mask value (black–white)",
   "studio.editor.remove": "Delete {name}",
   "studio.editor.raise": "Raise selected image",

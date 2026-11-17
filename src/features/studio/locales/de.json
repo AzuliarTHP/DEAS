@@ -720,6 +720,8 @@
   "studio.editor.hide": "{name} ausblenden",
   "studio.editor.color": "Pinselfarbe",
   "studio.editor.colorHex": "Hex",
+  "studio.editor.pipette": "Bildschirm-Pipette",
+  "studio.editor.pipetteUnsupported": "Diese Laufzeit bietet keine Bildschirm-Pipette; Farbwähler nutzen oder Hex-Wert eingeben.",
   "studio.editor.maskValue": "Maskenwert (schwarz–weiß)",
   "studio.editor.remove": "{name} löschen",
   "studio.editor.raise": "Bildebene nach oben",
