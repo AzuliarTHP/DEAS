@@ -17,6 +17,13 @@
   Cancelling keeps the previous colour; unsupported runtimes keep manual
   selection and say so.
 
+### Video compare slider
+
+- The Slider next to finished jobs now works for videos too: the original and the
+  processed clip share one divider, one zoom and one synced playback (the original
+  drives; the muted processed copy follows on drift). A play/pause button sits above
+  the divider; the old picture-only hint now applies to audio only.
+
 ### Native request errors name their cause
 
 - The Catalog alerts ("Could not load the files…", "Native request failed") now

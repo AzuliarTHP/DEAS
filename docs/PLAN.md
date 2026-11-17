@@ -163,7 +163,7 @@ An item is only as accepted as its strongest evidence. Keep the levels separate 
 | Output and export | Partial. PNG/FLAC bounded retrieval, cache, no-clobber export; paired image products with capability-gated baseline-first image refinement (0.2.19) | Image native/model acceptance; video ordering and paired video products (§4.2) |
 | Projects | Partial. Image-draft projects, single-writer lock, managed PNG import, draft ZIP | Full persistence is deferred by owner scope (§4.6) |
 | TVE video post-processing | Partial. TVE tab (Rust FFprobe inspection, chooser or Media-panel source, native source retention), TVE stages (upscale model, RTX denoise/deblur/VSR, RTX/RIFE frame generation) in every video pipeline as paired Original/Processed products, and the TVE tab's backend enhance recipe (0.1.67). The standalone Rust ONNX engine was retired in 0.1.67 | §4.2 |
-| Video comparison | Missing dedicated integration (image compare exists) | §4.9 |
+| Video comparison | Implemented 0.2.40: compare slider renders a synced original/processed video pair (bottom drives, muted copy follows >60 ms drift); live codec acceptance on native runtimes open | §4.9 |
 | Video assembly | Missing | §4.9 |
 | Training / datasets | Missing | §4.9 |
 | Telemetry / optimization | Partial primitives (`hardware.rs`) | Resource profiles, shared GPU scheduling, opt-in benchmarks |
