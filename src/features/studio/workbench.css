@@ -92,8 +92,8 @@
 .wb-shown { display: grid; grid-template-rows: auto minmax(0, 1fr); flex: 1; min-height: 0; }
 .wb-shown:has(> .wb-output-choices) { grid-template-rows: auto auto minmax(0, 1fr); }
 .wb-output-choices { display: flex; flex-wrap: wrap; gap: 4px; padding-bottom: 6px; }
-.wb-output-choices button { padding: 3px 8px; font-size: .75rem; }
-.wb-output-choices button[aria-pressed="true"] { border-color: var(--copper); }
+/* Skin (colours, pressed fill, hover glow) comes from the shared text-button rule in styles.css. */
+.wb-output-choices button { padding: 3px 10px; font-size: .75rem; line-height: 1.3; }
 .wb-stage .media-preview { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, auto); flex: 1; min-height: 0; min-width: 0; margin: 0; }
 .wb-stage .media-preview img, .wb-stage .media-preview video { width: 100%; height: 100%; min-height: 0; max-height: none; object-fit: contain; }
 .wb-stage .media-preview { position: relative; }
