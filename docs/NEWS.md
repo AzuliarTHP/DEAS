@@ -1,6 +1,6 @@
 # News
 
-## 0.2.40 BETA (unreleased)
+## 0.2.40 BETA
 
 ### empty H3 drafts start in T2VA
 
