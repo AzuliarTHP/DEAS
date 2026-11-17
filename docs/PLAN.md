@@ -8,7 +8,35 @@ This is the **single current plan** for DEAS: what is in place, what is still op
 - [PROJECT-RULES.md](PROJECT-RULES.md), [COMFYUI-RULES.md](COMFYUI-RULES.md) and [EXECUTION-CONTRACT.md](EXECUTION-CONTRACT.md) govern how work is done; [PRODUCT-DECISIONS.md](PRODUCT-DECISIONS.md) governs scope.
 - An open row here is **not** authorization to start it. New integrations and large slices need an explicit owner priority.
 
-Current working-tree source: 0.2.39 BETA. Latest published release: **0.2.39 BETA** (`v0.2.39`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
+Current working-tree source: 0.2.40 BETA. Latest published release: **0.2.39 BETA** (`v0.2.39`, evidence in [VERIFICATION.md](VERIFICATION.md)). The area table below is a 0.2.17 snapshot with subsequent changes described in the relevant open-work entries and changelog; its labels do not close acceptance gates. Earlier published baseline: **0.1.66** (tag `v0.1.66`).
+
+## Library Catalog and PR #38 — remaining target-runtime acceptance (0.2.40)
+
+The Catalog continuation and [PR #38](https://github.com/darksidewalker/DEAS/pull/38)
+are integrated locally. Installed and Catalog share their gallery skin, category
+bar, filters, folder groups, supported sorts, grid/list views and bounded loading.
+Catalog favorites/notes/tags use separate identities; local scan, family edits and
+file operations remain Installed-only. Deferred browse and captured provider/target
+regressions are covered, and returning from provider search clears its old query
+without an extra request. See [Library](LIBRARY.md) and the
+[integration evidence](VERIFICATION.md#pr-38-integration-and-catalog-continuation--2026-11-17).
+
+- [x] Native WebKitGTK interaction with Catalog controls, dialogs, narrow-pane
+  scrolling and favorites/notes/tags persistence passed on the live desktop
+  (isolated scratch profile, real restart, 960px minimum resize; evidence in
+  [VERIFICATION.md](VERIFICATION.md#pr-38-integration-and-catalog-continuation--2026-11-17)).
+  DOM-dispatched input, not OS-level key injection; reference assignment/reordering
+  and prompt-tag options were covered in Chromium fixtures only. WebView2 remains open.
+- [ ] Live provider/authentication and real multi-file download acceptance. The
+  fixture runs perform only simulated explicit browsing/download operations.
+- [ ] Real H3 image/video and audio-reference generation/quality acceptance;
+  role intent, duplicate-slot uploads and existing limits are regression tested,
+  but no new model run or backend restart is authorized by these UI checks.
+- [ ] Windows native runtime acceptance of the updated retained-source deletion
+  and duplicate-physical-file batch admission tests. Do not substitute the earlier
+  isolated handle probe or contribution-branch test report for this integrated run.
+
+No commit, push, tag or release is implied by local integration.
 
 ## Image Lying Sigma contribution — remaining acceptance
 

@@ -1,5 +1,421 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## PR #38 integration and Catalog continuation — 2026-11-17
+
+Integrated contribution source `1402b48a5bd9c7ea47600871c10e275df78b5b29` onto
+`b23de71`, preserving the existing 0.2.40 Catalog working tree. This is local
+source integration, not a GitHub merge, commit, publication or release.
+
+Integration review additionally repairs global-search role selection in the compact
+H3 assignment bar (unsupported roles remain missing), repairs retained H3 image
+picker selections on relocation/deletion, and indexes the new prompt-tag controls
+in global search. Revealing options does not import a dictionary or change settings.
+
+- Final integrated native suite: **1,072 library tests passed / 78 ignored**,
+  **three binary tests passed**, no doc tests; serial execution in a bounded user
+  scope, re-run green after the Windows duplicate-identity deletion admission
+  patch. CSV regressions cover alias-heavy canonical deduplication and bounded
+  rejection of FIFOs, links and directories. Windows batch duplicate identity
+  coverage compiles in the cross-target gate; it is not a Linux runtime test.
+- Strict all-target Clippy passed on Linux and Windows MSVC through `cargo xwin`.
+  Cross-target compilation is not WebView2 or Windows filesystem runtime acceptance.
+- Chromium: **24 reference-manager geometry/interaction cases**, **24 tag-options
+  cases**, **24 H3 image-reference cases**, **467 shared viewport checks** and
+  Catalog checks across **six locales × five widths** passed. Gallery/LoRA,
+  metadata-editor and paired-output pointer regressions also passed. Captures under
+  `artifacts/verification/pr38-integrated/` were visually inspected. Fixtures use
+  synthetic media and simulated IPC; no provider lookup, model run or backend
+  restart was performed.
+- Focused integration search/assignment/tag-options tests: **22 passed in three
+  files**. Typecheck and **166 core tests** passed after the integration fixes.
+- Final source: **2,176 UI tests passed in 124 files**, **166 core tests passed**,
+  typecheck and production frontend build passed. All six version fields agree on
+  **0.2.40**; changed native files pass rustfmt, and `git diff --check` is clean.
+- Preserved failure evidence: early full runs caught new Catalog browse/provider
+  regressions and two stale gallery/role-search assertions. Independent review
+  additionally reproduced four failures for newer anonymous consent, companion
+  navigation and tag persistence on Escape/backdrop; all now pass. A CSV alias test
+  failed with one canonical hit instead of two before its SQL fix. The final Windows
+  gate caught a tuple-shape mismatch in duplicate-identity admission; using the
+  helper's actual return value fixed it and strict xwin Clippy passed on retry.
+- One isolated Gallery server hit `ENOSPC` (inotify watchers) and later refused
+  reloads; rerunning Gallery and metadata gates against the existing owned test
+  server passed, without changing kernel limits or stopping another service.
+- Native WebKitGTK acceptance on the live desktop: the debug binary (built with
+  `tauri/custom-protocol`) launched under an isolated HOME/XDG scratch profile in
+  a private D-Bus session. An injected probe drove the real Catalog through the
+  genuine boot path: bundled TOML catalog rendered with a bounded first batch,
+  category/base/media filters applied, a favorite click committed, the modal
+  `<dialog>` entered the native top layer, notes/tags committed, the app cancel
+  path closed the dialog, favorites/tags/notes survived a full app restart, and
+  Installed↔Catalog navigation retained browsing state. The X window was resized
+  to the 960×700 native minimum: no horizontal overflow, a reachable card
+  scroller (223px viewport, 1337px scroll extent, scrollable). Engine string:
+  `WebKitGTK Version/60.5`. Evidence: `artifacts/verification/pr38-integrated/native-webkit/`.
+  Boundaries: clicks were DOM-dispatched events inside the native page (OS-level
+  XTEST pointer/key injection does not route through this KWin/Xwayland session),
+  the `<dialog>` close exercised the app cancel handler rather than engine Escape
+  wiring, the Installed list showed its expected "models folder could not be
+  read" empty-environment alert, and OS credential storage was not isolated.
+- Browser and native evidence above cover the Linux WebView only. WebView2, live
+  provider transfers and real model/GPU execution remain open in PLAN. Only owned
+  test servers were stopped; no app release or replacement of the user's
+  executable was performed.
+
+
+## Reference/tag contribution branch validation — 2026-11-17
+
+Prepared a source-only contribution from upstream `b23de71` (0.2.39) containing
+reference workspaces, optional local tag completion, Windows media handle cleanup
+and empty-H3 mode recovery. The last CSV correction makes the indexed merged entry
+removable and leaves Built-in Danbooru checkbox-only. Removed CSV entries are not
+rediscovered; fresh installations list only built-in tags until explicit import.
+
+Validation on the isolated contribution checkout:
+
+- Production frontend and Windows release builds passed. Core: 165 passed, one
+  skipped. Complete UI rerun: **2,146 passed** across 122 files with two workers.
+  The initial unrestricted run had one preview assertion failure; its isolated
+  two-case retry and the entire rerun passed. No production change was made for
+  that transient fixture failure.
+- Native library: **959 passed, zero failed, 73 ignored**, both serially and with
+  normal parallel test execution. The three earlier deletion failures are resolved.
+  All-target Clippy passed with the existing Rust 1.100 `chunks_exact_to_as_chunks`
+  category allowed; the waiver is local to the command, not a source/CI change.
+- Chromium shared layout: **467 passed**. Paired-output pointer checks passed with
+  no product findings. Tag options: **24 locale/desktop cases passed**, including
+  fixed checkbox widths, source removal and no delete icon beside Built-in.
+- The reviewed 60-file snapshot contains code, translations, guides and synthetic
+  fixtures only. No user CSV, local database/cache, media, model weights, saved
+  notes/sets/favorites, settings, credentials or executable artifacts are published.
+
+Windows probes use disposable NTFS fixtures. Linux/WebKitGTK and actual WebView2
+interaction, GPU/model execution and optional tooling remain separate acceptance.
+No backend restart, real model scan, provider metadata fetch or generation was run.
+Ignored evidence is under `output/pr-final-*.log` and `output/csv-remove-all-*`.
+
+## Removing the merged CSV entry — 2026-11-17
+
+The red Remove icon now applies to all CSV entries, including the previously
+indexed merged source. Built-in Danbooru has only its on/off checkbox. Native
+removal accepts the validated merged/custom IDs, removes only the local index,
+and never reads/deletes the recorded original CSV path. Source inventory lists
+registered indexes rather than rediscovering external CSV files, so removed
+entries stay removed and fresh installations offer no machine-specific CSV.
+Users can re-add any CSV through the explicit Import CSV picker.
+
+Focused UI tests cover the merged button and the absence of any built-in removal
+button. Native regression verifies the merged index disappears from subsequent
+inventory while its original file remains. Prior format/alias and custom-source
+removal checks remain applicable. Final PR validation is recorded below.
+
+## Empty ordinary H3 drafts recover their text mode — 2026-11-17
+
+Reproduced a remembered REF2VA mode with zero references and disabled Run. The
+pipeline submode is persisted, while visual/reference drafts start as session
+state. Existing mode-selection tests started from T2VA and did not catch this
+restart state. Added regressions failed for all three remembered `i2v`, `ref2v`
+and `v2v` modes before the change.
+
+An ordinary H3 draft with no first/last frame, source video, references or RefMods
+now resets its remembered submode to `t2v` if its family supports text-to-video.
+Explicit restored history and pinned Continuity source/clip state retain their
+missing-input gates. LTX's existing missing-input semantics are unchanged. The
+fallback changes only the editable mode and never admits/uploads/runs a job.
+
+- Typecheck/production frontend build passed. Full UI: 2,144 passed. Core:
+  165 passed, one skipped.
+- Focused mode/history/Continuity checks passed (16 cases). An additional scope
+  return check passed alongside the empty/pinned cases (five cases): a saved H3
+  reference draft returns in REF2VA after another scope was cleared to T2VA.
+- Regression cases verify a zero-input H3 draft reaches T2VA, enables Run and sends
+  the T2VA intent only after explicit Run. All original five H3 role-selection
+  mappings remain covered. No native generation, user library scan, backend restart
+  or native app capture was performed.
+
+Evidence: ignored `output/h3-empty-mode-before.log`, `h3-empty-mode-focused.log`,
+`h3-empty-mode-return.log`, `h3-empty-mode-ui-full.log`, `h3-empty-mode-core.log`
+and `h3-empty-mode-build.log`.
+
+## Windows media deletion handle lifetime — 2026-11-17
+
+The three previously reported deletion failures were reproduced on Windows/NTFS
+using disposable files: the selected image, a valid remaining batch item and the
+retained TVE source all returned failure. Windows successfully accepted the delete
+disposition, but metadata verification returned access denied because DEAS still
+held its preflight/admission readers open. The retained TVE file could add another
+DEAS-owned holder. This was a production handle-lifetime bug, not merely a test
+fixture issue.
+
+Deletion now explicitly releases the current and admitted inspection handles after
+verifying the deletion handle's physical identity. TVE admission remains locked;
+its matching retained reader is temporarily released, active Arc borrowers block
+deletion, and failed removal restores inspection only if the original identity
+and recorded file metadata still match. A changed source is not correlated to an old source ID,
+but its stale reader also cannot keep an explicitly deleted filename pending.
+Permission-denied metadata queries on a disposed Windows name are retried within
+the existing bounded wait, never treated as proof of successful deletion.
+
+- All three original failures passed their focused rerun. Added native cases cover
+  bulk deletion/Unicode filenames, immediate filename reuse, a delayed preview
+  holder, a holder that stays open, active TVE borrowers, failure rollback and
+  replacement files never inheriting an old source ID. The former ignored Windows
+  handle probe is now a regular deterministic disposable-file regression.
+- The complete serial native suite passed: **959 passed, zero failed, 73 ignored**
+  (the ignored tests require optional runtimes, GPU/media tools or real libraries).
+- 79 frontend media-deletion, Media Library and TVE source-event cases passed.
+  Clippy passed with the previously documented baseline lint allowance.
+- No frontend layout or CSS changed. No user media was deleted, app captured,
+  backend restarted, model scan run or generation started. Native filesystem
+  probes use temporary workspace fixtures. Actual WebView2 playback interaction
+  and Linux/WebKitGTK acceptance remain separate; the Linux descriptor/capture
+  deletion logic is retained.
+
+Evidence: ignored `output/media-delete-before.log`, `media-delete-diagnose.log`,
+`media-delete-fixed.log`, `media-delete-video-source.log`, `media-delete-ui.log`,
+`media-delete-native-full.log` and `media-delete-clippy.log`.
+
+## Compact tag options and removing imported sources — 2026-11-17
+
+Corrected the global full-width text-input rule stretching checkbox/radio controls
+in the prompt options dialog. Controls now use fixed 14 px widths beside their
+labels, display modes and numeric choices share compact rows, and the merged
+source has a short translated label with its filename in a tooltip. Removed the
+classified, separate Danbooru and e621 automatic source entries. Their old saved
+enabled selections are filtered and migrated out; original CSVs and old cache
+files are left alone. Native source discovery now lists Built-in and merged plus
+explicit custom imports.
+
+Imported sources have a red trash icon. Native removal accepts only validated
+custom source IDs, removes only the DEAS index under the environment's tag cache,
+uses the shared index mutex, reports redacted success/failure to central Logs and
+never follows the recorded original-CSV path. Built-in and merged presets cannot
+be removed. UI selection is cleared only after successful native removal; errors
+retain the source. The command is explicitly allowed for the main window.
+
+- Typecheck/production frontend build and 165 core tests passed (one core skip).
+- 48 focused prompt/options/setup UI cases passed, including removal success/failure,
+  settings migration, global synchronization and preserved floating completion.
+  Setup-selected autocomplete on/off states survive popup display changes and
+  remounting; importing a source does not silently enable autocomplete.
+- Eight native tag cases passed, one optional real-dictionary benchmark skipped.
+  Removal verifies the original CSV contents remain byte-identical, the other
+  cached source remains, removed sources disappear, repeated removal is safe and
+  preset/traversal IDs are rejected. Command permission regression passed.
+  Clippy passed with the previously documented baseline lint allowance.
+- Chromium: all 24 locale/desktop cases passed with 14 px control-width and
+  adjacent-label checks, compact dialog bounds, import/remove interaction and
+  absence of removed preset selections. The English dialog is approximately
+  472 px tall. A synthetic fixture image was inspected; no native DEAS view was
+  captured. The shared workspace layout gate also passed all 467 checks.
+  Reports: ignored `output/tag-compact-*.log` and
+  `output/tag-compact-browser`.
+- No user CSV appears in tracked application files or frontend output. The Tauri
+  resource configuration includes only theme resources. No external CSV is copied
+  into the executable or repository, and no original CSV was deleted.
+
+## Local tag dictionaries and floating prompt completion — 2026-11-17
+
+The positive prompt's tag-plus button controls the shared writing-aid switch,
+inline/floating display, result limit, source selection, aliases, substring
+matching and minimum post count. Imports and searches run in native blocking
+workers. Only explicit source enabling/import builds an atomic SQLite index;
+typing never parses CSV files. Errors reach central Logs with operation identity,
+redacted queries/paths and per-operation rate limiting. Cancellation is quiet.
+The three native commands have a main-window-only capability.
+
+- Typecheck and production frontend build passed. Core: 165 passed, one skipped.
+  Full UI suite: 2,137 passed. Final prompt/options checks: 37 passed, including
+  shared settings, StrictMode source import, cancellation/errors, late-result
+  rejection, floating portal insertion and keyboard acceptance.
+- Eight native tag tests passed, including an explicit read-only benchmark against
+  all four user-supplied dictionaries with temporary output indexes. Danbooru:
+  183,174 tags; e621: 129,525 tags and one invalid row skipped; merged: 295,050 tags;
+  classified: 114,092 tags. The classified file's optional fifth description column
+  is supported. Descriptions are never aliases. Import took under 2.4 seconds per
+  source; sampled queries took under 40 ms on this machine. These are fixture
+  measurements, not native UI latency guarantees.
+- Native tests cover quoted/multiline/BOM CSV, alias and category handling,
+  duplicate counts, exact-name ranking, literal LIKE characters, model tag spelling,
+  missing original files, malformed/oversized imports retaining the previous index,
+  discovery from configured models and redacted/rate-limited central log delivery.
+  Command ACL regression passed after adding the explicit permission.
+- Chromium: 24 prompt-control cases across all six locales at 1920×1080, 1440×900,
+  1280×720 and 1024×600. Checked icon hit targets, no overlap, internal modal scroll,
+  one explicit import, shared positive/negative settings, 32 results outside the
+  textarea, viewport resizing, keyboard insertion, inline fallback and disabling.
+  Browser checking corrected modal focus restoration and an inline list covering
+  the action rail. Shared layout gate: 467 passed. Paired-output pointer checks:
+  passed with no product findings. All native IPC/media were synthetic.
+- Broader serial native run: 949 passed, 74 ignored, four failures. The command ACL
+  failure was fixed and its isolated rerun passed. Three failures concern unchanged
+  Windows `media_delete` fixtures (regular-file deletion, namespace replacement and
+  retained-video identity); they are outside this autocomplete change. Unmodified
+  Rust 1.100 Clippy findings in `audio_runtime`, `jobs_auto_refine` and `jobs_preview`
+  use the `chunks_exact_to_as_chunks` lint. Clippy passed with only that existing
+  lint allowed; no source changes were made to those modules.
+
+Evidence is in ignored `output/tag-completion-*.log`, the 24-case browser report
+under `output/tag-completion-browser` and isolated workspace/paired-output reports.
+No model scan, generation, backend restart, native app launch/capture, CSV rewrite,
+user-cache migration or network tag lookup was performed. Windows WebView2 and
+Linux/WebKitGTK interaction acceptance remains separate from Chromium fixtures.
+
+## Pointer reordering, audio cards and H3 image-edit References — 2026-11-17
+
+Reference grips now share pointer capture, grid/list snapping, edge scrolling and
+Escape cancellation with LoRA sets. Scroll anchoring is disabled only during a drag
+so it cannot fight edge scrolling. Audio cards lazily mount the existing crop player;
+changing the active card or opening an editor stops it. Linux retains the native
+audio transport with compact controls; Windows/browser uses browser audio. Trim
+warnings and media errors occupy a fixed notice area above the fields.
+
+H3 image edit now has a large pinned Picture 1 preview with its source controls
+underneath, a compact Add button and an eight-reference grid. Source swapping and
+promotion, history replacement and the native image-edit intent are preserved.
+No Video/Audio/RefMod panes or large assignment box are added to this image-only UI.
+
+- Typecheck/production frontend build passed. Core: 165 passed, one skipped.
+- Full UI run: 2,129 passed with one unrelated queue-preview timing failure; its
+  isolated retry passed. Final focused checks: 101 passed across reference media,
+  image-reference history/logging, reference panels, LoRA sets and native player UI.
+  The H3 Workbench integration file passed all 86 tests after the image-picker change.
+- Video References: 24 Chromium cases across six locales and four desktop sizes.
+  Real mouse capture snaps grid rows and rolls back on Escape; edge scrolling reaches
+  hidden audio rows. Real synthetic WAV playback starts/pauses/stops on opening Edit.
+  Invalid/valid trim transitions preserve dialog, field and action bounds exactly.
+- Image References: 24 Chromium cases with all eight references reachable without
+  scrolling, pinned source through reorder, source swapping/promotion, nested preview,
+  explicit Add and stable empty/full pane bounds. All visible actions are reachable.
+- Shared viewport gate: 467 checks passed. Paired-output pointer fixture: 16 checks
+  passed with no product findings. Browser evidence is synthetic Chromium, distinct
+  from native Windows/WebView2 and Linux GTK/WebKit runtime acceptance.
+
+No real model scan, generation, backend restart or native DEAS capture was performed.
+Generation intents, limits and worker execution were not changed.
+
+Windows x64 offline release build passed. The final JavaScript/CSS asset names
+were verified inside the executable before installation, and the installed SHA-256
+was checked after replacement:
+`e43735b2ba6ca1b7fdb540ace268c16d419fdc97ac8b268faafaac732fe93656`.
+The previous local executable is backed up; settings/cache were not modified.
+
+## H3 Video duplicate slots and visible reference actions — 2026-11-17
+
+H3 Video now permits repeated reference files in independent slots, while LTX
+keeps its existing admission behavior. UI slot identities distinguish editing,
+paste replacement, reordering and removal; they are omitted from packs and native
+intents. The captured Run keeps both same-file slots and performs one upload.
+The existing Character/Forge role behavior is unchanged. Edit, earlier/later,
+insert and red Remove icons replace the card menus; RefMods also have visible
+edit/insert/remove icons with translated tooltips and accessible names.
+
+- Core: 165 passed, one skipped. UI: 2,126 passed with one unrelated download-panel
+  cancellation timing failure; that file passed all 41 tests on isolated rerun.
+  Reference tests include independent duplicate editing/removal, ninth-image
+  admission limits, duplicate pack round trips and slot-specific paste replacement.
+- Chromium reference fixture: 24 cases across six locales and four desktop sizes.
+  Visible action centers are reachable and contained in their cards, Remove has
+  its danger color before hover, and repeated files retain separate editor values
+  through reorder/remove. The nine-image grid and fixed pane bounds remain intact.
+- Shared viewport gate: 467 checks passed. Paired-output pointer fixture: 16
+  functional checks passed, no product findings. Typecheck/production frontend
+  build passed. These fixtures use synthetic media and mocked IPC, with no real
+  model scans, uploads, inference or native DEAS capture.
+
+Windows/WebView2 and Linux GTK/WebKit interaction remain separate runtime
+acceptance; this entry does not claim real-model generation or native playback.
+
+Windows x64 offline release build passed. Final frontend asset names were verified
+in the executable and its installed checksum was checked after replacement. The
+previous local build is retained as a backup. Installed SHA-256:
+`128796aeecfab2f18b24ea645b1836ec9e13abaed935d382c94027479ae0e711`.
+No settings/cache changes, backend restart or native app launch were performed.
+
+## Local H3 Video References workspace — 2026-11-17
+
+Presentation-only changes against official 0.2.39/main `b23de718`: compact
+assignment and pack controls, a reserved nine-image grid, independent Video,
+Audio and RefMod lists, nested reference/RefMod editors and a remembered lower
+divider. H3 image-edit and non-H3 reference layouts are unchanged.
+
+Verification on Windows:
+
+- Typecheck and production frontend build passed. Core suite: 165 passed, one
+  skipped (166 total). Full UI suite: 2,122 passed; the final targeted suite
+  passed 161 tests, including the added H3 compact-role search regression.
+- `verify_reference_manager.py`: 24 Chromium cases across all six locales at
+  1920×1080, 1440×900, 1280×720 and 1024×768. Empty/full/empty reference lists
+  preserve identical pane bounds; all nine images fit without scrolling. Wheel
+  checks separate browser folders/files; reference lists scroll independently.
+  Nested editors, menu Escape/focus restoration and keyboard divider resizing pass.
+  The stress fixture deliberately includes retained over-limit rows; this does not
+  change normal admission limits or permit generation with those rows.
+- Shared viewport gate: 467 checks passed, including dynamic tabs/locales,
+  resize/return navigation and the deliberately broken negative control.
+- Paired-output pointer fixture: 16 functional checks, no product findings.
+- Role fixture: 18 locale/width cases passed with simulated IPC and no upload or
+  submission. Browser evidence is Chromium with synthetic media, not native
+  Windows/WebView2 or Linux GTK/WebKit acceptance.
+- Existing playback fixture: all 18 locale/width cases passed with generated
+  MP4/WAV crops, nested-modal focus and stream/lane changes. An initial audio
+  timing timeout did not recur on the complete rerun; playback implementation
+  was not changed for this layout.
+- Windows x64 offline release build passed. Both final frontend asset names
+  were verified in the executable before installation. Installed SHA-256:
+  `31a4cb35f1961b7674c73afb54227dfd633030b8afa44f8f9396f70e58989d1c`.
+  The previous official executable was retained as a local backup.
+
+No real model discovery, generation, backend restart or native DEAS capture was
+performed. Existing pack formats, role admission, crop data and native execution
+are retained. Build/install receipts and screenshots are ignored local artifacts
+under `output/`; no user cache, credentials or media are included in this change.
+
+## Library Catalog parity — stopped mid-change (0.2.40)
+
+**Historical stopped snapshot; superseded by the integrated verification above.**
+
+**Unfinished, uncommitted working tree.** The owner stopped implementation and
+requested a progress record. The published release/tag and launchable binary
+remain 0.2.39; no 0.2.40 binary build, commit, push or release was performed.
+The ordered continuation and source-review concerns are in PLAN.
+
+Evidence obtained before stopping:
+
+- The toolbar regression was observed failing on Catalog/Installed order, then
+  passed after reversing the tabs and putting source, search and Download all in
+  one action row. The native-search regression was observed failing when a
+  provider result's title omitted its query; it passed after keeping the native
+  search result set authoritative until the search field is edited again.
+- Focused component tests reached **77 passed across four files** (download panel,
+  CatalogGallery, InstalledGallery and organization), followed by **57 passed
+  across two files** (download panel and global search). These are intermediate
+  runs, not acceptance of the final source: explicit Catalog dropdown accessible
+  names and six-locale metadata/date label changes were added afterwards.
+- Typecheck passed before those final label/API edits. No final core/i18n,
+  full-UI, production build, native compilation or independent review was run.
+  Do not reuse 0.2.39's successful suites as proof of this 0.2.40 working tree.
+- A real Chromium stylesheet-order probe reproduced the misplaced placeholder
+  (`display:block`, center deltas -98/-138 px). The corrected specificity and
+  positioning produced `display:flex` and deltas **0/0 px**.
+- `tools/verify_library_catalog.py` finally passed **eight check groups** with
+  synthetic catalog/model data and simulated IPC: bounded cards, annotation
+  namespace isolation, five widths (1600/1280/960/640/320), and retained creator
+  cards while selecting a model's file into the unchanged download basket.
+  This exercised no real provider, download, model scan or native filesystem action.
+- Screenshots were inspected. The 320px view has very little visible vertical
+  room for filters/cards after the header and action line; usability needs review
+  despite passing control bounds. The Installed fixture screenshot displays a
+  metadata-lookup failure, whose fixture status response has not been investigated.
+  Neither observation is claimed as a diagnosed native-runtime defect.
+
+The final browser result and screenshots were copied to the local ignored folder
+`artifacts/verification/library-catalog-0.2.40-stopped/`: `result.json`,
+`catalog-1600.png`, `catalog-960.png`, `catalog-320.png` and
+`installed-placeholder.png`. They are synthetic evidence, not captures of the
+owner's library. No test/build process remains running for this slice. Existing
+working-tree changes and all four new source/test/verifier files are preserved.
+
 ## Release 0.2.39 (published) — 2026-11-16
 
 Published [v0.2.39](https://github.com/darksidewalker/DEAS/releases/tag/v0.2.39)

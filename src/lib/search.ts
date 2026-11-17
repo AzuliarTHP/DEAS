@@ -31,6 +31,15 @@ export interface SearchEntry {
 const studio: SearchView = 'studio';
 
 export const searchIndex: readonly SearchEntry[] = [
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.title',target:'[data-prompt-tag-options]',aliases:['autocomplete options','local CSV dictionary']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'settings.prompt.autocomplete',target:'[data-tag-option="enabled"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.inline',target:'[data-tag-option="inline"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.floating',target:'[data-tag-option="floating"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.limit',target:'[data-tag-option="limit"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.minimum',target:'[data-tag-option="minimum"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.aliases',target:'[data-tag-option="aliases"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.contains',target:'[data-tag-option="contains"]',aliases:['autocomplete','prompt tags']},
+  {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'setup.tab.studio',section:'tagCompletion.title',label:'tagCompletion.import',target:'[data-tag-option="import"]',aliases:['autocomplete','prompt tags']},
   {view:studio,studioTab:'generate',dockTab:'post',tab:'setup.tab.studio',section:'studio.run.post.group.latent',label:'studio.run.streamDecode.label',target:'[data-stream-decode]',aliases:['H3','streaming','bounded pixel RAM','decode','export'],reason:'studio.run.streamDecode.hint'},
   {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.smoothAudioSeams',target:'[data-cont-join-smooth-audio]',aliases:['audio','seam','smoothing','fade','join'],reason:'studio.run.cont.join.smoothAudioSeamsHint'},
   {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.cont.join.title',label:'studio.run.cont.join.transitions',target:'[data-cont-join-transition]',aliases:['H3','transition','join'],reason:'studio.run.cont.join.hint'},
@@ -257,6 +266,21 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: 'downloads', libraryView: 'installed', tab: 'downloads.title', section: 'downloads.view.installed', label: 'downloads.view.installed', target: '[data-library-tab="installed"]', aliases: ['local'], reason: 'search.reason.installed' },
   { view: 'downloads', libraryView: 'installed', tab: 'downloads.title', section: 'downloads.view.installed', label: 'downloads.installed.scanAll', target: '[data-scan-files]', aliases: ['metadata', 'civitai'], reason: 'search.reason.installed' },
   { view: 'downloads', libraryView: 'installed', tab: 'downloads.title', section: 'downloads.view.installed', label: 'downloads.installed.scanScope', target: '[data-scan-scope]', aliases: ['scan', 'scope'], reason: 'search.reason.installed' },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.favorites', target: '[data-catalog-favorites]', aliases: ['catalog favorites'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.folderTree', target: '[data-catalog-gallery] [data-model-folder-tree]', aliases: ['catalog groups'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.base', target: '[data-catalog-base]', aliases: ['catalog base family'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'downloads.media', target: '[data-catalog-media]', aliases: ['catalog model type'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.metadata', target: '[data-catalog-metadata]', aliases: ['catalog metadata'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.tags', target: '[data-catalog-tags]', aliases: ['catalog tag filter'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.blur', target: '[data-catalog-blur]', aliases: ['catalog mature previews'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.reset', target: '[data-catalog-reset]', aliases: ['catalog clear filters'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.sort', target: '[data-catalog-sort] select', aliases: ['catalog sorting'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.viewAll', target: '[data-catalog-view-all] input', aliases: ['catalog show all'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.grid', target: '[data-catalog-layout-mode="grid"]', aliases: ['catalog grid'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.list', target: '[data-catalog-layout-mode="list"]', aliases: ['catalog list'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.notes', target: '[data-catalog-detail-notes]', aliases: ['catalog personal notes'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'library.editTags', target: '[data-catalog-detail-tags]', aliases: ['catalog edit tags'] },
+  { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'downloads.basket', target: '.download-start-all', aliases: ['catalog download selected files'] },
   // Comfy
   { view: 'comfy', tab: 'setup.tab.comfy', section: 'setup.comfy.title', label: 'setup.comfy.title', target: 'iframe', aliases: ['workflow', 'editor'], reason: 'search.reason.backend' },
   // Backend
@@ -315,6 +339,9 @@ export interface RevealOutcome {
 
 /** Opens collapsed ancestors, scrolls to the control and flashes it; reports a currently disabled control. */
 export function revealTarget(target: string): RevealOutcome {
+  if(target==='[data-prompt-tag-options]'||target.startsWith('[data-tag-option='))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-pane-toggle="prompt"][aria-expanded="false"]')?.click());
+  if(target.startsWith('[data-tag-option=')&&!document.querySelector(target))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-prompt-tag-options]')?.click());
+  if((target==='[data-catalog-detail-notes]'||target==='[data-catalog-detail-tags]')&&!document.querySelector(target))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-catalog-gallery] .catalog-details')?.click());
   if(target.includes(' [data-studio-selection='))flushSync(()=>document.querySelector<HTMLButtonElement>(`${target.split(' ')[0]} [data-family-select][aria-pressed="false"]`)?.click());
   if(target.startsWith('[data-cont-join-'))flushSync(()=>{
     document.querySelector<HTMLButtonElement>('[data-pane-toggle="settings"][aria-expanded="false"]')?.click();
@@ -332,6 +359,13 @@ export function revealTarget(target: string): RevealOutcome {
       dock.click();
       delete dock.dataset.revealOpen;
     }
+  }
+  const role = /^\[data-video-role="(first|last|both|reference|source)"\]$/.exec(target)?.[1];
+  if(role&&!document.querySelector(target)){
+    const select=document.querySelector<HTMLSelectElement>('.reference-assignment select');
+    if(select&&Array.from(select.options).some(option=>option.value===role))flushSync(()=>{
+      select.value=role;select.dispatchEvent(new Event('change',{bubbles:true}));
+    });
   }
   const element = document.querySelector<HTMLElement>(target);
   if (!element) return { state: 'missing' };
