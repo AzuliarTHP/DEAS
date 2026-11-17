@@ -2,6 +2,12 @@
 
 ## 0.2.41 BETA (unreleased)
 
+### tidier preview and Library controls
+
+The Original/Processed buttons above a post-processed result follow your colour
+scheme like every other button, and the Library search fields are now the same
+height as the other searches. See [Studio](STUDIO.md) and [Library](LIBRARY.md).
+
 ## 0.2.40 BETA
 
 ### empty H3 drafts start in T2VA

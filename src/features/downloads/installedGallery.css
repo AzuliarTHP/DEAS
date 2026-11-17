@@ -31,7 +31,7 @@
 .library-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; }
 .library-search { display:flex; flex:1 1 13rem; align-items:center; min-width:0; gap:.5rem; padding:0 .7rem; border:1px solid var(--library-border); border-radius:.5rem; background:var(--field); }
 .library-search>svg { flex:none; color:var(--muted); }
-.download-controls .library-search input { border:0; background:transparent; box-shadow:none; padding:.65rem 0; font-size:.8rem; outline-offset:1px; }
+.download-controls .library-search input { box-sizing:border-box; height:calc(1.8rem - 2px); min-height:0; border:0; background:transparent; box-shadow:none; padding:0; font-size:.8rem; outline-offset:1px; }
 .library-search button { background:none; border:0; padding:0; color:var(--muted); cursor:pointer; font-size:1rem; }
 .download-controls .library-sort { display:flex!important; align-items:center; gap:.4rem; color:var(--muted); font-size:.7rem; }
 .library-sort select { width:auto!important; max-width:10rem!important; padding:.5rem; font-size:.75rem; }

@@ -2,6 +2,16 @@
 
 ## 0.2.41 BETA (unreleased)
 
+### themed Original/Processed buttons and compact Library search
+
+- The **Original (before processing)** / **Processed** choice above a finished
+  paired result now uses the shared button skin of the active colour scheme
+  (raised background, hover glow, filled pressed state) instead of plain grey
+  browser buttons.
+- The Library **Search catalog & CivitAI** field (and the Installed search box) now
+  have the same 1.8rem height as the other search fields and filter selects instead
+  of being about half again as tall.
+
 ## 0.2.40 BETA
 
 ### empty H3 video mode
