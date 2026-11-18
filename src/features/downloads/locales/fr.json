@@ -70,6 +70,7 @@
   "downloads.scope.index": "Index des ressources",
   "downloads.scope.backend": "Moteur d’exécution",
   "downloads.folder.loras": "LoRA",
+  "downloads.folder.dials": "Dials",
   "downloads.folder.github-files": "Fichiers GitHub",
   "downloads.folder.huggingface-datasets": "Jeux de données Hugging Face",
   "downloads.folder.huggingface-models": "Modèles Hugging Face",

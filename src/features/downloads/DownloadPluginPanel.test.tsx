@@ -35,6 +35,34 @@ it('places Installed before Catalog and keeps download beside source and search'
  expect(vi.mocked(invoke).mock.calls.some(([c])=>['native_models_scan','native_download_browse','native_download_start'].includes(c as string))).toBe(false);
 });
 
+it('offers MatlowAI dials without downloading until requested and batches them into the configured LoRA dials folder',async()=>{
+ const label='MiniMax H3 Dials (MatlowAI)', fileNames=Array.from({length:17},(_,i)=>`h3_fixture_${i}.safetensors`);
+ const files=fileNames.map(name=>({...resource,id:name,label:name,locator:name}));
+ const hf={id:'huggingface',label:'Hugging Face',kind:'huggingface',origin:'https://huggingface.co',scopes:['repo'],anonymousNotice:''};
+ const entry={id:'matlowai-h3-dials',label,providerId:hf.id,scope:'repo',locator:'models:MATLOWAI/H3-Dials',kind:'repo',target:'dials',base:'MiniMax H3',media:'video'};
+ vi.mocked(invoke).mockImplementation(async c=>{
+  if(c==='native_download_catalog')return {...catalog,providers:[hf],entries:[entry]};
+  if(c==='native_auth_status')return [];
+  if(c==='native_files_present')return files.map(()=>false);
+  if(c==='native_download_browse')return {resources:files,warnings:[],nextCursor:null};
+  if(c==='native_download_plan')return {id:'dial-plan',canExecute:true};
+  if(c==='native_download_start')return {state:'succeeded',completed:16,total:16,bytesDownloaded:1,error:null};
+ });
+ render(<I18nProvider><DownloadPanel embedded modelsDir="/configured"/></I18nProvider>);
+ fireEvent.click(await screen.findByRole('tab',{name:'Dials'}));
+ click(label);
+ await screen.findByRole('checkbox',{name:fileNames[0]});
+ for(const name of fileNames)fireEvent.click(screen.getByRole('checkbox',{name}));
+ const plans=()=>vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_download_plan');
+ expect(plans()).toHaveLength(0);
+ click('Download all (17)');
+ await waitFor(()=>expect(plans()).toHaveLength(2));
+ for(const i of [0,1])expect(plans()[i][1]).toMatchObject({
+  request:{providerId:'huggingface',parentPath:'/configured/loras/dials',folderName:'',resources:expect.any(Array)}
+ });
+ expect(plans().map(([,args])=>(args as {request:{resources:unknown[]}}).request.resources.length)).toEqual([16,1]);
+});
+
 it('catalog uses the installed-style base filter and card grouping without implicit browse',async()=>{
  const a={...catalog.entries[0],id:'a',label:'Alpha',base:'Anima',target:'checkpoints',media:'image'},b={...a,id:'b',label:'Beta',base:'SDXL',media:'video'};
  vi.mocked(invoke).mockImplementation(async c=>c==='native_download_catalog'?{...catalog,entries:[a,b]}:c==='native_auth_status'?[]:null);

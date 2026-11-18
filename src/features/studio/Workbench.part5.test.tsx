@@ -1791,16 +1791,17 @@ test('Post-Processing overlay allows Tab focus outside, ignores hidden dialogs, 
  expect(document.activeElement).toBe(refineCard);
  hiddenHost.remove();
 
- // Inpaint Add target mask consumes its reveal request once so reopening the SAM card focuses Close instead of stealing focus to targets.
+ // Inpaint keeps the target mask action in the SAM overlay, with normal dialog focus.
  fireEvent.click(screen.getByRole('tab',{name:'Media'}));
  fireEvent.click(await screen.findByRole('button',{name:'source.png'}));adopt();
  const srcImg=screen.getByRole('img',{name:'source.png'});
  Object.defineProperties(srcImg,{naturalWidth:{value:1024},naturalHeight:{value:640}});fireEvent.load(srcImg);
  fireEvent.click(document.querySelector('[data-edit="inpaint"]')!);
- fireEvent.click(document.querySelector('.wb-side [data-sam="mask"]')!);
- const samTargetsInput=document.querySelector<HTMLInputElement>('.wb-post [data-sam="targets"]')!;
- expect(document.activeElement).toBe(samTargetsInput);
+ expect(document.querySelector('.wb-side [data-sam="mask"]')).toBeNull();
+ fireEvent.click(screen.getByRole('tab',{name:'Post-Processing'}));
  const samCard=document.querySelector<HTMLButtonElement>('[data-post-card="sam"]')!;
+ fireEvent.click(samCard);
+ expect(document.activeElement).toBe(within(getOverlay()).getByRole('button',{name:'Close'}));
  fireEvent.click(within(getOverlay()).getByRole('button',{name:'Close'}));
  expect(document.activeElement).toBe(samCard);
  fireEvent.click(samCard);

@@ -70,6 +70,7 @@
   "downloads.scope.index": "リソースインデックス",
   "downloads.scope.backend": "バックエンド",
   "downloads.folder.loras": "LoRA",
+  "downloads.folder.dials": "ダイヤル",
   "downloads.folder.github-files": "GitHub ファイル",
   "downloads.folder.huggingface-datasets": "Hugging Face データセット",
   "downloads.folder.huggingface-models": "Hugging Face モデル",

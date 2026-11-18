@@ -52,8 +52,10 @@ with sync_playwright() as p:
     page.get_by_role('button',name='Inpaint',exact=True).click()
     assert page.locator('.wb-side [data-sam-controls]').count() == 0
     assert page.locator('.wb-side [data-open-post]').count() == 0
-    page.locator('[data-sam="mask"]').click()
-    expect(page.locator('.wb-post [data-sam="targets"]')).to_be_focused()
+    expect(page.locator('.wb-side [data-sam="mask"]')).to_have_count(0)
+    page.locator('[data-dock-tab="post"]').click()
+    page.locator('[data-post-card="sam"]').click()
+    expect(page.locator('.wb-post [data-sam="mask"]')).to_be_disabled()
     overlay = page.locator('.wb-post-overlay')
     assert page.locator('.wb-post-overlay-host').evaluate('(e)=>getComputedStyle(e).position') == 'fixed'
     assert page.locator('.wb-post-overlay-host').evaluate('(e)=>getComputedStyle(e).pointerEvents') == 'none'
@@ -65,7 +67,6 @@ with sync_playwright() as p:
         assert box['y'] >= 0 and box['y'] + box['height'] <= 960, box
         assert overlay.locator('.wb-post-overlay-body').evaluate('(e)=>getComputedStyle(e).overflowY') == 'auto'
     page.set_viewport_size({'width': 1440, 'height': 960})
-    expect(page.locator('.wb-post [data-sam="targets"]')).to_have_class('search-flash')
     assert page.evaluate('window.__plans.length') == 0
     expect(page.locator('.wb-post [data-sam="model"]')).to_have_value('SAM3/sam3.1_multiplex_fp16.safetensors')
     page.locator('.wb-post [data-sam="targets"]').fill('eyes, feet, hands')

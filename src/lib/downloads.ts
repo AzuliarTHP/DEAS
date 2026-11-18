@@ -32,5 +32,5 @@ export const restoreAuthToken=(providerId:string)=>native<AuthMetadata>('native_
 export const removeAuthToken=(providerId:string)=>native<AuthMetadata>('native_auth_remove',{providerId});
 /** Where a ComfyUI category lives inside a managed DEAS environment. */
 /** Workflows live in the ComfyUI user folder; model categories follow the configured models folder when set. */
-export const comfyFolder=(installTarget:string,category:string,modelsDir?:string)=>category==='workflows'?`${installTarget}/ComfyUI/user/default/workflows`:`${modelsDir??`${installTarget}/ComfyUI/models`}/${category}`;
+export const comfyFolder=(installTarget:string,category:string,modelsDir?:string)=>category==='workflows'?`${installTarget}/ComfyUI/user/default/workflows`:`${modelsDir??`${installTarget}/ComfyUI/models`}/${category==='dials'?'loras/dials':category}`;
 export const openTokenPage=(providerId:string)=>invoke<void>('native_open_token_page',{providerId});

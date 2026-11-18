@@ -28,7 +28,7 @@ export type H3Scaling=typeof h3Scalings[number];
 export const h3OverlapFrames=[73,56,39,22,5] as const;
 export type H3OverlapFrames=typeof h3OverlapFrames[number];
 export const isH3OverlapFrames=(v:unknown):v is H3OverlapFrames=>h3OverlapFrames.some(n=>n===v);
-export interface H3Continuity { sourceKind?:'video'; session:string; sourceId:string; capture:boolean; action:string; outputMode:'full'|'segment'; overlapFrames?:H3OverlapFrames; useReferences?:boolean; durationSeconds?:number }
+export interface H3Continuity { sourceKind?:'video'; session:string; sourceId:string; capture:boolean; action:string; outputMode:'full'|'segment'; overlapFrames?:H3OverlapFrames; useReferences?:boolean; durationSeconds?:number; /** The pinned checkpoint clip's cumulative frame count as Studio read it (17k + 5). Sent only with a dial time curve; native reads the session list again and refuses a difference. */ sourceFrames?:number }
 /** TVE post-processing on the decoded frames (native `jobs_video_post.rs`): model upscale → RTX refine → frame generation. */
 export const rtxQualities=['Low','Medium','High','Ultra'] as const;
 export const rtxUpscaleModes=['VSR','High Bitrate','Streaming Medium','Streaming Ultra'] as const;
@@ -103,10 +103,17 @@ export function regenerateSize(width:number,height:number,target:H3RegenerateTar
 /** Final canvas of a latent upscale block of either kind. */
 export const latentOutputSize=(family:VideoFamily,size:{width:number;height:number},u:H3LatentUpscale|H3RegenerateUpscale|LtxLatentUpscale)=>
  u.regenerate?regenerateSize(size.width,size.height,u.regenerate.target):latentUpscaleSize(family,size,u.scale??1);
+/** Experimental Dial Rack rows (native `validate_dials`; MiniMax H3 families only, see docs/DIALS.md): a dial file inside `dials/` and its strength; `time` varies it over whole-piece seconds; its `audio` is the node's mode for the soundtrack (`follow`, the default when absent, or `protect`: the row leaves the audio undialled). */
+/** `steps` = sampler steps the curve blends on (each costs one extra model call); absent = the compiler's default for the job's step count. */
+export interface H3DialCurve { type:'keys'; points:readonly (readonly [seconds:number,level:number])[]; unit:'seconds'; interp?:'linear'|'step'; smooth?:number; steps?:number; audio?:'follow'|'protect' }
+export interface H3DialRow { dial:string; strength:number; on?:boolean; time?:H3DialCurve }
+/** What both MiniMax H3 video families share (the HyperFlow Flash GGUF variant uses the same Director block). */
+interface H3VideoFields { readonly latentUpscale?:H3LatentUpscale|H3RegenerateUpscale; readonly h3:{transition?:H3Transition;mode:'T2VA'|'I2VA'|'L2VA'|'FL2VA'|'REF2VA';audioVae:string;shiftVideo:number;shiftAudio:number;references:{slot:0|1;image:string}[];media?:H3Media[];continuity?:H3Continuity;inputScaling?:H3Scaling;refmods?:{slot:number;name:string;strength:number;description?:string}[]} }
 export type VideoIntentV1=VideoBase&(
  |{readonly family:'ltx-2';readonly latentUpscale?:LtxLatentUpscale;readonly ltx:{textProjection:string;audioVae:string;passes:1|2|3;spatialUpscaler?:string;keyframes?:{image:string;frame:number;strength:number}[];sourceStrength?:number}}
  |{readonly family:'wan';readonly latentUpscale?:never;readonly wan:{lowModel:string;shiftHigh:number;shiftLow:number;refinerStep:number}}
- |{readonly family:'minimax-h3'|'minimax-h3-hyperflow';readonly latentUpscale?:H3LatentUpscale|H3RegenerateUpscale;readonly h3:{transition?:H3Transition;mode:'T2VA'|'I2VA'|'L2VA'|'FL2VA'|'REF2VA';audioVae:string;shiftVideo:number;shiftAudio:number;references:{slot:0|1;image:string}[];media?:H3Media[];continuity?:H3Continuity;inputScaling?:H3Scaling;refmods?:{slot:number;name:string;strength:number;description?:string}[]}});
+ // Dials are on the MiniMax H3 families only (HyperFlow Flash included): native `validate_dials` refuses them for every other family.
+ |(H3VideoFields&{readonly family:'minimax-h3'|'minimax-h3-hyperflow';readonly dials?:readonly H3DialRow[]}));
 export const isVideoIntent=(i:{recipeId:string}):i is VideoIntentV1=>i.recipeId==='video-generation';
 /** Director parity Join clips: model-free DaSiWaH3ClipAssemble prompt (native `jobs_video::join`); trims are seconds. */
 export interface H3Transition { files:readonly {filename:string;trimStart?:number|null;trimEnd?:number|null}[];contextFrames:number;transitionFrames:number;prompt?:string }

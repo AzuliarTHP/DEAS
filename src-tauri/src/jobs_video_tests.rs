@@ -3494,3 +3494,1033 @@ fn dump_h3_transition_graph() {
         json!({"h3-transition": compile(&h3_transition_intent()).unwrap()})
     );
 }
+
+fn dial_row(strength: f64) -> Value {
+    json!({"dial":"dials/h3_motion.safetensors","strength":strength})
+}
+
+fn dial_curve() -> Value {
+    json!({"type":"keys","points":[[0,0.5],[1.5,1],[4,-2]],"unit":"seconds"})
+}
+
+fn timed_dial() -> Value {
+    json!({"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":dial_curve()})
+}
+
+fn dial_classes(g: &Value) -> Vec<&str> {
+    g.as_object()
+        .unwrap()
+        .values()
+        .filter_map(|n| n["class_type"].as_str())
+        .filter(|c| DIAL_NODES.contains(c))
+        .collect()
+}
+
+/// The graph without its dial nodes, their consumers wired to what the dial nodes read.
+fn without_dial_nodes(g: &Value) -> Value {
+    let mut out = g.clone();
+    for id in ["DRH", "DR"] {
+        let Some(node) = out.as_object_mut().unwrap().remove(id) else {
+            continue;
+        };
+        for other in out.as_object_mut().unwrap().values_mut() {
+            for input in other["inputs"].as_object_mut().unwrap().values_mut() {
+                if *input == json!([id, 0]) {
+                    *input = node["inputs"]["model"].clone();
+                }
+            }
+        }
+    }
+    out
+}
+
+fn rack(g: &Value) -> Value {
+    serde_json::from_str(g["DR"]["inputs"]["rack"].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn dials_absent_or_inactive_leave_every_graph_unchanged() {
+    let mut patched = h3();
+    patched["loras"] = json!([{"name":"MiniMaxH3/a.safetensors","strength":0.8}]);
+    patched["options"] =
+        json!({"attention":"pytorch attention","cache":{"node":"EasyCache","threshold":0.2}});
+    patched["chunks"] = json!(2);
+    let mut derope = h3();
+    derope["videoPost"] =
+        json!({"derope":{"preset":"balanced","inject":0.48,"lora":"h3_turbo.safetensors"}});
+    let mut full = continued("full");
+    full.as_object_mut().unwrap().remove("videoPost");
+    for base in [h3(), patched, derope, regenerate_intent(), full] {
+        let expected = compile(&base).unwrap().to_string();
+        assert!(!expected.contains("MAIDial"));
+        for rows in [
+            json!([]),
+            json!([{"dial":"dials/h3_motion.safetensors","strength":1.5,"on":false}]),
+            json!([dial_row(0.0), {"dial":"dials/b.safetensors","strength":0,"on":true}]),
+            // An inactive row's time curve asks for nothing either.
+            json!([{"dial":"dials/b.safetensors","strength":1,"on":false,"time":dial_curve()},
+                {"dial":"dials/c.safetensors","strength":0.0,"time":dial_curve()}]),
+        ] {
+            let mut i = base.clone();
+            i["dials"] = rows;
+            assert_eq!(compile(&i).unwrap().to_string(), expected, "{}", i["dials"]);
+            assert_eq!(requirements(&i), requirements(&base));
+            assert_eq!(needs_source_frames(&i), needs_source_frames(&base));
+        }
+    }
+}
+
+#[test]
+fn dial_rack_sits_between_the_last_lora_and_the_first_options_patch() {
+    // No LoRA, no Options: loader -> rack -> Director.
+    let base = h3();
+    let mut i = base.clone();
+    i["dials"] = json!([dial_row(1.5), timed_dial()]);
+    let g = compile(&i).unwrap();
+    assert_eq!(g["DR"]["class_type"], "MAIDialRack");
+    assert_eq!(g["DR"]["inputs"]["model"], json!(["1", 0]));
+    assert_eq!(g["D"]["inputs"]["fl2va_model"], json!(["DR", 0]));
+    assert_eq!(
+        g["DR"]["inputs"].as_object().unwrap().len(),
+        2,
+        "model and rack only: no wired dials, curve audio or hold map"
+    );
+    // The exact string MAIDialRack.execute parses: active rows, curves in explicit seconds.
+    assert_eq!(
+        g["DR"]["inputs"]["rack"],
+        r#"[{"dial":"dials/h3_motion.safetensors","strength":1.5},{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{"interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":4,"type":"keys","unit":"seconds"}}]"#
+    );
+    assert_eq!(dial_classes(&g), ["MAIDialRack"]);
+    assert_eq!(without_dial_nodes(&g), compile(&base).unwrap());
+    assert!(requirements(&i).contains(&(
+        "loras",
+        vec![
+            "dials/h3_motion.safetensors",
+            "dials/sub/h3_calm.safetensors"
+        ]
+    )));
+
+    // LoRAs and every Options patch: last LoRA -> rack -> first patch, the rest of the chain as before.
+    let mut chain = h3();
+    chain["loras"] = json!([{"name":"MiniMaxH3/a.safetensors","strength":0.8},{"name":"b.safetensors","strength":-1}]);
+    chain["options"] = json!({"attention":"pytorch attention","cache":{"node":"EasyCache","threshold":0.2},"compile":"inductor"});
+    chain["chunks"] = json!(2);
+    let plain = compile(&chain).unwrap();
+    assert_eq!(plain["A"]["inputs"]["model"], json!(["L2", 0]));
+    chain["dials"] = json!([dial_row(1.0)]);
+    let g = compile(&chain).unwrap();
+    assert_eq!(g["DR"]["inputs"]["model"], json!(["L2", 0]));
+    assert_eq!(g["A"]["inputs"]["model"], json!(["DR", 0]));
+    assert_eq!(g["E"]["inputs"]["model"], json!(["A", 0]));
+    assert_eq!(g["H"]["inputs"]["model"], json!(["E", 0]));
+    assert_eq!(g["T"]["inputs"]["model"], json!(["H", 0]));
+    assert_eq!(g["D"]["inputs"]["fl2va_model"], json!(["T", 0]));
+    assert_eq!(without_dial_nodes(&g), plain);
+
+    // Options without LoRAs, and each patch that can come first.
+    for (options, first) in [
+        (json!({"attention":"pytorch attention"}), "A"),
+        (json!({"sage":"auto"}), "K"),
+        (json!({"cache":{"node":"LazyCache","threshold":0.1}}), "E"),
+        (json!({"compile":"inductor"}), "T"),
+    ] {
+        let mut i = h3();
+        i["options"] = options;
+        i["dials"] = json!([dial_row(1.0)]);
+        let g = compile(&i).unwrap();
+        assert_eq!(g["DR"]["inputs"]["model"], json!(["1", 0]), "{first}");
+        assert_eq!(g[first]["inputs"]["model"], json!(["DR", 0]), "{first}");
+    }
+    // Chunking alone, and LoRAs alone.
+    let mut i = h3();
+    i["chunks"] = json!(3);
+    i["dials"] = json!([dial_row(1.0)]);
+    assert_eq!(
+        compile(&i).unwrap()["H"]["inputs"]["model"],
+        json!(["DR", 0])
+    );
+    let mut i = h3();
+    i["loras"] = json!([{"name":"a.safetensors","strength":1}]);
+    i["dials"] = json!([dial_row(1.0)]);
+    let g = compile(&i).unwrap();
+    assert_eq!(g["DR"]["inputs"]["model"], json!(["L1", 0]));
+    assert_eq!(g["D"]["inputs"]["fl2va_model"], json!(["DR", 0]));
+
+    // REF2VA feeds the Director's other socket.
+    let mut r = h3();
+    r["h3"]["mode"] = json!("REF2VA");
+    r["h3"]["references"] = json!([]);
+    r["h3"]["media"] = json!([{"type":"image","file":"deas-inputs/a.png","slot":0}]);
+    r["dials"] = json!([dial_row(1.0)]);
+    assert_eq!(
+        compile(&r).unwrap()["D"]["inputs"]["ref2va_model"],
+        json!(["DR", 0])
+    );
+}
+
+#[test]
+fn dial_rack_json_keeps_active_rows_and_authored_curve_settings() {
+    let mut i = h3();
+    i["dials"] = json!([
+        {"dial":"dials/off.safetensors","strength":2,"on":false},
+        {"dial":"dials/zero.safetensors","strength":0},
+        {"dial":"dials/h3_motion.safetensors","strength":1,"on":true,
+            "time":{"type":"keys","points":[[-1,0],[2.5,1.25]],"unit":"seconds","interp":"step","smooth":0.25}},
+        {"dial":"dials/Day Night.SAFETENSORS","strength":-20},
+    ]);
+    let g = compile(&i).unwrap();
+    // Off and zero-strength rows are dropped (the node would skip them); `on` is not sent.
+    assert_eq!(
+        g["DR"]["inputs"]["rack"],
+        r#"[{"dial":"dials/h3_motion.safetensors","strength":1,"time":{"interp":"step","points":[[-1,0],[2.5,1.25]],"smooth":0.25,"steps":4,"type":"keys","unit":"seconds"}},{"dial":"dials/Day Night.SAFETENSORS","strength":-20}]"#
+    );
+    assert_eq!(
+        requirements(&i)
+            .into_iter()
+            .filter(|(field, _)| *field == "loras")
+            .collect::<Vec<_>>(),
+        [(
+            "loras",
+            vec!["dials/h3_motion.safetensors", "dials/Day Night.SAFETENSORS"]
+        )]
+    );
+    // One point is a legal curve (check_spec: at least one).
+    i["dials"] = json!([{"dial":"dials/a.safetensors","strength":1,"time":{"type":"keys","points":[[3,1]],"unit":"seconds"}}]);
+    assert_eq!(
+        rack(&compile(&i).unwrap())[0]["time"]["points"],
+        json!([[3, 1]])
+    );
+    // The bounds themselves are legal.
+    let points: Vec<Value> = (0..64).map(|n| json!([n, 20])).collect();
+    i["dials"] = json!((0..8)
+        .map(
+            |n| json!({"dial":format!("dials/d{n}.safetensors"),"strength":20,
+        "time":{"type":"keys","points":points,"unit":"seconds","smooth":1}})
+        )
+        .collect::<Vec<_>>());
+    assert_eq!(rack(&compile(&i).unwrap()).as_array().unwrap().len(), 8);
+}
+
+#[test]
+fn dial_time_curve_audio_mode_is_written_only_when_authored() {
+    let mut i = h3();
+    i["dials"] = json!([dial_row(1.5), timed_dial()]);
+    let absent = compile(&i).unwrap().to_string();
+    // Without the field the emitted rack is byte for byte what it was before the field existed.
+    assert_eq!(
+        compile(&i).unwrap()["DR"]["inputs"]["rack"],
+        r#"[{"dial":"dials/h3_motion.safetensors","strength":1.5},{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{"interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":4,"type":"keys","unit":"seconds"}}]"#
+    );
+    for mode in ["protect", "follow"] {
+        i["dials"][1]["time"]["audio"] = json!(mode);
+        let g = compile(&i).unwrap();
+        assert_eq!(
+            g["DR"]["inputs"]["rack"],
+            format!(
+                r#"[{{"dial":"dials/h3_motion.safetensors","strength":1.5}},{{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{{"audio":"{mode}","interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":4,"type":"keys","unit":"seconds"}}}}]"#
+            )
+        );
+        // Only the rack text differs: the mode adds no node and no wire.
+        let mut same = g.clone();
+        same["DR"]["inputs"]["rack"] =
+            serde_json::from_str::<Value>(&absent).unwrap()["DR"]["inputs"]["rack"].clone();
+        assert_eq!(same.to_string(), absent, "{mode}");
+    }
+    // The mode belongs to a curve: the node knows `follow` and `protect` only.
+    for bad in [
+        json!("mute"),
+        json!("Protect"),
+        json!(""),
+        json!(true),
+        json!(null),
+        json!(1),
+        json!(["protect"]),
+    ] {
+        i["dials"][1]["time"]["audio"] = bad.clone();
+        assert!(
+            compile(&i).unwrap_err().contains("audio? follow|protect}"),
+            "{bad}"
+        );
+        // A row that is off is still checked.
+        i["dials"][1]["on"] = json!(false);
+        assert!(compile(&i).is_err(), "{bad}");
+        i["dials"][1]["on"] = json!(true);
+    }
+    i["dials"][1]["time"]["audio"] = json!("protect");
+    i["dials"][1]["audio"] = json!("protect");
+    assert!(compile(&i)
+        .unwrap_err()
+        .contains("{dial, strength, on?, time?}"));
+    // The preset save path uses the same row check.
+    assert!(validate_dial_row(
+        &json!({"dial":"dials/a.safetensors","strength":1,"time":{"type":"keys","points":[[0,0],[1,1]],"unit":"seconds","audio":"protect"}})
+    )
+    .is_ok());
+}
+
+/// The newly visible frames of a continued step for every plan length Studio offers (0.5 to 15 s in
+/// 0.5 s steps), by both rules: `by_duration` when the intent authors `durationSeconds` (Studio
+/// sends it for REF2VA only), `by_frames` when the Director gets `frames / 24` (every other mode;
+/// `frames` is the 17k + 5 count Studio sends for those seconds). Computed from the node pack's
+/// `continuation_timing` and `align_frame_count` (ComfyUI-DaSiWa-Nodes d90dd88). The rack dialog's
+/// lane length is tested against this same table (`src/lib/dialCurve.test.ts`).
+#[test]
+fn continuation_extension_follows_the_duration_the_director_receives() {
+    for (seconds, frames, by_duration, by_frames) in [
+        (0.5, 22, 17, 17),
+        (1.0, 39, 17, 34),
+        (1.5, 39, 34, 34),
+        (2.0, 56, 51, 51),
+        (2.5, 73, 68, 68),
+        (3.0, 73, 68, 68),
+        (3.5, 90, 85, 85),
+        (4.0, 107, 102, 102),
+        (4.5, 124, 102, 119),
+        (5.0, 124, 119, 119),
+        (5.5, 141, 136, 136),
+        (6.0, 158, 136, 153),
+        (6.5, 158, 153, 153),
+        (7.0, 175, 170, 170),
+        (7.5, 192, 187, 187),
+        (8.0, 192, 187, 187),
+        (8.5, 209, 204, 204),
+        (9.0, 226, 221, 221),
+        (9.5, 243, 221, 238),
+        (10.0, 243, 238, 238),
+        (10.5, 260, 255, 255),
+        (11.0, 277, 272, 272),
+        (11.5, 277, 272, 272),
+        (12.0, 294, 289, 289),
+        (12.5, 311, 306, 306),
+        (13.0, 328, 306, 323),
+        (13.5, 328, 323, 323),
+        (14.0, 345, 340, 340),
+        (14.5, 362, 340, 357),
+        (15.0, 362, 357, 357),
+    ] {
+        let mut i = continued("full");
+        i["frames"] = json!(frames);
+        i["h3"]["continuity"]["durationSeconds"] = json!(seconds);
+        assert_eq!(continuation_extension(&i), Some(by_duration), "{seconds} s");
+        i["h3"]["continuity"]
+            .as_object_mut()
+            .unwrap()
+            .remove("durationSeconds");
+        assert_eq!(
+            continuation_extension(&i),
+            Some(by_frames),
+            "{frames} frames"
+        );
+    }
+}
+
+#[test]
+fn dial_time_curves_always_carry_their_blend_steps() {
+    // Provisional default: every step of a job of at most 8 steps (a look dial needed all 6 of 6,
+    // the motion dial behaved the same with 6 as with 2), a third above that, at least 2
+    // (25 -> 8 acted where 2 did not). One seed each.
+    for (steps, expected) in [
+        (1, 1),
+        (2, 2),
+        (3, 3),
+        (4, 4),
+        (6, 6),
+        (7, 7),
+        (8, 8),
+        (9, 3),
+        (12, 4),
+        (20, 7),
+        (25, 8),
+        (30, 10),
+        (50, 17),
+        (150, 50),
+    ] {
+        assert_eq!(dial_blend_steps(steps), expected, "{steps}");
+        let mut i = h3();
+        i["steps"] = json!(steps);
+        i["dials"] = json!([dial_row(1.5), timed_dial()]);
+        let rows = rack(&compile(&i).unwrap());
+        assert!(rows[0].get("time").is_none(), "a constant row has no curve");
+        assert_eq!(rows[1]["time"]["steps"], json!(expected), "{steps}");
+    }
+    // The exact rack string of a 6-step job: the curve blends on all 6 steps.
+    let mut i = h3();
+    i["steps"] = json!(6);
+    i["dials"] = json!([dial_row(1.5), timed_dial()]);
+    assert_eq!(
+        compile(&i).unwrap()["DR"]["inputs"]["rack"],
+        r#"[{"dial":"dials/h3_motion.safetensors","strength":1.5},{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{"interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":6,"type":"keys","unit":"seconds"}}]"#
+    );
+    // The exact rack string at 25 steps, default and authored.
+    let mut i = h3();
+    i["steps"] = json!(25);
+    i["dials"] = json!([timed_dial()]);
+    assert_eq!(
+        compile(&i).unwrap()["DR"]["inputs"]["rack"],
+        r#"[{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{"interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":8,"type":"keys","unit":"seconds"}}]"#
+    );
+    for authored in [1, 2, 12, 25] {
+        i["dials"][0]["time"]["steps"] = json!(authored);
+        assert_eq!(
+            rack(&compile(&i).unwrap())[0]["time"]["steps"],
+            json!(authored)
+        );
+    }
+    i["dials"][0]["time"]["steps"] = json!(12);
+    assert_eq!(
+        compile(&i).unwrap()["DR"]["inputs"]["rack"],
+        r#"[{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{"interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":12,"type":"keys","unit":"seconds"}}]"#
+    );
+    // More blend steps than the job samples.
+    i["dials"][0]["time"]["steps"] = json!(26);
+    assert_eq!(
+        compile(&i).unwrap_err(),
+        "Invalid dials: time.steps (blend steps) cannot exceed the job's 25 sampler steps"
+    );
+    // An inactive row's count is not held against the job, only its shape is checked.
+    i["dials"][0]["on"] = json!(false);
+    assert!(compile(&i).is_ok());
+    i["dials"][0]["on"] = json!(true);
+    i["steps"] = json!(150);
+    i["dials"][0]["time"]["steps"] = json!(150);
+    assert_eq!(rack(&compile(&i).unwrap())[0]["time"]["steps"], json!(150));
+    for bad in [
+        json!(0),
+        json!(-1),
+        json!(151),
+        json!(2.5),
+        json!("2"),
+        json!(null),
+        json!(true),
+    ] {
+        i["dials"][0]["time"]["steps"] = bad.clone();
+        assert_eq!(
+            compile(&i).unwrap_err(),
+            "Invalid dials: time.steps (blend steps) must be a whole number from 1 to 150",
+            "{bad}"
+        );
+        // Checked on a switched-off row too.
+        i["dials"][0]["on"] = json!(false);
+        assert!(compile(&i).unwrap_err().contains("time.steps"), "{bad}");
+        i["dials"][0]["on"] = json!(true);
+    }
+    // The De-rope pass reads the same rack through the hold map: one count for both passes.
+    let mut d = h3();
+    d["steps"] = json!(25);
+    d["videoPost"] =
+        json!({"derope":{"preset":"balanced","inject":0.48,"lora":"h3_turbo.safetensors"}});
+    d["dials"] = json!([timed_dial()]);
+    let g = compile(&d).unwrap();
+    assert_eq!(rack(&g)[0]["time"]["steps"], json!(8));
+    assert_eq!(
+        g["DRH"]["inputs"].as_object().unwrap().len(),
+        2,
+        "the hold map node has no step input of its own"
+    );
+    assert_eq!(g["DRZ"]["inputs"]["steps"], 6);
+}
+
+#[test]
+fn dials_stay_on_the_generation_chain_of_a_regenerate() {
+    let base = regenerate_intent();
+    let mut i = base.clone();
+    i["dials"] = json!([dial_row(1.0), timed_dial()]);
+    let g = compile(&i).unwrap();
+    // Like the LoRAs: the Hi-Res Regenerate chain (prefix R) carries no rack.
+    assert_eq!(dial_classes(&g), ["MAIDialRack"]);
+    assert!(g.get("RDR").is_none());
+    assert_eq!(without_dial_nodes(&g), compile(&base).unwrap());
+}
+
+#[test]
+fn dials_reject_everything_this_version_does_not_send() {
+    let err = |edit: &dyn Fn(&mut Value)| {
+        let mut i = h3();
+        i["dials"] = json!([dial_row(1.0)]);
+        edit(&mut i);
+        compile(&i).unwrap_err()
+    };
+    let row = |edit: &dyn Fn(&mut Value)| err(&|i| edit(&mut i["dials"][0]));
+    let time = |edit: &dyn Fn(&mut Value)| {
+        row(&|r| {
+            r["time"] = dial_curve();
+            edit(&mut r["time"]);
+        })
+    };
+    // Family: MiniMax H3 video only, an empty list included. HyperFlow Flash is MiniMax H3 here.
+    for mut other in [ltx(), wan()] {
+        for rows in [json!([dial_row(1.0)]), json!([])] {
+            other["dials"] = rows;
+            assert!(compile(&other)
+                .unwrap_err()
+                .contains("MiniMax H3 video only"));
+        }
+    }
+    let mut hyperflow = h3();
+    hyperflow["family"] = json!("minimax-h3-hyperflow");
+    hyperflow["model"] = json!("MiniMaxH3/hyperflow_flash.gguf");
+    hyperflow["steps"] = json!(6);
+    hyperflow["h3"]["references"] = json!([]);
+    hyperflow["h3"]["mode"] = json!("T2VA");
+    assert!(compile(&hyperflow).is_ok());
+    // HyperFlow Flash takes the rack after its own loader (GGUF or safetensors), and the distilled
+    // schedule node reads the Director's sampling model.
+    hyperflow["dials"] = json!([dial_row(1.0)]);
+    let g = compile(&hyperflow).unwrap();
+    assert_eq!(g["1"]["class_type"], "HyperFlowGGUFLoader");
+    assert_eq!(g["DR"]["inputs"]["model"], json!(["1", 0]));
+    hyperflow["model"] = json!("MiniMaxH3/hyperflow_flash-int8_convrot.safetensors");
+    let g = compile(&hyperflow).unwrap();
+    assert_eq!(g["1"]["class_type"], "HyperFlowLoader");
+    assert_eq!(g["DR"]["class_type"], "MAIDialRack");
+    assert_eq!(g["DR"]["inputs"]["model"], json!(["1", 0]));
+    assert_eq!(g["Z"]["class_type"], "HyperFlowSigmas");
+    assert!(g.get("SS").is_none());
+    // A plain MiniMax H3 GGUF base takes the rack after its GGUF loader too.
+    let mut gguf = h3();
+    gguf["model"] = json!("MiniMaxH3/fl2va-Q8_0.gguf");
+    gguf["dials"] = json!([dial_row(1.0)]);
+    let g = compile(&gguf).unwrap();
+    assert_eq!(g["1"]["class_type"], "UnetLoaderGGUF");
+    assert_eq!(g["DR"]["class_type"], "MAIDialRack");
+
+    // The list.
+    for bad in [
+        json!({}),
+        json!("dials/a.safetensors"),
+        json!(null),
+        json!(1),
+    ] {
+        assert!(err(&|i| i["dials"] = bad.clone()).contains("at most 8 rows"));
+    }
+    assert!(err(&|i| i["dials"] = json!(vec![dial_row(1.0); 9])).contains("at most 8 rows"));
+    for bad in [json!("dials/a.safetensors"), json!([]), json!(null)] {
+        assert!(err(&|i| i["dials"][0] = bad.clone()).contains("each row is an object"));
+    }
+
+    // What the rack can do and this version refuses by name.
+    for (key, value, reason) in [
+        ("input", json!("dial_1"), "wired dial inputs"),
+        ("hold", json!(true), "hold rows"),
+        ("hold", json!(false), "hold rows"),
+        ("envelope", json!([[0, 1], [1, 0]]), "step envelopes"),
+        ("envelope", json!(null), "step envelopes"),
+        ("blocks", json!([1, 0.5]), "block strengths"),
+    ] {
+        let e = row(&|r| r[key] = value.clone());
+        assert!(
+            e.starts_with("Invalid dials") && e.contains(reason),
+            "{key}: {e}"
+        );
+    }
+    assert!(time(&|t| *t = json!({"type":"audio","feature":"onset"})).contains("audio-driven"));
+    assert!(time(&|t| t["type"] = json!("audio")).contains("audio-driven"));
+    for key in ["solo", "sha256", "name", "steps"] {
+        assert!(row(&|r| r[key] = json!(true)).contains("{dial, strength, on?, time?}"));
+    }
+
+    // The file: inside dials/, portable, safetensors.
+    for bad in [
+        json!("h3_motion.safetensors"),
+        json!("loras/dials/h3_motion.safetensors"),
+        json!("dials/"),
+        json!("dials"),
+        json!("dials/../h3_motion.safetensors"),
+        json!("dials/./h3_motion.safetensors"),
+        json!("dials/sub/../../x.safetensors"),
+        json!("dials//h3_motion.safetensors"),
+        json!("dials\\h3_motion.safetensors"),
+        json!("dials/sub\\h3_motion.safetensors"),
+        json!("/models/loras/dials/h3_motion.safetensors"),
+        json!("C:/dials/h3_motion.safetensors"),
+        json!("dials/C:h3_motion.safetensors"),
+        json!("dials/h3%2e%2e.safetensors"),
+        json!("dials/h3_motion.safetensors "),
+        json!("dials/ h3_motion.safetensors"),
+        json!("dials/h3\nmotion.safetensors"),
+        json!("dials/h3\u{0}.safetensors"),
+        json!("dials/h3_motion.gguf"),
+        json!("dials/h3_motion"),
+        json!("dials/presets/night.json"),
+        json!(format!("dials/{}.safetensors", "a".repeat(250))),
+        json!(1),
+        json!(null),
+    ] {
+        assert!(
+            row(&|r| r["dial"] = bad.clone()).contains("inside dials/"),
+            "{bad}"
+        );
+    }
+    assert!(row(&|r| {
+        r.as_object_mut().unwrap().remove("dial");
+    })
+    .contains("inside dials/"));
+
+    // Strength and the switch.
+    for bad in [
+        json!("1"),
+        json!(true),
+        json!(null),
+        json!(20.5),
+        json!(-21),
+        json!(f64::NAN),
+        json!(f64::INFINITY),
+    ] {
+        assert!(
+            row(&|r| r["strength"] = bad.clone()).contains("strength must be a number"),
+            "{bad}"
+        );
+    }
+    assert!(row(&|r| {
+        r.as_object_mut().unwrap().remove("strength");
+    })
+    .contains("strength must be a number"));
+    for bad in [json!("yes"), json!(1), json!(null)] {
+        assert!(
+            row(&|r| r["on"] = bad.clone()).contains("on must be a boolean"),
+            "{bad}"
+        );
+    }
+
+    // The curve.
+    let shape = "time is {type keys";
+    for bad in [json!([[0, 1]]), json!("keys"), json!(null), json!({})] {
+        assert!(row(&|r| r["time"] = bad.clone()).contains(shape), "{bad}");
+    }
+    assert!(time(&|t| t["type"] = json!("bezier")).contains(shape));
+    assert!(time(&|t| {
+        t.as_object_mut().unwrap().remove("type");
+    })
+    .contains(shape));
+    // The node's default unit is normalized clip time: seconds must be stated.
+    assert!(time(&|t| {
+        t.as_object_mut().unwrap().remove("unit");
+    })
+    .contains(shape));
+    assert!(time(&|t| t["unit"] = json!("normalized")).contains(shape));
+    for bad in [json!("cubic"), json!(null), json!(1)] {
+        assert!(
+            time(&|t| t["interp"] = bad.clone()).contains(shape),
+            "{bad}"
+        );
+    }
+    for bad in [
+        json!(-0.1),
+        json!(1.5),
+        json!("0"),
+        json!(null),
+        json!(true),
+    ] {
+        assert!(
+            time(&|t| t["smooth"] = bad.clone()).contains(shape),
+            "{bad}"
+        );
+    }
+    for key in ["audio", "feature", "gain"] {
+        assert!(time(&|t| t[key] = json!(2)).contains(shape), "{key}");
+    }
+    let count = "1 to 64 [seconds, level] points";
+    for bad in [json!([]), json!(null), json!({"0":[0, 1]}), json!("0,1")] {
+        assert!(
+            time(&|t| t["points"] = bad.clone()).contains(count),
+            "{bad}"
+        );
+    }
+    assert!(time(&|t| {
+        t.as_object_mut().unwrap().remove("points");
+    })
+    .contains(count));
+    assert!(
+        time(&|t| t["points"] = json!((0..65).map(|n| json!([n, 1])).collect::<Vec<_>>()))
+            .contains(count)
+    );
+    for bad in [
+        json!([[0, 1, 2]]),
+        json!([[0]]),
+        json!([0, 1]),
+        json!([{"t":0,"m":1}]),
+        json!([["0", 1]]),
+        json!([[0, "1"]]),
+        json!([[0, null]]),
+        json!([[f64::NAN, 1]]),
+        json!([[0, f64::INFINITY]]),
+        json!([[true, 1]]),
+        json!([[0, 20.5]]),
+        json!([[0, -21]]),
+        json!([[86_401, 1]]),
+        json!([[-86_401, 1]]),
+    ] {
+        assert!(
+            time(&|t| t["points"] = bad.clone()).contains("[seconds, level] numbers"),
+            "{bad}"
+        );
+    }
+    for bad in [
+        json!([[1, 0], [1, 1]]),
+        json!([[0, 0], [2, 1], [1.5, 0]]),
+        json!([[1, 0], [1.0, 1]]),
+    ] {
+        assert!(
+            time(&|t| t["points"] = bad.clone()).contains("strictly increasing"),
+            "{bad}"
+        );
+    }
+    // A switched-off row is still checked: nothing malformed is carried in an intent.
+    assert!(row(&|r| {
+        r["on"] = json!(false);
+        r["hold"] = json!(true);
+    })
+    .contains("hold rows"));
+}
+
+#[test]
+fn dial_time_curves_refuse_passes_with_another_clip_clock() {
+    let upscale =
+        json!({"model":"minimax_h3_latent_upscaler.safetensors","scale":2,"steps":1,"denoise":0.2});
+    for (reason, field, block) in [
+        ("faceRefine", "faceRefine", face_block()),
+        ("tiled latent upscale", "latentUpscale", upscale),
+    ] {
+        let mut i = h3();
+        i[field] = block;
+        // Rows without a curve are a plain model patch there, like a LoRA.
+        i["dials"] = json!([dial_row(1.0)]);
+        let g = compile(&i).unwrap();
+        assert_eq!(dial_classes(&g), ["MAIDialRack"], "{reason}");
+        i["dials"] = json!([dial_row(1.0), timed_dial()]);
+        let e = compile(&i).unwrap_err();
+        assert!(
+            e.starts_with("Invalid dials: time curves") && e.contains(reason),
+            "{e}"
+        );
+        // Switched off, the curve asks for nothing.
+        i["dials"][1]["on"] = json!(false);
+        assert!(compile(&i).is_ok(), "{reason}");
+    }
+    let mut t = h3_transition_intent();
+    t["dials"] = json!([dial_row(1.0)]);
+    assert_eq!(dial_classes(&compile(&t).unwrap()), ["MAIDialRack"]);
+    t["dials"] = json!([timed_dial()]);
+    assert!(compile(&t).unwrap_err().contains("h3.transition window"));
+}
+
+#[test]
+fn derope_gives_dial_time_curves_the_hold_map() {
+    let derope = |block: Value, loras: Value, rows: Value| {
+        let mut i = h3();
+        i["videoPost"] = json!({ "derope": block });
+        i["loras"] = loras;
+        let base = compile(&i).unwrap();
+        i["dials"] = rows;
+        (compile(&i).unwrap(), base)
+    };
+    let turbo = json!({"preset":"balanced","inject":0.48,"lora":"h3_turbo.safetensors"});
+    let full = json!({"preset":"economy","inject":0.7});
+    let chained = json!([{"name":"h3_turbo.safetensors","strength":1.0}]);
+
+    // Rows without a time curve: the pass keeps its model, no hold map node.
+    for block in [&turbo, &full] {
+        let (g, base) = derope(block.clone(), json!([]), json!([dial_row(1.0)]));
+        assert_eq!(dial_classes(&g), ["MAIDialRack"]);
+        assert_eq!(g["DRZ"], base["DRZ"]);
+        assert_eq!(g["DRG"], base["DRG"]);
+        assert_eq!(without_dial_nodes(&g), base);
+    }
+    // So does a switched-off curve.
+    let mut off = timed_dial();
+    off["on"] = json!(false);
+    let (g, _) = derope(full.clone(), json!([]), json!([dial_row(1.0), off]));
+    assert!(g.get("DRH").is_none());
+
+    // Generation-model pass: the shifted model through the hold map, into schedule and guider.
+    let (g, base) = derope(
+        full.clone(),
+        json!([]),
+        json!([dial_row(1.0), timed_dial()]),
+    );
+    assert_eq!(
+        g["DRH"],
+        json!({"class_type":"MAIDialHoldMap","inputs":{"model":["SS",0],"hold_map":["DRP",1]}})
+    );
+    assert_eq!(
+        g["DRZ"]["inputs"],
+        json!({"model":["DRH",0],"scheduler":"simple","steps":25,"denoise":1.0})
+    );
+    assert_eq!(
+        g["DRG"]["inputs"],
+        json!({"model":["DRH",0],"conditioning":["DRP",3]})
+    );
+    assert_eq!(g["DRK"], base["DRK"]);
+    assert_eq!(g["DRP"], base["DRP"]);
+    assert_eq!(g["DRR"], base["DRR"]);
+    // Pass 1 samples the rack's model without a hold map.
+    assert_eq!(g["B"]["inputs"]["model"], json!(["SS", 0]));
+    assert_eq!(without_dial_nodes(&g), base);
+
+    // Turbo pass: the pass's LoRA first, then the hold map on that model.
+    let (g, base) = derope(turbo.clone(), json!([]), json!([timed_dial()]));
+    assert_eq!(g["DRL"], base["DRL"]);
+    assert_eq!(g["DRL"]["inputs"]["model"], json!(["SS", 0]));
+    assert_eq!(
+        g["DRH"]["inputs"],
+        json!({"model":["DRL",0],"hold_map":["DRP",1]})
+    );
+    assert_eq!(
+        g["DRZ"]["inputs"],
+        json!({"model":["DRH",0],"scheduler":"beta","steps":6,"denoise":1.0})
+    );
+    assert_eq!(g["DRG"]["inputs"]["model"], json!(["DRH", 0]));
+    assert_eq!(without_dial_nodes(&g), base);
+
+    // A turbo LoRA the generation chain already carries, and a declared distilled chain: no DRL.
+    let mut distilled = full.clone();
+    distilled["distilled"] = json!(true);
+    for (block, loras) in [(turbo.clone(), chained.clone()), (distilled, json!([]))] {
+        let (g, base) = derope(block, loras, json!([timed_dial()]));
+        assert!(g.get("DRL").is_none());
+        assert_eq!(
+            g["DRH"]["inputs"],
+            json!({"model":["SS",0],"hold_map":["DRP",1]})
+        );
+        assert_eq!(g["DRZ"]["inputs"]["steps"], 6);
+        assert_eq!(without_dial_nodes(&g), base);
+    }
+
+    // Keep static background still reads the unprocessed pass input.
+    let mut kept = turbo.clone();
+    kept["keepBackground"] = json!(true);
+    let (g, base) = derope(kept, json!([]), json!([timed_dial()]));
+    assert_eq!(g["DRR"], base["DRR"]);
+    assert_eq!(dial_classes(&g).len(), 2);
+}
+
+/// prepare() settles the pinned clip's frame count through `confirm_source_frames`. Studio sends
+/// the count its rack dialog laid a time curve out with; the session list is read again and a
+/// different or missing count refuses the job instead of shifting the curve by another length.
+#[test]
+fn dial_time_curves_refuse_a_pinned_clip_whose_frame_count_changed() {
+    let mut base = continued("full");
+    base.as_object_mut().unwrap().remove("videoPost");
+    let timed = json!([{"dial":"dials/h3_motion.safetensors","strength":1,"time":{"type":"keys","points":[[2.125, 0], [4.125, 1]],"unit":"seconds"}}]);
+    let frames = |i: &Value| i["h3"]["continuity"].get("sourceFrames").cloned();
+
+    // No count carried (an intent from before Studio sent one): the list's count is injected.
+    let mut i = base.clone();
+    i["dials"] = timed.clone();
+    assert_eq!(confirm_source_frames(&mut i, Some(73)), Ok(()));
+    assert_eq!(frames(&i), Some(json!(73)));
+    // No count anywhere: compile reports the missing count, as before.
+    let mut i = base.clone();
+    i["dials"] = timed.clone();
+    assert_eq!(confirm_source_frames(&mut i, None), Ok(()));
+    assert_eq!(frames(&i), None);
+    assert!(compile(&i).unwrap_err().contains("sourceFrames"));
+
+    // The carried count agrees with the list: the job compiles with the shift Studio drew.
+    let mut i = base.clone();
+    i["dials"] = timed.clone();
+    i["h3"]["continuity"]["sourceFrames"] = json!(73);
+    assert_eq!(confirm_source_frames(&mut i, Some(73)), Ok(()));
+    assert_eq!(
+        rack(&compile(&i).unwrap())[0]["time"]["points"],
+        json!([[0.0, 0], [2.0, 1]])
+    );
+
+    // The clip has another length now: refused with both counts, the intent untouched.
+    let error = confirm_source_frames(&mut i, Some(243)).unwrap_err();
+    assert!(
+        error.starts_with("Invalid dials: the pinned clip has 243 frames in the session list, but the time curves were laid out for 73"),
+        "{error}"
+    );
+    assert_eq!(frames(&i), Some(json!(73)));
+    // The clip is not in the list, or the list could not be read: refused as well.
+    let error = confirm_source_frames(&mut i, None).unwrap_err();
+    assert!(
+        error.starts_with("Invalid dials: the pinned clip's frame count (73 when the time curves were laid out) could not be read from the session list"),
+        "{error}"
+    );
+
+    // Without an active time curve nothing is refused: the list's count wins, a carried one
+    // stays when the list has none (the segment crop plan, as before).
+    for dials in [json!([dial_row(1.5)]), json!([]), {
+        let mut off = timed.clone();
+        off[0]["on"] = json!(false);
+        off
+    }] {
+        let mut i = base.clone();
+        i["dials"] = dials;
+        i["h3"]["continuity"]["sourceFrames"] = json!(73);
+        assert_eq!(confirm_source_frames(&mut i, Some(243)), Ok(()));
+        assert_eq!(frames(&i), Some(json!(243)));
+        assert_eq!(confirm_source_frames(&mut i, None), Ok(()));
+        assert_eq!(frames(&i), Some(json!(243)));
+    }
+}
+
+#[test]
+fn dial_time_curves_shift_onto_a_continued_window() {
+    let plain = |mode: &str| {
+        let mut i = continued(mode);
+        i.as_object_mut().unwrap().remove("videoPost");
+        i
+    };
+    let timed = |points: Value| json!([{"dial":"dials/h3_motion.safetensors","strength":1,"time":{"type":"keys","points":points,"unit":"seconds"}}]);
+    // Window start in piece frames, checked against the pack's own
+    // h3_continuity/core.py::continuation_timing (Director call, then Guide call with the source):
+    // (sourceFrames, overlapFrames, durationSeconds) -> sourceFrames - overlap. frames 124 = 119 new.
+    // The rack dialog's lanes are tested against this same table (`src/lib/dialCurve.test.ts`,
+    // `continuationWindowStart`).
+    for (source, overlap, seconds, start) in [
+        (243, None, None, 221),
+        (73, None, None, 51),
+        (243, Some(73), None, 170),
+        (39, Some(73), None, 0),
+        (5, None, None, 0),
+        (243, None, Some(15.0), 238),
+        (243, Some(5), Some(2.0), 238),
+        (124, Some(56), Some(10.0), 68),
+        (243, Some(73), Some(15.0), 238),
+        (56, Some(56), None, 0),
+        (22, Some(39), Some(1.0), 0),
+        (90, Some(39), None, 51),
+        (600, Some(73), Some(14.0), 578),
+        // The counts a real session listed (output mode full, 2026-11-17: a 107-frame take, then
+        // 209 after the first continuation); the graphs compiled for it moved the curves by
+        // 85 / 24 s and 187 / 24 s.
+        (107, None, None, 85),
+        (209, None, None, 187),
+    ] {
+        let mut i = plain("full");
+        i["h3"]["continuity"]["sourceFrames"] = json!(source);
+        if let Some(n) = overlap {
+            i["h3"]["continuity"]["overlapFrames"] = json!(n);
+        }
+        if let Some(s) = seconds {
+            i["h3"]["continuity"]["durationSeconds"] = json!(s);
+        }
+        assert_eq!(continuation_window_start(&i), Some(start), "{source}");
+    }
+
+    for mode in ["full", "segment"] {
+        // Rows without a curve need no clip length: nothing is looked up, nothing shifts.
+        let mut i = plain(mode);
+        i["dials"] = json!([dial_row(1.5)]);
+        assert!(!needs_source_frames(&i));
+        assert_eq!(
+            compile(&i).unwrap()["DR"]["inputs"]["rack"],
+            r#"[{"dial":"dials/h3_motion.safetensors","strength":1.5}]"#
+        );
+
+        // A curve needs the pinned clip's cumulative frame count; prepare() reads it from the session list.
+        i["dials"] = timed(json!([[2.125, 0], [4.125, 1], [9, -2]]));
+        assert!(needs_source_frames(&i));
+        assert!(compile(&i).unwrap_err().contains("sourceFrames"));
+        let list =
+            json!({"clips":[{"clipId":"clip_0","frames":124},{"clipId":"clip_1","frames":73}]});
+        assert_eq!(source_frames(&list, &i), Some(73));
+        // 73 source frames, 22 hidden context frames: the window starts at frame 51 = 2.125 s.
+        i["h3"]["continuity"]["sourceFrames"] = json!(73);
+        let g = compile(&i).unwrap();
+        assert_eq!(
+            g["DR"]["inputs"]["rack"],
+            r#"[{"dial":"dials/h3_motion.safetensors","strength":1,"time":{"interp":"linear","points":[[0.0,0],[2.0,1],[6.875,-2]],"smooth":0,"steps":4,"type":"keys","unit":"seconds"}}]"#,
+            "{mode}"
+        );
+        // Only the curve moved.
+        let mut unshifted = i.clone();
+        unshifted["h3"]["continuity"]["sourceFrames"] = json!(5);
+        let mut same = compile(&unshifted).unwrap();
+        assert_eq!(
+            rack(&same)[0]["time"]["points"],
+            json!([[2.125, 0], [4.125, 1], [9, -2]]),
+            "a window starting at piece frame 0 keeps the authored points"
+        );
+        same["DR"]["inputs"]["rack"] = g["DR"]["inputs"]["rack"].clone();
+        assert_eq!(same, g, "{mode}");
+
+        // 243 source frames: 221 / 24 s, the same subtraction the node's seconds then see.
+        i["h3"]["continuity"]["sourceFrames"] = json!(243);
+        let offset = 221.0 / 24.0;
+        assert_eq!(
+            rack(&compile(&i).unwrap())[0]["time"]["points"],
+            json!([[2.125 - offset, 0], [4.125 - offset, 1], [9.0 - offset, -2]])
+        );
+        // More context moves the window start back.
+        i["h3"]["continuity"]["overlapFrames"] = json!(73);
+        assert_eq!(
+            rack(&compile(&i).unwrap())[0]["time"]["points"][2][0],
+            json!(9.0 - 170.0 / 24.0)
+        );
+
+        // Points the shift would merge are refused, not sent to fail in the node.
+        i["dials"] = timed(json!([[0, 0], [1e-17, 1]]));
+        assert!(compile(&i).unwrap_err().contains("too close together"));
+        // The same points are legal where nothing shifts.
+        let mut take = h3();
+        take["dials"] = i["dials"].clone();
+        assert!(compile(&take).is_ok());
+
+        // An imported video's place in the piece is unknown before the run.
+        let mut video = plain(mode);
+        video["h3"]["continuity"]["sourceKind"] = json!("video");
+        video["h3"]["continuity"]["sourceId"] = json!("a".repeat(64));
+        video["h3"]["continuity"]["sourceFrames"] = json!(243);
+        video["dials"] = json!([dial_row(1.0)]);
+        assert!(compile(&video).is_ok());
+        video["dials"] = timed(json!([[0, 0], [1, 1]]));
+        assert!(!needs_source_frames(&video));
+        assert!(compile(&video).unwrap_err().contains("imported video"));
+
+        // De-rope's pass renders another window than the first pass sampled.
+        let mut derope = continued(mode);
+        derope["h3"]["continuity"]["sourceFrames"] = json!(243);
+        derope["dials"] = json!([dial_row(1.0)]);
+        let g = compile(&derope).unwrap();
+        assert_eq!(dial_classes(&g), ["MAIDialRack"]);
+        derope["dials"] = timed(json!([[0, 0], [1, 1]]));
+        assert!(compile(&derope)
+            .unwrap_err()
+            .contains("videoPost.derope on a continued segment"));
+    }
+
+    // A first take that only captures (no source) starts the piece: nothing shifts.
+    let mut first = h3();
+    first["h3"]["continuity"] = json!({"session":"deas-ab12cd34","sourceId":"","capture":true,"action":"","outputMode":"segment"});
+    first["dials"] = timed(json!([[2.125, 0], [4.125, 1]]));
+    assert!(!needs_source_frames(&first));
+    assert_eq!(
+        rack(&compile(&first).unwrap())[0]["time"]["points"],
+        json!([[2.125, 0], [4.125, 1]])
+    );
+}
+
+/// Compiles intent files for an offline check or a manual render of the emitted graphs:
+/// `DEAS_DUMP_INTENTS_DIR=<dir> cargo test --lib dump_intent_dir_graphs -- --ignored` reads every
+/// `intent_<name>.json` in `<dir>` and writes `emitted_<name>.json` beside it, the API graph exactly
+/// as `jobs::compile` returns it. Without the variable it does nothing.
+#[test]
+#[ignore]
+fn dump_intent_dir_graphs() {
+    let Some(dir) = std::env::var_os("DEAS_DUMP_INTENTS_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let mut written = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let Some(arm) = name
+            .strip_prefix("intent_")
+            .and_then(|n| n.strip_suffix(".json"))
+        else {
+            continue;
+        };
+        let intent: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let graph = crate::jobs::compile(&intent).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let out = dir.join(format!("emitted_{arm}.json"));
+        std::fs::write(&out, serde_json::to_string_pretty(&graph).unwrap()).unwrap();
+        println!("{}", out.display());
+        written += 1;
+    }
+    assert!(written > 0, "no intent_<name>.json in {}", dir.display());
+}

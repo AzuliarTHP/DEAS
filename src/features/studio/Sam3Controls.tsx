@@ -3,7 +3,7 @@ import {useI18n} from '../../i18n/I18nProvider';
 export interface Sam3Settings {checkpoint:string;targets:string;denoise:number;threshold:number;enabled:boolean;maskBlur:number}
 export const samTargets=(text:string)=>text.split(/[,;\n]/u).map(s=>s.trim()).filter(Boolean);
 /** One shared draft: editor selection and post-generation refinement use the same SAM checkpoint. */
-export function Sam3Controls({value,onChange,models,margin,onMargin,unavailable,refineUnavailable,status,busy,onRefine,canRefine}:{value:Sam3Settings;onChange:(value:Sam3Settings)=>void;models:readonly string[];margin:number;onMargin:(value:number)=>void;unavailable?:string;refineUnavailable?:string;status?:string;busy:boolean;onRefine?:()=>void;canRefine?:boolean}){
+export function Sam3Controls({value,onChange,models,margin,onMargin,unavailable,refineUnavailable,status,busy,onMask,maskDisabled,onRefine,canRefine}:{value:Sam3Settings;onChange:(value:Sam3Settings)=>void;models:readonly string[];margin:number;onMargin:(value:number)=>void;unavailable?:string;refineUnavailable?:string;status?:string;busy:boolean;onMask?:()=>void;maskDisabled?:boolean;onRefine?:()=>void;canRefine?:boolean}){
  const {t}=useI18n();const label=(key:string)=>t(`studio.sam.${key}`);
  const num=(key:'denoise'|'threshold',min:number)=><label className="wb-option"><span>{label(key)}</span><input data-sam={key} type="number" min={min} max={1} step={0.05} value={value[key]} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&n>=min&&n<=1)onChange({...value,[key]:n});}}/></label>;
  return <fieldset className="wb-group wb-wide" data-sam-controls><legend>{label('title')}</legend><div className="wb-options">
@@ -15,6 +15,7 @@ export function Sam3Controls({value,onChange,models,margin,onMargin,unavailable,
  </div>
  {unavailable&&<p role="status">{unavailable}</p>}
  {status&&<p role="status">{status}</p>}
+ {onMask&&<button type="button" className="wb-dock-action" data-sam="mask" disabled={busy||!!unavailable||maskDisabled} title={unavailable|| (maskDisabled?label('targets'):undefined)} onClick={onMask}>{label('mask')}</button>}
  <div className="wb-sam-actions"><div className="wb-option"><label className="wb-option-row"><input data-sam="enabled" type="checkbox" checked={value.enabled} onChange={e=>onChange({...value,enabled:e.target.checked})}/>{label('enabled')}</label></div>
  <button type="button" className="wb-dock-action" data-sam="refine" disabled={busy||!!refineUnavailable||!canRefine} title={label('refineHelp')} onClick={onRefine}>{label('refine')}</button></div>
  </fieldset>;

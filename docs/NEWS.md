@@ -1,8 +1,25 @@
 # News
 
-## 0.2.41 BETA (unreleased)
+## 0.3.0 — Feature phase
 
-### tidier preview and Library controls
+DEAS 0.3.0 completes the basic beta milestone and starts the feature phase.
+New and experimental capabilities still have their own compatibility and verification limits.
+
+### Experimental Dials for MiniMax H3 video
+
+Open **Dials** in Advanced Studio settings on supported MiniMax H3 video pipelines.
+Adjust steering strength or draw time curves in the rack. Download MatlowAI’s
+files from **Library → Catalog → Dials**. For an existing owned backend, use
+**Backend → Upgrade → ComfyUI and node packs**, then restart the backend when idle.
+See [Dials](DIALS.md) for supported combinations and limitations.
+
+### Tidier image editing
+
+Sampler and Scheduler, CFG and Denoise, H3 shifts, and Context Padding and Mask Blur
+now sit in pairs. **Add target mask** lives in **Post-Processing → SAM 3.1 masking**.
+See [Studio](STUDIO.md).
+
+### Tidier preview and Library controls
 
 The Original/Processed buttons above a post-processed result follow your colour
 scheme like every other button, and the Library search fields are now the same

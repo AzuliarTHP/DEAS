@@ -56,7 +56,8 @@ pub mod jobs_sam3_video;
 pub mod jobs_video;
 pub mod jobs_video_post;
 pub use jobs::{
-    native_auto_refine, native_h3_refmod_cancel, native_h3_refmod_status, native_h3_refmod_submit,
+    native_auto_refine, native_dial_catalog, native_dial_preset_load, native_dial_preset_save,
+    native_dial_presets, native_h3_refmod_cancel, native_h3_refmod_status, native_h3_refmod_submit,
     native_h3_refmods, native_h3_session, native_h3_video_prepare, native_h3_video_upload,
     native_input_upload, native_job_current, native_job_export, native_job_output,
     native_job_prepare, native_job_status, native_job_submit, native_jobs_history,

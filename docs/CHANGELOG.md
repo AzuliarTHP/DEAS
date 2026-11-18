@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.2.41 BETA (unreleased)
+## 0.3.0 — Feature phase
+
+The basic 0.2 beta implementation milestone is complete. The 0.3 series focuses on new capabilities and improvements to existing workflows; feature and platform limits remain documented in the [plan](PLAN.md).
+
+### Studio and Library
+
+- Aligned the Image editing controls into pairs, removed the long MiniMax H3 settings hint, and moved the Inpaint target-mask action into the existing SAM Post-Processing panel.
+
+### Experimental MiniMax H3 Dials
+
+- Added an Advanced Studio **Dials** settings button and rack editor for constant steering and time curves on supported MiniMax H3 video pipelines, including HyperFlow Flash and supported GGUF loaders. Includes Run Plan summaries, dial metadata, and shared ComfyUI rack presets. No dials are active by default.
+- **Library → Catalog → Dials** offers MatlowAI’s published MiniMax H3 files. The Dials empty state points to the catalog.
+- Backend setup and **Upgrade → ComfyUI and node packs** now provision the pinned ComfyUI-Dials pack. See [Dials](DIALS.md) for setup and experimental limits.
 
 ### themed Original/Processed buttons and compact Library search
 
