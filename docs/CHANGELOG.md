@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## Unreleased
 
 - **H3 reference drop roles.** Drag Media tiles or desktop files into the right pane. Images ask for a role when the image-reference list is empty and are added as references automatically while the list contains an image reference. Video and audio drops ask for a role each time. Assignments reopen with the same model and backend after restarting DEAS.
 - **H3 drag preview and frame cards.** A translucent tile follows the pointer when dragging within either H3 References popup. First and last frames appear under Images with their role and a remove button. The H3 role chooser shows options for the selected media type.
@@ -9,6 +9,8 @@
 - **Library file actions.** Right-click a card or use Bulk select to move models within their category or delete selected files after confirmation.
 
 - **Enhanced video preview.** Each preview plays to the end before DEAS starts the newest available sampling preview. The player holds the final frame while it waits for an update.
+
+## 0.3.1
 
 - **Slow local backend startup ([#39](https://github.com/darksidewalker/DEAS/issues/39)).** Owned ComfyUI readiness, local backend inspection and recipe discovery allow 45 seconds for each required API response. Startup retains its 120-second overall deadline and exact listener ownership checks. The DEAS log identifies the probe, time spent waiting, and startup outcome.
 

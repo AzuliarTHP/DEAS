@@ -1,5 +1,15 @@
 # News
 
+## 0.3.1
+
+### Backend startup on slow machines
+
+DEAS now allows up to 45 seconds for each required ComfyUI answer (**`object_info`**, **`system_stats`**)
+while the owned backend starts, instead of giving up after two seconds. Startup still stops after 120 seconds
+overall. **Logs → DEAS** now names the probe that was running, how long it waited and the startup result, so a
+slow start can be told apart from a broken installation. A startup timeout is not a reason to reinstall or
+delete your settings. See [Backend](BACKEND.md).
+
 ## 0.3.0 — Feature phase
 
 DEAS 0.3.0 completes the basic beta milestone and starts the feature phase.
