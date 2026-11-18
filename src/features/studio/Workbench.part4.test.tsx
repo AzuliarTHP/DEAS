@@ -456,6 +456,17 @@ test('IPC fixture: MiniMax H3 offers Image → Image as the Director-style edit:
  Object.defineProperties(img,{naturalWidth:{value:1024},naturalHeight:{value:768}});fireEvent.load(img);
  // Full regeneration by default; below 1 the encoded source is kept (still path).
  expect((screen.getByLabelText('Denoise') as HTMLInputElement).value).toBe('1');
+ const settings=document.querySelector('.wb-side')!;
+ const row=(selector:string)=>settings.querySelector(selector)?.closest('.wb-controls');
+ const sameRow=(left:string,right:string)=>{expect(row(left)).toBeTruthy();expect(row(left)).toBe(row(right));};
+ expect(settings.textContent).not.toContain('MiniMax H3 edits the picture like');
+ sameRow('[data-pick="studio.recipe.sampler"]','[data-pick="studio.recipe.scheduler"]');
+ sameRow('[data-num="cfg"]','[data-num="denoise"]');
+ sameRow('[data-num="video.shiftVideo"]','[data-num="video.shiftAudio"]');
+ fireEvent.click(document.querySelector('[data-edit="inpaint"]')!);
+ sameRow('[data-num="maskGrow"]','[data-num="maskBlur"]');
+ expect(settings.querySelector('[data-sam="mask"]')).toBeNull();
+ fireEvent.click(document.querySelector('[data-edit="resample"]')!);
  promptDrop('image','/outside/jacket.png');promptDrop('image','/outside/pose.png');
  // <Picture 1> is the edited picture, so references are numbered from 2.
  expect(Array.from(document.querySelectorAll('[data-reference-controls] .wb-reference-position')).map(e=>e.textContent)).toEqual(['2','3']);

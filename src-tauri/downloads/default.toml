@@ -54,6 +54,18 @@ base = "MiniMax H3"
 media = "video"
 publishedAt = "2026-09-10T03:08:28.699Z"
 
+[[entries]]
+id = "matlowai-h3-dials"
+label = "MiniMax H3 Dials (MatlowAI)"
+providerId = "huggingface"
+scope = "repo"
+locator = "models:MATLOWAI/H3-Dials"
+kind = "repo"
+target = "dials"
+base = "MiniMax H3"
+media = "video"
+license = "MiniMax H3 Community License Agreement"
+
 [[providers]]
 id = "huggingface"
 kind = "huggingface"

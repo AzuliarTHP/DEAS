@@ -1,5 +1,729 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## DEAS 0.2.42 Dials integration
+
+Integrated [PR #40](https://github.com/darksidewalker/DEAS/pull/40) at `3de452b`. Local checks passed: TypeScript, 167 core tests, 217 focused UI tests, strict Clippy, 23 focused Rust tests (one live installer fixture ignored), 467 Chromium workspace checks and 225 Chromium Dials checks. Browser tests used synthetic IPC; they do not establish native playback or real model behavior. The Linux release build passed and staged `artifacts/deas-linux-amd64` (SHA-256 `87075a04b6ceb267c9e3c96c2514fec47936dcef555d78f6efee41e8dda15fed`).
+
+The full UI run passed 2,333 of 2,334 tests. Its REF2V Continuity failure did not reproduce when the file ran in isolation; the unchanged base also failed REF2V Continuity in the full UI suite. The full serial Rust suite was not green (1,073 passed, 21 failed, 80 ignored). One failure was the Dials log assertion counting a catalog warning as a preset warning; it was fixed and passed in the focused Rust rerun. The remaining failures were not all adjudicated against the base. Live GPU, native WebKitGTK interaction and Windows WebView2 were not repeated on this checkout; contributor evidence is recorded separately below.
+
+## 2026-11-17: dials in the running application, HyperFlow Flash, GGUF bases and the pinned pack (contributor host)
+
+One Linux host (WebKitGTK, two GPUs, umask 0002), a **debug** binary linked through a pkg-config shim because the
+host lacks GTK/WebKit development packages, driven through the web view's inspector with `tools/pilot_webview.py`
+([piloting](AGENT-PILOTING.md)). One seed per render; clips were judged from contact sheets, not playback (no
+`libmpv.so.2`); sound was not listened to. Not a release build, not Windows.
+
+- **Studio against a real backend** (ComfyUI 0.45.0 with ComfyUI-DaSiWa-Nodes and the Dial Rack nodes, reached
+  through the Engine address): connection inspection reported all Director nodes; the Dials tab showed its
+  notices (not an H3 video pipeline; nodes missing), rows with the dials' own side labels and strength marks, the
+  rack dialog with two curves and the per-latent-frame line, a preset saved through the pack's route and listed
+  back, a dial's info note; dial files were absent from the LoRAs tab. Three jobs from the Run button succeeded
+  with the real `DaSiWa_EnhancedVideoCombine` (832x480, 124 frames, 6 steps): the same seed without dials (no
+  `MAIDialRack` in the graph) and with an ink wash dial on a pulse curve at 2 gave a cel-shaded clip and an
+  ink-wash clip.
+- **HyperFlow Flash**: a dial job compiled by DEAS ran from Run on the int8 convrot safetensors checkpoint
+  (`HyperFlowLoader` -> LoRA -> `MAIDialRack` -> Director, `HyperFlowSigmas`); the clip followed the curve. Graphs
+  built by hand to the same wiring: ink wash constant 2, day/night +1.5 and -1.5, and an impact frame dial on a
+  0.5 s step pulse at 4.5 all acted; motion +1.5 replaced the scene.
+- **GGUF bases**, hand-built graphs: on a plain MiniMax H3 pruned Q4_K_M file (`UnetLoaderGGUF`, with a turbo LoRA)
+  and a HyperFlow Flash Q4_K_M file (`HyperFlowGGUFLoader`) a prompt-shift dial, a bias-patch dial and a timed
+  pulse each acted. No GGUF dial job was started from the application.
+- **Pinned pack**: Backend -> Upgrade -> "ComfyUI and node packs" on an owned CPU environment fetched ComfyUI-Dials
+  at `DIALS_REVISION` and wrote `dialsRevision` to the install manifest; after the restart the owned backend listed
+  `MAIDialRack` and served `/mainodes/dials/catalog`, and the Dials tab went from the missing-nodes notice to
+  ready. The ignored fixture test `dials_pack_is_optional_until_provisioned_and_then_held_to_its_pin` passed
+  against a real ComfyUI-GGUF checkout at its pin (`DEAS_GGUF_SOURCE`).
+- **Checks after merging `main` at 0.2.41**: see the pull request; `npm run test:ui` on this host shows single,
+  different failures in files this work does not touch on some full runs, and those files pass alone.
+- **Found in DEAS, not changed here**: the owned-environment and settings checks refuse group-writable folders,
+  which on a umask-0002 host refuses an ordinary models folder and the environment the installer has just created;
+  after a plain MiniMax H3 checkpoint, a HyperFlow Flash checkpoint keeps the stored sampler while the select
+  shows `euler`, and Run is refused ("runs euler only"); once an environment is open the Backend tab no longer
+  offers the existing-backend address.
+
+## 2026-11-17: dials, continuation in segment mode and constant rows on a continued segment (parent session)
+
+Evidence from the session that directed this work, not from a DEAS run: graphs emitted by `dump_intent_dir_graphs` at
+`0982112`, run on a separate ComfyUI 0.45.0 instance with ComfyUI-DaSiWa-Nodes and the Dial Rack nodes, a core
+CreateVideo + SaveVideo pair added per graph. One seed, motion dial, 6 steps, continuing the 107-frame take of the
+earlier entry.
+
+- **Output mode segment:** the same late ramp (authored at 5.5 to 6.5 piece seconds) rendered as a 102-frame segment
+  export; motion per half second 1.9 1.5 2.9 7.9 12.8 4.7 4.7 4.3, so the change starts about 1.0 s into the segment,
+  which is 5.5 s of the piece. The pack's session list reports that clip with `frames` 209 (cumulative), overlap 22,
+  extension 102 and an export of kind `segment` with 102 frames. So the cumulative reading and the carried-count sum
+  hold in segment mode as well as full.
+- **Constant rows on a continued segment:** 1.0 changed nothing visible (flat 1.3 to 1.8 over the piece); 1.25 replaced
+  the dancer with a different person in the new segment (two isolated motion spikes of about 15 at the cuts). With the
+  curve rows at 1.5 adding other people, no clean useful strength for this dial on a continued segment was found.
+
+## Experimental H3 dials (round three: the carried count on plans that start the piece, unreleased) — 2026-11-17
+
+Branch `dials-rack-experimental`. **Fixture and headless-Chromium evidence only** for the code below: no ComfyUI instance
+was started or contacted, no job was submitted, no GPU was used, and nothing ran in the desktop WebViews (WebKitGTK,
+WebView2) or on Windows. The render evidence this round rests on is the parent session's, in the entry below.
+
+| Item | Change | Test that failed before |
+| --- | --- | --- |
+| A Continuity plan that starts the piece sent no frame count for its later steps, so native shifted a time curve by whatever the session list had while the lanes were laid out by Studio's own sums | `dialTimeline` gives basis `plan` a `window` for the next step once the take exists (`source` = the take's frames plus every finished step's extension); the Workbench sends it as `h3.continuity.sourceFrames` for that basis too. Native `confirm_source_frames` is unchanged and refuses another count, or none. The take itself carries no count. Applied in both output modes, as for continued plans; only full is covered by a real session | `dialCurve.test.ts` "a plan that starts the piece gives a later step the window and the frame count of the clip it pins" (before: no `window`), with the real session's numbers (107, 209; starts 85 and 187). `Workbench.dials.test.tsx` "a later step of a plan that starts the piece sends the count of the clip it pins" (before: no `sourceFrames`; now 209). A second Workbench test for the take (no count) passed before and after |
+| The native window-start table did not hold the real session's counts | Rows `(107, None, None, 85)` and `(209, None, None, 187)` added; the TypeScript mirror reads the same table (15 rows) | Not a fail-before test: both rows pass on the unchanged compiler, which is the point |
+| The hold on a continued plan without the clip's frame count did not say how to leave it | `studio.dials.conflict.pieceStart` says that pressing "Load checkpoints" in the Continuity dialog reads the clip's length and lifts the hold, with the control's own label in each locale (`studio.run.cont.loadSources`) | `DialStrip.test.tsx` "the held-curve reason names the Continuity button that lifts it, …" over six locales (before: the label was absent) |
+| The rack's findings help did not name the long-schedule finding for look dials | One provisional sentence in `studio.dials.rack.help.findings`: confirmed only on short schedules so far, clear at 6 sampler steps, partial at 8, nothing at 12 or 25 with any blend count; six locales | The same test (a sentence naming 12 and 25 and 8 in every locale) |
+| The hatch over the rendered part of a lane began 9 px inside the track | When the lanes start at 0 s the mark runs from the track's own left edge (`left: -9px`, width plus 9 px, the track's corner radius); lanes widened to a point before 0 s keep it at 0 s | `tools/verify_dials.py` rendered-mark geometry (run before the change: `AssertionError … 'rendered mark geometry'`, left 352 against an expected 343) and `DialRackDialog.test.tsx` |
+
+Gates on the final code (commit `0982112` plus this documentation), each run once after the last code change:
+
+- `npm run typecheck`: exit 0. `npm run build`: built.
+- The eight dial vitest files: **153 passed** (149 before this round).
+- `npm run test:ui`: **128 files, 2277 tests passed**, one run (2273 before).
+- `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`: **22 passed, 0 failed**;
+  `... jobs_video`: **81 passed, 0 failed, 8 ignored**; `cargo fmt -- --check`: clean. No Rust source changed, only
+  two rows in a test table.
+- `tools/verify_dials.py`: **225 checks passed** (the same count; one assertion changed).
+  `tools/verify_workspace_layout.py`: **467 checks passed**. Both ran with the Chromium build that is cached on
+  this host (151, Playwright build 1234) through a scratch wrapper, **not** as `npm run test:layout`, which wants build
+  1248; nothing was downloaded.
+
+Screenshots looked at (Chromium, synthetic IPC, English): the rack on a plan that continues a 243-frame clip
+(1440 × 960): the hatch of both lanes now begins at the track's left border, follows its rounded corner and ends at the
+dashed edge at 10.125 s as before. The rack on a continued plan without the count (1440 × 960): the reason in the strip
+and under the tools carries the "Load checkpoints" sentence and stays inside the dialog. The rack's help at 1440 × 1300:
+the findings paragraph holds the new sentence.
+
+Not verified: the carried count of a plan that starts the piece against a real session list (native
+`confirm_source_frames` was not run against one in any form); output mode segment and REF2VA (the sums there are the
+pack's rule read from source: `segment_policy.py::delta_layout`, ComfyUI-DaSiWa-Nodes `d90dd88`); anything started from
+Studio; the six-locale sentences by a native speaker; the hatch's corner in WebKitGTK and WebView2; the full Rust suite
+and clippy were not rerun.
+
+Left open, see [the plan](PLAN.md): a plan that starts the piece still draws no hatch over its finished steps, shows
+frame ticks for the first segment only and has no before-Run check for points too close to shift; when native refuses
+such a plan's count, the message's advice (Load checkpoints) does not relayout it, the way out is to pick the last
+finished clip as the plan's checkpoint source or to remove the curve.
+
+## 2026-11-17: dials, a time curve on continued segments and the session list's frame counts (parent session)
+
+**Evidence from the parent session that directed this work, reported to this branch; not produced by a DEAS run and
+not rerun here.** One seed. Graphs emitted by this branch's compiler (`dump_intent_dir_graphs`, HEAD `d3e9d7c`) for
+continued segments were run on a separate ComfyUI 0.45.0 instance with ComfyUI-DaSiWa-Nodes and the Dial Rack nodes; a
+core CreateVideo + SaveVideo pair was added per graph and nothing else was changed. Motion dial at 1.5, 6 steps, DEAS's
+own schedule chain, output mode full; the session was captured from a 107-frame text-to-video take. Motion is the mean
+absolute frame difference per half second over the whole piece.
+
+- **The pack's session list reports cumulative frames.** The take: 107. Each first continuation: 209, with
+  `overlap_frames` 22 and `extension_frames` 102. The second continuation: 311. So a clip's listed `frames` is the
+  whole piece so far, and a later step's source count is the previous count plus that step's extension, as the branch
+  assumes for the rack's lanes and for the count it sends. This closes, for output mode full and one take plus two
+  continuations, the two points the round-two entry below lists as not verified.
+
+| Continuation | Ramp authored at (piece seconds) | Points the compiler emitted | Motion per half second |
+| --- | --- | --- | --- |
+| First, no dial | none | none | flat over the whole 8.7 s piece (1.2 to 1.8) |
+| First | 5.5 to 6.5 | `[-3.5417,0],[1.9583,0],[2.9583,1],[5.4583,1]` (shifted by 85/24 s) | flat until 5.5 s, then 3.1, 9.2, 11.5 in the half seconds from 5.5 s |
+| First | 1.6 to 2.6 (before the new segment) | `[-3.5417,0],[-1.9417,0],[-0.9417,1],[5.4583,1]` | source part unchanged; the new segment lively from its first half second (10.7, 18.1 at 4.5 to 5.5 s) |
+| Second (source = the 209-frame clip, `sourceFrames` 209) | 10.0 to 11.0 | `[-7.7917,0],[2.2083,0],[3.2083,1],[6.2083,1]` | flat until 10.0 s, then 3.7, 16.8 in the half seconds from 10.0 s |
+
+- The change is where it was authored in whole-piece time, over two continuations.
+- At 1.5 the continued segments added other people to the shot, like the picture-conditioned modes: a continuation
+  behaves like a picture mode for strength.
+- Recorded in [Dials](DIALS.md#what-renders-have-shown-so-far-provisional).
+- Not run: output mode segment; anything started from Studio; the native `confirm_source_frames` against the real
+  session list.
+
+## 2026-11-17: dials, a look dial's curve against the sampler's step count and the motion dial with a picture (parent session)
+
+**Evidence from the parent session that directed this work, reported to this branch; not produced by a DEAS run and
+not rerun here.** One seed each. The graphs were derived from compiler-emitted ones (only the rack row, the sampler
+steps and the turbo LoRA were changed) and run on a separate ComfyUI instance with ComfyUI-DaSiWa-Nodes and the Dial
+Rack nodes; clips were viewed as contact sheets.
+
+- Ink wash (`h3_ink_wash`) at 2.0 on the seep in/out curve, an anime-style prompt, DEAS's own schedule chain, with
+  the turbo LoRA unless said:
+
+  | Sampler steps | Blend steps | Result on the curve |
+  | --- | --- | --- |
+  | 6 | 6 | clear: colour, ink wash, colour |
+  | 8 | 8 | a partial, desaturated wash |
+  | 12 | 4 | nothing over time |
+  | 12 | 12 | nothing over time |
+  | 25 (no turbo LoRA) | 8 | nothing over time |
+  | 25 (no turbo LoRA) | 25 | nothing over time |
+
+  The constant row painted the whole clip at 12 and at 25 steps. Reading: this look dial's curve fades out as the
+  sampler's step count rises, whatever the blend-step count; look dials on a curve are confirmed only on short
+  schedules. Cause unknown.
+- Motion dial as a constant row with a picture: I2VA at 2.0 livelier in the same room, at 2.5 other people start to
+  appear late in the clip; REF2VA at 2.0 and 2.5 livelier with the camera panning. Together with the entry below
+  (1.5 nothing, 3.0 and 4.5 too strong): with a picture about 2.0 was useful and 2.5 to 3.0 overcooked, against 1.5
+  in text to video.
+- Recorded in [Dials](DIALS.md#what-renders-have-shown-so-far-provisional). No DEAS code was changed for it; the
+  blend-step default is unchanged, and the docs no longer suggest raising the blend steps on a long schedule.
+- Not done: more than one seed, another look dial, any run started from DEAS itself.
+
+## Experimental H3 dials (round two: continued plans with a known clip length, unreleased) — 2026-11-17
+
+Branch `dials-rack-experimental`. **Fixture and headless-Chromium evidence only**: no ComfyUI instance was started or
+contacted, no job was submitted, no GPU was used, and nothing ran in the desktop WebViews (WebKitGTK, WebView2) or on
+Windows. Continuation timing was read from ComfyUI-DaSiWa-Nodes `d90dd88`
+(`nodes/h3_continuity/core.py::continuation_timing`, `inspection.py`); the table rows were computed with that function
+lifted from the source file, the nodes were not run.
+
+| Item | Change | Test that failed before |
+| --- | --- | --- |
+| Time curves were held on every plan that continues an existing clip, because Studio did not hold the pinned clip's frame count | The plan's source keeps the picked clip's count (`ContinuityPlan.source.frames`, optional, 17k + 5; older plans stay valid and get it when the checkpoints are read again). With it the rack lays out the whole piece from 0 s (`dialTimeline` basis `planContinued`): rendered part hatched and closed to points, segment edges, the next step's latent-frame ticks and per-frame line placed by `continuationWindowStart` (mirror of native `continuation_window_start`), and no `pieceStart` hold. Without the count nothing changed | `dialCurve.test.ts`: the mirror against the native test's own table (13 rows, 5 added in this round), the layout, the shifted curve against the points the native test asserts. `DialRackDialog.test.tsx`, `ContinuitySources.test.tsx`, `ContinuityPlanner.test.tsx`, `Workbench.dials.test.tsx` (before: basis `planSource`, Run blocked) |
+| The count Studio drew with and the count native reads could differ without anyone noticing | Studio sends the count the lanes were laid out with as `h3.continuity.sourceFrames` (only with an active time curve); native `confirm_source_frames` refuses a time curve when the session list has another count for the pinned clip, or none. Intents without a curve or without a carried count behave as before | Rust `dial_time_curves_refuse_a_pinned_clip_whose_frame_count_changed` and the fixture-server test `dials_prepare_refuses_a_pinned_clip_whose_frame_count_changed` (before: the list's count replaced the carried one in silence and the job went on to the prerequisite check) |
+| Two separate edits of the Smoothing slider, of a typed Time or Level, or of the blend steps were one undo step | The reducer's gesture end closes any open tag; these controls end their gesture as the strip's do | Dialog test (before: undo went from 0.8 straight to no smoothing) and a reducer test |
+| A row of another model family that was already in the rack was not marked; the node refused it at run time | With the catalog read the row says which family it was made for, and while it is on Run is blocked with the family and the file. Nothing changes without a catalog | `DialStrip.test.tsx` and a Workbench test (before: no mark, Run enabled) |
+| With curve editing locked the readout still said "Click the lane to add a point, or select one." | A locked lane says that editing is off and that the pointer still reads the curve; six locales | Dialog test over a refusal, a closed gate, a continued plan without the count and a pre-refiner lane |
+| `room()` in `dialCurve.ts` returned -0 for a lower bound of 0, and a point moved to the lane's start was stored as -0 | The bounds are normalised | `dialCurve.test.ts` with `Object.is` (before: -0) |
+
+Gates on the final code (commit `d3e9d7c`, tree clean apart from this entry), each run once after the last code
+change:
+
+- `npm run typecheck`: exit 0. `npm run build`: built.
+- The eight dial vitest files: **149 passed** (132 before this round).
+- `npm run test:ui`: **128 files, 2273 tests passed**, one run (2252 before).
+- `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`: **22 passed, 0 failed** (20 before);
+  `... jobs_video`: **81 passed, 0 failed, 8 ignored** (80 before); `cargo fmt -- --check`: clean.
+- `tools/verify_dials.py`: **225 checks passed** (219 before; new: the continued plan with a known count in
+  three locales at two sizes, and the other-family row with and without the catalog inside the existing family checks).
+  `tools/verify_workspace_layout.py`: **467 checks passed**. Both ran with the Chromium build that is cached on
+  this host (151, Playwright build 1234) through a scratch wrapper, **not** as `npm run test:layout`, which wants build
+  1248; nothing was downloaded.
+
+Screenshot looked at (Chromium, synthetic IPC, 1440 × 960, English): the rack on a plan that continues a 243-frame
+clip with a 5 s step. The timeline heading says 15.083 s, the lanes run from 0 s, the first 10.125 s of both lanes are
+hatched with a dashed edge at the clip's end, the four points and the curve lie after it, the frame ticks under the
+axis start a little before the edge (the 22 context frames) and run to the end, the thin stepped line follows the
+curve, the tools are enabled and no refusal is shown.
+
+Not verified: a real session (that a clip's listed `frames` is what this layout assumes, in both output modes; that
+the count before a later step is the picked clip's plus each finished step's extension, which is the pack's rule read
+from source); the refusal against a real backend; `prepare`'s session read failing in other ways than a missing clip
+(only the missing clip and the changed count were driven through the fixture server; an unreadable list takes the same
+branch by reading the code); the gesture boundaries in WebKitGTK and WebView2; the hatch pattern and the family mark in
+those WebViews; translations by a native speaker; the full Rust suite and clippy were not rerun.
+
+Left open on purpose, see [the plan](PLAN.md): a plan that starts the piece does not send a count for its later
+steps, so their lanes are not confirmed by native; the rack dialog's help text does not yet name the long-schedule
+finding for look dials (the docs do); reading the catalog for the LoRAs tab.
+
+## 2026-11-17: dials, renders from compiler-emitted graphs in other modes and at 25 steps (parent session)
+
+Evidence from the session that directed this work, not from a DEAS run: the graphs were compiled with the ignored
+`dump_intent_dir_graphs` test from intent files, then run on a separate ComfyUI 0.45.0 instance with
+ComfyUI-DaSiWa-Nodes and the Dial Rack nodes. A core CreateVideo + SaveVideo pair was added to each graph for the
+operator's launcher; nothing else was changed. One seed each, 832x480, 107 frames; clips were viewed as contact sheets.
+
+- I2VA (first frame) and REF2VA (one reference picture, reference model and its turbo LoRA): no dials, a constant
+  motion row at 1.5, and in I2VA a curve row at 1.5: all five ran without node errors. At 1.5 nothing visible changed;
+  derived graphs with the row at 3.0 and 4.5 acted strongly in both modes.
+- 25 sampler steps without a turbo LoRA: the motion dial's ramp acted with 8 and with 25 blend steps; the ink wash
+  dial painted the clip as a constant row but showed no seep in or out on a curve with 8 or 25 blend steps.
+- Ink wash seep curve at 6 steps on a second seed: 6 blend steps gave a pale wash over the middle of the clip, 2 only
+  a glow.
+- Not done: any run started from DEAS itself; DEAS-owned nodes were not on that instance.
+
+## Experimental H3 dials (independent review and fixes, unreleased) — 2026-11-17
+
+Branch `dials-rack-experimental`. An independent read-only review of the whole branch
+reported findings; eight were confirmed and fixed, one commit each, each with a test
+that failed on the code before the fix. **Fixture and headless-Chromium evidence only**:
+no ComfyUI instance was started or contacted, no job was submitted, no GPU was used, and
+nothing ran in the desktop WebViews (WebKitGTK, WebView2) or on Windows. Node behaviour
+was read from the installed ComfyUI-MAINodes checkout (`382f640`, `dials/nodes.py`,
+`timecurve.py`, `core.py`) and continuation timing from ComfyUI-DaSiWa-Nodes `d90dd88`
+(`nodes/h3_continuity/core.py::continuation_timing`, `align_frame_count`); neither was
+run.
+
+| Finding | Fix | Test that failed before |
+| --- | --- | --- |
+| The rack's Continuity lanes snapped every later step as `round(seconds·24/17)·17`, the compiler's rule only when `durationSeconds` is sent (REF2VA). A 5 s + 1 s plan was drawn as 141 frames where the compiler renders 158 in text to video | `continuationFrames` mirrors both branches of native `continuation_extension`; the Workbench passes the mode | `dialCurve.test.ts` reads the table of the new Rust test `continuation_extension_follows_the_duration_the_director_receives` (0.5 to 15 s in 0.5 s steps, 30 rows; the two rules differ at 1, 4.5, 6, 9.5, 13 and 14.5 s). Before: lane 141 frames, expected 158. A Workbench test checks 6.583 s (T2VA) and 5.875 s (REF2VA) |
+| On a plan that continues an existing clip the lanes start at 0 s but the compiler shifts every point by the pinned clip's length less the context frames; the dialog drew a curve the model did not get and Run was not blocked | The dialog draws neither the frame ticks nor the per-latent-frame line there; active curve rows are held through `dialCurveConflicts` (new id `pieceStart`), with the reason in the strip, the dialog and on Run; six locales | Workbench test: before, Run's title did not carry a reason and Run was enabled. Dialog and `dialCurveConflicts` tests |
+| A level-only edit re-clamped the point's time, so a point outside the lane or closer than 1/6 s to its neighbour jumped | `movePoint` keeps the time when the requested time is the point's own | `dialCurve.test.ts` (before: `[-2, 0.7]` became `[0, 0.7]`) and a dialog test (before: `[10, 0.4]` became `[5, 0.4]`) |
+| Separate strip edits of one row and field merged into one undo step | Only strength changes inside one gesture merge; the strip ends the gesture at the field's change commit, pointer up, key up or blur (a held slider key is one step); a switch is always its own step | Dialog test: before, undo went from 3 straight to 1.5. Reducer test |
+| An oversize answer on the preset routes was `DIAL_PRESETS_UNREACHABLE` ("did not answer") | `DIAL_PRESETS_TOO_LARGE` with its own Logs line and sentence | Fixture-server test `dial_presets_report_an_oversize_answer_as_too_large_not_unreachable` (before: the unreachable text) |
+| `dials?` was typed on the union member that also covers `minimax-h3-hyperflow` | The member is split; HyperFlow has `dials?: never`; no runtime change | `npm run typecheck` on a new test in `dials.test.tsx` (before: TS2322) |
+| The LoRAs tab hid every file under `loras/dials/` by path | Once the catalog was read, only the files it lists (and `_` folders); the path rule while no catalog is available or the catalog is partial | Workbench test with a real LoRA in `dials/` in both states (before: still hidden after the catalog was read); `isPickerDial` test |
+| The catalog's `mode` was dropped and `family` unused | Both kept. Another family is not offered once the catalog was read; a pre-refiner dial is offered, its lane takes no curve and says why, and an active curve on one blocks Run (`preDial`) | `dialInfo.test.ts`, dialog and Workbench tests (before: the other families stayed in the add list) |
+
+Counted from the dial files on the development machine (safetensors headers read on
+disk, 2026-11-17): of the 200 files the pack's catalog rule lists, 126 are post-refiner
+and 15 pre-refiner MiniMax H3 dials, 56 are MOSS-Image and 3 Krea 2 dials; 71 more lie
+in folders starting with `_`. `h3_motion.safetensors` is a post-refiner file; the test
+fixtures that had it as `pre` were corrected.
+
+Gates on the final code (commit `1d687b7`, tree clean), each run once after the last
+fix:
+
+- `npm run typecheck`: exit 0. `npm run build`: built.
+- The eight dial vitest files: **132 passed** (114 before the fixes).
+- `npm run test:ui`: **128 files, 2252 tests passed**, one run (2234 before).
+- `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`: **20 passed, 0
+  failed** (19 before); `... jobs_video`: **80 passed, 0 failed, 8 ignored** (79
+  before); `cargo fmt -- --check`: clean.
+- `tools/verify_dials.py`: **219 checks passed** (204 before; new: the continued-plan
+  state in three locales at two sizes, and the family and pre-refiner states in three
+  locales with and without the catalog). `tools/verify_workspace_layout.py`: **467
+  checks passed**. Both ran with the Chromium build that is cached on this host (151,
+  Playwright build 1234) through a scratch wrapper, **not** as `npm run test:layout`,
+  which wants build 1248; nothing was downloaded.
+
+Screenshots looked at (Chromium, synthetic IPC): the rack dialog on a plan that
+continues an existing clip at 1440 × 960 in English (the reason above the rows and
+under the tools, the basis text, the curve drawn, points and tools dimmed except Remove
+curve and Copy, no frame ticks under the axis, no stepped line), and the rack with a
+pre-refiner lane selected (tools dimmed, the reason shown, frame ticks present).
+
+Not verified: everything against a real backend or the real nodes (the pre-refiner
+refusal and the family check were read from the node source, not triggered); the
+gesture boundary in WebKitGTK and WebView2 (whether a slider's `change` and pointer-up
+arrive as in Chromium); the continued-plan state on a real session; translations by a
+native speaker; the full Rust suite and clippy were not rerun.
+
+Left open on purpose, see [the plan](PLAN.md): reading the pinned clip's length before
+Run so a curve can be authored on a plan that continues an existing clip; flagging a row
+of another family that is already in the rack; reading the catalog for the LoRAs tab.
+
+## Experimental H3 dials (dial info and curve audio mode, unreleased) — 2026-11-16
+
+Branch `dials-rack-experimental` on top of the rack presets below; see
+[Dial info](DIALS.md#dial-info), [the design](DIALS.md#a-dials-own-information) and
+[Blend steps](DIALS.md#blend-steps). **Fixture and headless-Chromium evidence only.**
+This work started and contacted no ComfyUI instance: the catalog route was answered by
+the project's Rust fixture server and, in the browser, by an in-page stand-in. No job
+was submitted, no model was loaded and no GPU was used. Nothing was run in the desktop
+WebViews (WebKitGTK, WebView2) or on Windows. The fixture content for four dials is
+public dial metadata copied from the development machine's dial files; the fifth entry
+is built from the pack's schema, because none of the 200 dial files there records
+per-pipeline measurements (read from the file headers on disk: 46 record a positive
+useful strength, 0 record `pipelines`, the catalog's info is about 53 kB).
+
+- **Native command (Rust), fixture server: pass.** `native_dial_catalog`
+  (`src-tauri/src/jobs_dial_info.rs`).
+  `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`: **19 passed, 0
+  failed** (16 before). The two catalog tests cover: exactly one `GET
+  /mainodes/dials/catalog`; the four real entries come back unchanged; unknown keys,
+  unknown pipelines, a strength that is 0, negative, above 20 or not a number, an
+  overcook below the useful strength, an unknown evidence or kind, blend steps of 0,
+  151 or 2.5 and non-text labels are dropped or read as unknown; texts are cut to the
+  pack's limits and control characters replaced; entries in a `_` folder, outside
+  `dials/`, with traversal, without info v2 or listed twice are left out and counted;
+  1005 dials give the first 1000 and `truncated`; a 404 or 405 without the route gives
+  `DIAL_INFO_UNAVAILABLE`; HTTP 500 and 400, a non-JSON answer, four wrong shapes, an
+  answer above 1 MiB (`DIAL_INFO_TOO_LARGE`), an unreachable backend and a URL with
+  credentials; and that the Logs entries have origin, severity and operation, are
+  rate-limited, and hold no URL, credential or backend text.
+- **Curve audio mode (Rust): pass.** In the same run,
+  `dial_time_curve_audio_mode_is_written_only_when_authored`: without the field the
+  emitted rack is the string it was before the field existed; `protect` and `follow`
+  add only `"audio":"…"` to that row and change nothing else in the graph; seven other
+  values are refused; the preset save path accepts a protected curve and sends it.
+- **Blend-step default (Rust and TypeScript): pass.** Changed during this work on new
+  render evidence (below): every step for a job of at most 8 sampler steps, else
+  `max(2, round(steps / 3))`. The shared table is 1→1, 2→2, 3→3, 4→4, 6→6, 7→7, 8→8,
+  9→3, 12→4, 20→7, 25→8, 30→10, 50→17, 150→50; the TypeScript test reads the Rust
+  test's own table. Five exact rack strings of the 4-step fixture changed from
+  `"steps":2` to `"steps":4`. The emitted rack of a 6-step job with a constant row and
+  a curve without authored steps is asserted as:
+  `[{"dial":"dials/h3_motion.safetensors","strength":1.5},{"dial":"dials/sub/h3_calm.safetensors","strength":-0.5,"time":{"interp":"linear","points":[[0,0.5],[1.5,1],[4,-2]],"smooth":0,"steps":6,"type":"keys","unit":"seconds"}}]`.
+- `cargo test --manifest-path src-tauri/Cargo.toml --locked jobs_video`: **79 passed, 0
+  failed, 8 ignored.** `cargo fmt -- --check`: clean.
+- **The whole Rust suite was run once and is not clean on this host:** 871 passed, 205
+  failed, 78 ignored. The failures are in modules that write to temporary directories
+  (`downloads`, `backend`, `install`, `media_delete`, `llm`, `app_update`, …) with
+  messages such as "Download directory must be owned by the effective user with trusted
+  permissions" and "No such file or directory". None is in a dial test or in
+  `jobs_video`. **Not checked on the unchanged tree**; that they come from this
+  session's sandboxed temporary directory is a hypothesis.
+- **Frontend unit and component tests: pass.** The eight dial files (`dials`,
+  `dialCurve`, `dialPresets`, `dialInfo`, `DialStrip`, `DialRackDialog`,
+  `DialPresetsDialog`, `Workbench.dials`): **114 passed** (92 in seven files before).
+  They cover the catalog parsing and its limits, the slider reach and mark positions
+  (for example -3 to 8 and marks at 7.5/11 and 1 for the impact frame dial), the
+  overcook warning, the starting strength, the pipeline mapping, blend steps from a
+  file cut to the job, the note and the unavailable state of the strip, the rack
+  dialog's info block, "Use" button and audio control, the audio mode through intent,
+  paste, reducer, undo and presets, and in the Workbench that the catalog is read once
+  when the tab opens, not again when the rack opens, again on reload, never without the
+  Dial Rack nodes or on another family, and that a failed read leaves Run usable.
+  `npm run test:ui`: **128 files, 2234 tests passed** (one run). `npm run typecheck`
+  and `npm run build`: exit 0.
+- **Headless Chromium, synthetic IPC: pass.** `tools/verify_dials.py` through the
+  scratch wrapper that launches the cached Chromium 151 (the pinned Playwright's own
+  browser build is not installed here): **204 checks** (150 before). New: per locale
+  and at 1440×1300, 1440×960, 1024×700, 390×844 and 320×480, every mark lies under the
+  thumb position of its strength within 1.5 px (for Chromium's 16 px thumb), the side
+  labels start and end with the slider and do not overlap, the facts line stays in its
+  row, the note opens from the keyboard, the rack's info block and the audio and blend
+  step controls stay inside the dialog and reachable, and the rack does not read the
+  catalog again; starting strength 4.5 for the impact frame dial, the overcook warning
+  appearing and clearing, blend steps 6 taken from the schema example on a 20-step job
+  (default 7), the audio mode written and removed; and the unavailable state at three
+  sizes with nothing disabled and a later reload bringing the info in.
+- **Layout gate: substitute only.** `npm run test:layout` cannot launch its pinned
+  browser on this host. The unchanged `tools/verify_workspace_layout.py` through the
+  same wrapper: **PASS, 467 checks**, negative control rejected. This is not the gate.
+- **Screenshots, looked at:** `info-strip-*` and `info-rack-*` (35 files) at 1440×1300,
+  1440×960, 1024×700, 390×844 and 320×480 in English, German, Japanese, French,
+  Turkish and Chinese. Seen: labels under the slider ends, ticks at the thumb for a row
+  at its useful strength, the copper warning line on the row at 9 with overcook 8, the
+  open note with the "k = 6" texts, the rack's "From the dial file" block, "The dial
+  file records 6 blend steps for text to video", Audio "Protected", and the
+  unavailable note. Found and fixed from them: at 390 px the labels were cut to a few
+  letters, so a row with info now gives the slider its own line. At 1440×960 the
+  unavailable screenshot shows the note but hardly any row.
+
+**Evidence from the parent session, not from this work: the preset requests against the
+real pack.** On 2026-11-16 the requests DEAS sends for rack presets were tried by hand
+against ComfyUI-Dials alone on a CPU instance with a scratch models folder: the list
+answered 200; a save answered 200 with the pack's `sha256` filled in; a second save of
+the same name answered 409 `{"error": "Preset already exists. Choose a new name."}`; a
+load answered 200; a missing name answered 404 `{"error": "Preset not found."}`; a bad
+row answered 400 with the reason. A ComfyUI route that does not exist answered 404 with
+content type `application/octet-stream` and no JSON, which is the case the native code
+reports as `…_UNAVAILABLE`. These match what the fixture server stands in for. The
+catalog route was read for its shape (`{"dials":[{"dial","family","mode","info"}],
+"families":{…}}`, 200 dials) in the same session; `native_dial_catalog` itself was not
+pointed at it.
+
+**Render evidence behind the blend-step default, from the parent session** (one seed
+each, DEAS's own chain: SigmaShift 10/3, beta scheduler, 6 steps; clips viewed there,
+not here): `h3_ink_wash` at 2.0 on an anime-style prompt is a full ink-wash painting as
+a constant row, goes colour, ink wash (about 1.5 to 2.5 s), colour on a seep in/out
+curve with 6 blend steps, and shows only a faint wash with 2; on a photoreal prompt it
+did nothing even as a constant row. `h3_motion` on the 0 to 1 ramp behaved the same
+with 6 blend steps as with 2 (1.5 acts, 1.35 does not). Earlier, at 25 steps without
+the turbo LoRA, the motion curve acted with 8 blend steps and not with 2. Nothing is
+known about look dials at 25 steps or about any job between 7 and 24 steps.
+
+**Not verified:** the command against a real backend or an external one; real dial
+files with `pipelines`; a catalog with an unreadable dial file (the HTTP 500 is read
+from the pack's source); tick positions in WebKitGTK and WebView2, whose slider thumbs
+were not measured; I2VA and L2VA read as the pack's `fl2v`; any run with the audio mode
+or the new default started from DEAS; screen readers; Windows.
+
+## Experimental H3 dials (rack presets, unreleased) — 2026-11-16
+
+Branch `dials-rack-experimental` on top of the rack dialog below; see
+[Rack presets](DIALS.md#rack-presets) and
+[the design](DIALS.md#rack-presets-the-store-and-how-deas-reaches-it). **Fixture and
+headless-Chromium evidence only.** No ComfyUI instance was started or contacted by this
+work: the preset routes were answered by the project's Rust fixture server and, in the
+browser, by an in-page stand-in. No preset file was written anywhere, no job was
+submitted, no model was loaded and no GPU was used. Nothing was run in the desktop
+WebViews (WebKitGTK, WebView2) or on Windows. The render observations now quoted in the
+UI text and in [Dials](DIALS.md#what-renders-have-shown-so-far-provisional) come from
+separate one-seed renders made outside DEAS on 2026-11-16; they are not DEAS acceptance.
+
+- **Native commands (Rust), fixture server: pass.** `native_dial_presets`,
+  `native_dial_preset_load` and `native_dial_preset_save`
+  (`src-tauri/src/jobs_dial_presets.rs`).
+  `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`: **16 passed, 0
+  failed** (14 before; the two new tests use the `jobs_tests.rs` fixture server). They
+  cover: only the three pack routes are requested; names outside the pack's pattern are
+  not listed and never sent; a loaded preset's rows come back as the pack sent them and
+  its warnings as `missing` / `changed`; the body of a save is exactly the given rows
+  (no hash added); a save with a row the compiler refuses (solo, a hash, hold, a curve
+  not in seconds, a file outside `dials/`, 0 or 9 rows) is refused before any request; a
+  backend that answers the route with plain 404/405 gives `DIAL_PRESETS_UNAVAILABLE`;
+  the pack's 409, 404 and 400 answers keep their reason, bounded to 300 characters
+  without control characters; HTTP 500, a non-JSON answer, a wrong format and more than
+  64 rows are reported as such; an unreachable backend and a URL with credentials; and
+  that each failure writes a central Logs entry with origin, severity, operation and the
+  preset name, without URL, credentials or backend text, repeats of one cause limited.
+  `cargo test … jobs_video`: 78 passed, 8 ignored (the eighth is the new
+  `dump_intent_dir_graphs`, which compiles intent files from a directory named by an
+  environment variable). `cargo fmt -- --check`: clean. The full Rust lib suite and
+  Clippy were not rerun for this slice; their host-specific failures are recorded below.
+- **Conversions and dialog (vitest): 92 tests in 7 files, pass** (71 in 5 before).
+  `npx vitest run src/lib/dials.test.tsx src/lib/dialCurve.test.ts
+  src/lib/dialPresets.test.ts src/features/studio/DialStrip.test.tsx
+  src/features/studio/DialRackDialog.test.tsx
+  src/features/studio/DialPresetsDialog.test.tsx
+  src/features/studio/Workbench.dials.test.tsx`. `dialPresets.test.ts` (12): the name
+  pattern; a plain preset loads unchanged; clip fractions to seconds with the lane
+  length (4 s, the real 107-frame clip, another length) and the note; one case per row
+  kind that is not sent (wired input, hold, envelope, blocks, audio curve, a bad file,
+  strength, four curve limits, a row that is not an object), each left out with its
+  reason while its neighbour loads; the ninth row; solo as switching the others off,
+  including an idle and an unloadable solo row; the audio mode note; the pack's warnings
+  per row; what a save sends; the round trip through the pack's stored form on two lane
+  lengths; a load as its own undo step in the reducer; and the failure-code split.
+  `DialPresetsDialog.test.tsx` (9): list, per-row notes and warnings, load; save under a
+  new name with exactly the DEAS rows and the saved preset read back; the pack's
+  "already exists" answer with the stored preset unchanged; the missing route (reason
+  shown, list, load and save disabled, also after typing and after a refresh); a refused
+  preset; an empty rack and a preset with nothing to load; close, cancel and focus
+  return; the strip's button; and inside the rack dialog a load as one undo and redo
+  step, with Esc and Ctrl+Z in the presets dialog not reaching the rack. That last
+  assertion fails without the fix (checked once by reverting it). The locale test now
+  covers 130 `studio.dials.*` keys in six locales.
+- **Typecheck and build: pass.** `npm run typecheck`; `npm run build`.
+- **Full UI suite: one failing test per run, a different one each time, on this loaded
+  host.** `npm run test:ui`, three runs with the change: run 1, 126 of 127 files and
+  2,211 of 2,212 tests passed, failing
+  `FoldersPanel.test.tsx > adds extra model roots…`; run 2, the same counts, failing
+  `Workbench.part4.test.tsx > external video reference preview…`; run 3 (final code):
+  **127 of
+  127 files and 2,212 of 2,212 tests passed.** Each failing file passed when run alone right afterwards (`FoldersPanel`
+  three times, 7 tests; `Workbench.part4` twice, 86 tests). Load average was 6 to 11
+  with other jobs on the machine. **Not checked:** the unchanged tree under the same
+  load, so these are not called pre-existing; neither file is touched by this change,
+  but `Workbench.part4` renders the Workbench, which is.
+- **Locale parity (substitute for `npm run test:core`, which cannot run on this Node
+  22.22.1):** `tests/i18n.test.ts` bundled with the repository's esbuild into a scratch
+  folder (CommonJS, `import.meta.url` defined as the test's own path) and run with
+  `node --test`: 5 passed, 0 failed, including six-locale key and placeholder parity and
+  the audit of UI keys referenced from source. The other core test files were not run.
+- **Layout gate: the documented command could not run here** (as recorded below:
+  `chromium_headless_shell-1248` is not installed; nothing was downloaded). Substitute,
+  not the gate: the unchanged `tools/verify_workspace_layout.py` through the scratch
+  wrapper and the cached Chrome for Testing 151.0.7922.34 headless shell:
+  status PASS, 467 checks, run on the final tree.
+- **Presets dialog in Chromium (same wrapper and browser): pass, 150 checks** (108
+  before, plus 42). `tools/verify_dials.py` opens the dialog from the strip in six
+  locales at 1440×960, 1440×1300, 1024×700, 700×600, 390×844 and 320×480 and asserts:
+  an open modal inside the viewport; opening and closing leaves the measured shell
+  boxes and page size unchanged; no horizontal overflow of the page, the body or either
+  panel; every button, field, row, note and row summary inside its panel; no two
+  controls overlapping; the five rows of the fixture preset in their states (warning,
+  ok, left out, left out, warning); every row, both buttons and the info text reachable
+  by scrolling; Esc closes with focus back on the button and no row changed. Then per
+  locale with a real mouse and keyboard: an invalid name keeps Save off; a save sends
+  exactly the rack's rows with only `dial`, `strength`, `on`, `time`; saving the same
+  name again shows the "already exists" answer and changes nothing; a load brings three
+  of five rows with the curve converted for the 124-frame lane
+  (`[[0,0],[2.0667,0],[3.3583,1],[5.1667,1]]`); from the rack dialog the presets dialog
+  is a modal above it, a load replaces the rows, Esc closes only the presets dialog and
+  one Undo restores the rack; and with the route missing the reason is shown and list,
+  load and save are disabled. **The first run of this check found a defect** (Esc in
+  the presets dialog also closed the rack) that the component tests had not; it is
+  fixed and now covered in both. Screenshots looked at, in
+  a folder outside the repository:
+  `presets-en-1440x960`, `presets-de-1440x960`, `presets-en-390x844`,
+  `presets-de-390x844-rows`, `presets-en-320x480-rows`, `presets-fr-320x480`,
+  `presets-ja-1024x700`, `presets-zh-700x600`, `presets-tr-1440x1300`,
+  `presets-en-exists-1440x960`, `presets-en-over-rack-1440x960`,
+  `presets-en-unavailable-1440x960` and `presets-ja-unavailable-1440x960`. Looking at
+  them led to two layout fixes (a French row summary cut off at 320 px; the name
+  field's focus ring clipped), both re-shot.
+- **Not established.** The dialog and the native commands against a real backend with
+  the pack: the real answers of `/mainodes/dials/presets`, the pack's hashes and
+  warnings, an external backend, and what a backend without the pack really answers
+  (assumed from aiohttp's plain-text 404; the fixture imitates it). A preset written by
+  DEAS opened in the ComfyUI rack, and the reverse with a real file. Whether the
+  one-seed strength guidance in the hint holds for other dials, prompts and seeds.
+  WebKitGTK/WebView2 (nested modal dialogs, focus return, the select), a screen reader,
+  touch input, Windows. The translations were written with the change and not reviewed
+  by native speakers.
+
+## Experimental H3 dials (rack dialog and blend steps, unreleased) — 2026-11-16
+
+Branch `dials-rack-experimental` on top of the dock strip below; see
+[the rack dialog](DIALS.md#the-rack-dialog-and-its-timeline) and
+[Blend steps](DIALS.md#blend-steps). **Fixture and headless-Chromium evidence only.** No
+ComfyUI instance was started or contacted by this work, no job was submitted, no model
+was loaded and no GPU was used. Nothing was run in the desktop WebViews (WebKitGTK,
+WebView2) or on Windows. The render observations quoted in the documentation (the
+blend-step settings that acted, the scene change at row strength 1.5) come from separate
+one-seed proof renders made outside DEAS on 2026-11-16 with hand-built graphs; they are
+not DEAS acceptance and no job started from Studio's controls has run.
+
+- **Compiler (Rust).** `time.steps` is accepted (whole number 1 to 150; on an active row
+  at most the job's `steps`) and every emitted curve now carries `steps`: the authored
+  value, else `max(2, round(steps / 3))` capped at the job's steps.
+  `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`: **14 passed, 0
+  failed** (13 before; the new test covers the default at 13 step counts, the exact rack
+  string at 25 steps with and without an authored value, the bounds, an inactive row, and
+  the De-rope graph). `cargo test … jobs_video`: 78 passed, 7 ignored. The three tests
+  whose exact rack JSON changed were updated (`"steps":2` at the fixture's 4 job steps);
+  the "no dials = unchanged graph" test is untouched and passes.
+  `cargo fmt -- --check`: clean.
+- **Full Rust lib suite and Clippy: same host failures as before, none new.**
+  `cargo test --lib`: 866 passed, 205 failed, 77 ignored. The 205 failing names are
+  identical to the list recorded for this branch before the change (865 passed, 205
+  failed); they fail on this host's temporary-directory ownership check
+  (`Download directory must be owned by the effective user …`) and in unrelated
+  modules. `cargo clippy --all-targets -- -D warnings` stops on the same six
+  `chunks_exact` lints in `audio_runtime.rs`, `jobs_auto_refine.rs` and
+  `jobs_preview.rs` as before; none is in a changed file. Neither is a pass.
+- **Sampler against the pack's own maths: pass.** `src/lib/dialCurve.fixture.json` was
+  generated with the ComfyUI venv's Python on CPU by a scratch script that lifts
+  `keyframes` (`dials/envelopes.py`) and `curve_fn`, `clip_clock`, `frame_weights`
+  (`dials/timecurve.py`) out of ComfyUI-MAINodes `382f640` with `ast` (the modules import
+  ComfyUI) and runs them with NumPy 2.5.2: 48 curves, 3,354 sampled times, and
+  per-latent-frame means for clips of 5, 9 and 29 latent frames. The TypeScript sampler
+  and frame averaging match every value within 1e-12. The generator is not in the
+  repository; the fixture records its source commit and that those files were unmodified.
+- **Component tests: 71 in 5 files, pass.** `npx vitest run src/lib/dials.test.tsx
+  src/lib/dialCurve.test.ts src/features/studio/DialStrip.test.tsx
+  src/features/studio/DialRackDialog.test.tsx
+  src/features/studio/Workbench.dials.test.tsx`. New coverage: the sampler fixture;
+  latent-frame starts; lane length for a clip, a Continuity piece and a plan on an
+  existing clip; move/add/remove with snapping, the 1/6 s gap, the level range and the
+  two-point minimum; the four presets on 38 lane lengths (levels 0 to 1, gaps, ramp
+  length); clipboard text and the pack's clip-fraction form; the rack reducer with undo
+  and redo; the blend-step default against the native formula and the native test's own
+  table; one test per time-curve refusal comparing trigger and wording with the Rust
+  source, plus their order; the dialog (open, focus on Close, close by button and by
+  cancel, lanes, add/remove curve, presets, mouse add/drag/select/double-click, keys,
+  number fields, level range, blend steps, smoothing and step drawing, copy/paste with
+  and without a clipboard, shared undo with the strip, each refusal's disabled state);
+  and in the Workbench: open from the strip, edit, the exact `dials` JSON that Run
+  sends, focus back on the button, Run blocked by a blend-step and a face-refinement
+  refusal and released, and join transitions withheld with the reason.
+- **Typecheck and build: pass.** `npm run typecheck`; `npm run build`.
+- **Full UI suite: passes, with intermittent failures in unrelated files on this
+  loaded host.** `npm run test:ui` was run four times with the change: 125 files /
+  2,190 tests passed (before the last test was added); then 1 failure
+  (`Workbench.h3Continuity.t2v-i2v`); then 3 failures (`Workbench.h3Continuity.v2v`,
+  `Workbench.part2`, `Workbench.part4`, one of them a 5 s timeout); then **125 files /
+  2,191 tests passed**. The failing tests differed between runs, are in files this
+  change does not touch, and all four files passed when run on their own (254 tests),
+  the first of them also with the change stashed. The machine was running other jobs
+  (load average 4 to 10). Whether the unchanged tree shows the same intermittent
+  failures under this load was not measured.
+- **Locale parity (substitute for `npm run test:core`, which cannot run on this Node):**
+  `tests/i18n.test.ts` bundled with the repository's esbuild into a scratch folder and
+  run with `node --test`: 5 passed, including six-locale key and placeholder parity and
+  the audit of UI keys and literal text referenced from source. The other core test
+  files were not rerun.
+- **Layout gate: the documented command could not run here**, as recorded below
+  (`chromium_headless_shell-1248` is not installed; nothing was downloaded).
+  Substitute, not the gate: the unchanged `tools/verify_workspace_layout.py` through the
+  same scratch wrapper and the cached Chrome for Testing 151.0.7922.34 headless shell:
+  status PASS, 467 checks.
+- **Rack dialog in Chromium (same wrapper and browser): pass, 108 checks** (the strip's
+  72 plus 36 for the dialog). `tools/verify_dials.py` now also opens the dialog in six
+  locales at 1440×960, 1440×1300, 1024×700, 390×844 and 320×480. It asserts: the
+  dialog is an open modal inside the viewport; opening and closing it leaves the
+  measured shell boxes and page size unchanged; no horizontal overflow; every lane's
+  plot and the axis start and end at the same pixels; the selected lane is the tall
+  one; points inside their lane; 38 latent-frame ticks and non-overlapping second
+  labels; tools inside their rows without overlap; every lane and help line reachable
+  by scrolling the dialog; Enter opens it with focus on Close, Esc closes it with focus
+  back on the button, and looking changes no row. With a real mouse and keyboard in
+  each locale: a click adds a snapped point that takes focus, a drag follows the
+  pointer and stops 1/6 s before the next point with the pointer outside the lane, a
+  released point stays, arrows nudge, Delete removes, Ctrl+Z and Ctrl+Shift+Z step
+  through history, a preset writes levels 0 to 1, blend steps are stored, and copy then
+  paste moves the curve to another lane (the headless clipboard path that was taken is
+  not asserted). Screenshots looked at: en 1440×960 after editing, en 320×480 (top and
+  end), en 390×844, de 1024×700, ja 390×844, tr 320×480 and zh 1440×1300.
+- **Not established.** Any real render of a job compiled with the new `steps`, in
+  particular the De-rope pass (described from source only); whether the default suits
+  step counts other than 6 and 25; the Continuity piece length against a real session;
+  pointer capture, the clipboard and the range inputs in WebKitGTK/WebView2; a screen
+  reader; touch input; Windows; performance (the dialog redraws each lane's 200-sample
+  path on every pointer move; not measured).
+
+## Experimental H3 dials (Studio dock strip, unreleased) — 2026-11-16
+
+Branch `dials-rack-experimental` on top of the compiler slice below; see
+[Dials](DIALS.md#the-dials-tab-in-studio). **Fixture evidence only.** No ComfyUI
+instance was started or contacted, no job was submitted, no model was loaded and no GPU
+was used. No Rust changed, so no Cargo suite was run for this part. Nothing was run in
+the desktop WebViews (WebKitGTK, WebView2) or on Windows.
+
+- **Typecheck and build: pass.** `npm run typecheck`; `npm run build` (`tsc --noEmit`
+  and `vite build`).
+- **New component tests (24 in 3 files): pass.** `npx vitest run src/lib/dials.test.tsx
+  src/features/studio/DialStrip.test.tsx src/features/studio/Workbench.dials.test.tsx`.
+  They cover: file-name, row and curve validation against the native limits; the
+  emitted `dials` JSON compared as a string with the native fixture
+  `[dial_row(1.5), timed_dial()]`; no field without an active row and on other
+  families; restore from a recent generation and clearing; the three gates plus full
+  rack, empty folder, unread list and missing file; add, switch, slider, number field
+  (clamping and unfinished numbers), remove; the read-only curve thumbnail; Run blocked
+  by name for a missing `MAIDialRack`, a missing dial file and a GGUF base, and released
+  when the rows are switched off; rows inert on LTX; dial files left out of the LoRA
+  tiles unless already selected; settings capture/apply; all 19 strings present in six
+  locales with matching placeholders; the global search entry.
+- **Full UI suite: pass, no new failure.** `npm run test:ui`: 123 files / 2,144 tests
+  passed with the change; 120 files / 2,120 passed on the same checkout before it.
+- **Core suite: not runnable on this host, before or after.** `npm run test:core` fails
+  24/24 files with `ERR_NO_TYPESCRIPT` (Node v22.22.1 without type stripping), the same
+  before the change. As a substitute the same test files were transpiled with the
+  repository's esbuild into a scratch folder and run with `node --test`: 166 passed, 0
+  failed, including the six-locale key and placeholder parity and the audit of locale
+  keys referenced from source. This is not the documented runner.
+- **Layout gate: the documented command could not run here.** `npm run test:layout`
+  stops at `BrowserType.launch: Executable doesn't exist at
+  …/ms-playwright/chromium_headless_shell-1248/…` (the pinned Playwright 1.64.1 expects
+  a Chromium build that is not installed; nothing was downloaded). The unchanged script
+  `tools/verify_workspace_layout.py` was then run through a scratch wrapper that only
+  passes `executable_path` of the cached Chrome for Testing 151.0.7922.34 headless shell:
+  status PASS, 467 checks. Different browser build than the gate pins; treat it as
+  supporting evidence, not as the gate.
+- **Strip in Chromium (same wrapper and browser): pass.** New `tools/verify_dials.py`,
+  synthetic read-only IPC: 72 checks over six locales, the ready and node-missing
+  states and five window sizes from 1440×1300 to 320×480. It asserts no horizontal
+  overflow of page or dock panel, every row control inside its row and none overlapping,
+  every row reachable by scrolling, a long file name, and keyboard-only use (arrow keys
+  on the slider, Space on the switch, the add list, Enter on Remove) with the saved rows
+  checked afterwards. Screenshots were looked at for en 1440 and 390, de 1024 and the
+  node-missing state.
+- **Not established.** A real backend: that its LoRA list carries the dial files and
+  its node list the two Dial Rack ids as the fixtures assume; a job started from the tab;
+  the Beginner switch and media-metadata restore paths, which clear the rows but have no
+  test; a screen reader; WebKitGTK/WebView2 rendering of the range input; Windows path
+  separators beyond the unit test; performance (one more preference and a list filter
+  per render; not measured).
+
+## Experimental H3 dials (compiler slice, unreleased) — 2026-11-16
+
+Branch `dials-rack-experimental` on `b23de71`; see [Dials](DIALS.md). **Fixture
+evidence only.** No ComfyUI instance was started or contacted, no graph was passed
+to `validate_prompt`, no model was loaded and no GPU was used. Node behaviour was
+read from the installed ComfyUI-MAINodes checkout at `382f640` (`dials/nodes.py`,
+`timecurve.py`, `presets.py`; the Dial Rack classes and those two modules are
+identical in the local ComfyUI-Dials checkout at `31bf97d`). Neither revision is a
+pinned or released dependency.
+
+- **Build environment.** The host has no GTK/WebKit/D-Bus development packages, so
+  the plain `cargo test` build stops in `libdbus-sys` (`Package dbus-1 was not
+  found in the pkg-config search path`). The runs below linked through a
+  scratch-only `PKG_CONFIG_PATH` of generated `.pc` files pointing at the runtime
+  libraries already installed; no system package was installed. rustc/cargo 1.98.0.
+- **New tests (10): pass.** `cargo test --manifest-path src-tauri/Cargo.toml --locked dial`
+  ran 13 matching tests (10 new, 3 unrelated "dialog" tests), 13 passed. They cover
+  the unchanged graph without active rows, rack placement and exact `rack` JSON,
+  dropped inactive rows, every refusal, De-rope with and without a time curve
+  (turbo LoRA, carried LoRA, distilled), the continued-window shift, the
+  prerequisite allowlist and `prepare()` with the nodes or a dial file missing.
+  A temporary three-way mutation (no shift, no hold map, inactive rows kept) made
+  6 of them fail.
+- **Video compiler suites: pass.** `cargo test … -- jobs_video recipe_prerequisites
+  jobs_stages jobs_face_refine`: 119 passed, 0 failed, 10 ignored.
+- **Graphs without dials are unchanged.** The seven ignored `jobs_video::tests::dump_*`
+  graph dumps (145,225 bytes of output including the test names) were printed with
+  this branch's sources and with `main`'s sources restored in the same checkout: the
+  six that print graphs are byte-identical (`cmp`); the seventh,
+  `dump_h3_stream_graphs_and_validate_full_capture_contract`, fails in both states
+  because `H3_CAPTURE_VALIDATOR` is not set.
+- **Full native suite: no new failure, not green on this host.** `cargo test
+  --manifest-path src-tauri/Cargo.toml --locked -- --nocapture`: 865 passed / 205
+  failed / 77 ignored on the branch in two runs and 864 / 206 / 77 in a third
+  (854 / 206 / 77 with `main`'s sources). The
+  failing set is the same in both states apart from
+  `forge::gpu_swap::tests::unloads_only_a_model_that_is_on_this_card_and_remembers_remote_servers`,
+  which failed in one of three branch runs and in the `main` run. The failures are
+  host conditions outside this change (trusted-directory ownership checks such as
+  "Download directory must be owned by the effective user with trusted
+  permissions", and Node v22.22.1 without TypeScript stripping in the TS-parity tests).
+- **Formatting and lints.** `cargo fmt … -- --check` passes. Strict Clippy
+  (`--all-targets -- -D warnings`, clippy 0.1.98) fails on six
+  `clippy::chunks_exact_to_as_chunks` findings in files this change does not touch
+  (`audio_runtime.rs`, `jobs_auto_refine.rs`, `jobs_preview.rs`); with that one lint
+  allowed it passes.
+- **Frontend.** `npm run typecheck` and `npm run build` pass. The change is one
+  optional type on the H3 video intent; the Vitest/core suites and the layout gate
+  were not run (no component, CSS or runtime TypeScript changed).
+- **Not established.** Real node schemas, graph validation and execution; that the
+  rack's patches survive the Director, sigma shift, Options patches and the De-rope
+  LoRA; the owned backend's local model check on a real dial file; Windows;
+  performance. All remain open in [PLAN.md](PLAN.md).
 ## 0.2.41 preview-button skin and Library search height — 2026-11-17
 
 Owner report: the paired **Original (before processing)** / **Processed** buttons

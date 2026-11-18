@@ -14,7 +14,6 @@ import { modelFolderHidden, validHiddenModelFolders, type HiddenModelFolders } f
 import { BeginnerLoras,isBeginnerLoraDraft,type BeginnerLoraDraft,type BeginnerLora } from '../beginner/BeginnerLoras';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { backendErrorText } from '../../lib/backendErrors';
-import { revealTarget } from '../../lib/search';
 import '../../components/setup/search.css';
 import { type DownloadStatus } from '../../lib/downloads';
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
@@ -54,6 +53,13 @@ import { activeWildcards, changedOptions, postCategoryFunctions, postCategoryOrd
 import { useAudioEnhance } from './useAudioEnhance';
 import { TvePostControls, defaultTve, fromVideoPost, isTvePref, toVideoPost } from './TvePostControls';
 import { DeropeControls, defaultDerope, deropeNodes, fromDerope, isDeropePref, withDerope } from './DeropeControls';
+import { DialStrip } from './DialStrip';
+import { DialRackDialog } from './DialRackDialog';
+import { DialPresetsDialog } from './DialPresetsDialog';
+import { dialTimeline } from '../../lib/dialCurve';
+import { dialNoCurveNames, dialOtherFamily, dialPipelineOf, isPickerDial } from '../../lib/dialInfo';
+import { useDialInfo } from './useDialInfo';
+import { activeDials, dialCatalog, dialCurveConflicts, dialGate, dialName, dialRackNode, fromDials, isDialRows, noDials, withDials, withDialSourceFrames, type DialRow } from '../../lib/dials';
 import { ReferencePeople, ReferencesPanel, type FramePeople, referenceKey, directorTags, firstVisualRef, forgeLabels, h3ForgeContext, prefillItems, h3Full, over, refCounts, refsProblem, slotsOf, type RefAdd, type RefMod, type VideoRef } from './ReferencesPanel';
 import { mediaTypes, mediaViews, VideoStill, type MediaAction, type MediaRoots, type MediaType, type MediaView } from '../media/MediaLibrary';
 import { MediaPanel, MediaControls } from '../media/MediaPanel';
@@ -206,8 +212,6 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
    postCardRefs.current[id]?.focus();
   }
  },[openPostCategory]);
- const [samTargetReveal,setSamTargetReveal]=useState(0);
- useLayoutEffect(()=>{if(!samTargetReveal||dockTab!=='post'||openPostCategory!=='sam')return;setSamTargetReveal(0);const target='.wb-post [data-sam="targets"]';revealTarget(target);document.querySelector<HTMLInputElement>(target)?.focus();},[samTargetReveal,dockTab,openPostCategory]);
  useLayoutEffect(()=>{if(focusDockTab.current){document.querySelector<HTMLButtonElement>(`[data-dock-tab="${dockTab}"]`)?.focus();focusDockTab.current=false;}},[dockTab]);
  const openWildcards=()=>{focusDockTab.current=true;setDockTab('wildcards');document.querySelector<HTMLButtonElement>('[data-dock-tab="wildcards"]')?.focus();};
  const [dockHeight,setDockHeight]=usePref('studio.dock.height',defaultLayout.dock,isNumber);
@@ -326,6 +330,7 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [video,setVideo]=usePref('studio.run.video',defaultVideo,isVideoPref);
  const [tve,setTve]=usePref('studio.run.tve',defaultTve,isTvePref);
  const [deropePref,setDerope]=usePref('studio.run.derope',defaultDerope,isDeropePref);
+ const [dialRows,setDialRows]=usePref<DialRow[]>('studio.run.dials',[],isDialRows);
  const audioEnhance=useAudioEnhance('post');
  const [streamDecode,setStreamDecode]=usePref('studio.run.streamDecode',false,isBoolean);
  const [h3Latent,setH3Latent]=usePref('studio.run.latent.h3',defaultLatent,isLatentPref);
@@ -375,6 +380,10 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const [plan,setPlan]=usePref('studio.run.continuity',defaultPlan(),isContinuityPlan);
  const [referencesOpen,setReferencesOpen]=useState(false);const referencesButton=useRef<HTMLButtonElement>(null);
  const [continuityOpen,setContinuityOpen]=useState(false);const continuityButton=useRef<HTMLButtonElement>(null);
+ const [dialsOpen,setDialsOpen]=useState(false);
+ const dialsButton=useRef<HTMLButtonElement>(null),dialsDialog=useRef<HTMLDialogElement>(null),dialsClose=useRef<HTMLButtonElement>(null);
+ const [rackOpen,setRackOpen]=useState(false);const [dialPresetsOpen,setDialPresetsOpen]=useState(false);const rackButton=useRef<HTMLButtonElement>(null);
+ const closeDials=()=>{dialsDialog.current?.close();setDialsOpen(false);dialsButton.current?.focus();};
  const planRun=useRef<{jobId:string;index:number;all:boolean;imported?:H3ImportedVideo}|null>(null);const [autoPlan,setAutoPlan]=useState(false);const [resolving,setResolving]=useState(false);
  const [edit,setEdit]=usePref('studio.run.edit','resample',oneOf(...editModes));
  // Post-Processing (SwarmUI Refine / Upscale): opt-in second pass after every run, or applied alone to the shown image.
@@ -646,7 +655,29 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const loraMatchesFamily=(m:LocalModel)=>!family||!m.family||m.family===(family.loraFamily??family.id);
  const loraModels=allLoraModels.filter(loraMatchesFamily);
  const {isFavorite,toggleFavorite,setFavorites,error:favoriteError}=useModelOrganization();
- const browsedLoraModels=favoriteView?allLoraModels.filter(m=>isFavorite(m.path)):hideOtherLoraFamilies&&!bulkSelecting?loraModels:allLoraModels;
+ // Experimental Dial Rack rows steer a plain MiniMax H3 generation only; elsewhere the saved rows stay inert, like De-rope.
+ const dialsHere=!beginner&&isVideo&&isH3Video(videoFamily);
+ const dials=dialsHere?dialRows:noDials;
+ const showDials=dialsHere&&dialsOpen&&!planVisible;
+ useEffect(()=>{
+  if(!showDials){setDialsOpen(false);setRackOpen(false);setDialPresetsOpen(false);return;}
+  const dialog=dialsDialog.current!;
+  dialog.showModal();dialsClose.current?.focus();
+  return()=>{if(dialog.open)dialog.close();};
+ },[showDials]);
+ // The backend's LoRA list is what the native prerequisite check compares against; the library scan stands in while it is unread.
+ const dialListed=choices?.loras?choices.loras.map(dialName):models?allLoraModels.map(m=>dialName(m.name)):undefined;
+ const dialBlock=dialGate({h3Video:dialsHere,nodes:choices?.nodes});
+ // The dial files' own info (side labels, useful and overcook strengths, notes): read from the pack's catalog when Dials opens
+ // on a backend that has the Dial Rack nodes. A failed read leaves the strip on its fallbacks.
+ const dialInfo=useDialInfo(endpoint,native&&!!endpoint.trim()&&showDials&&!!choices?.nodes.includes(dialRackNode));
+ // Dial files belong in Dials; the LoRA browser keeps only one that is already selected, so it can be removed. Which files those are:
+ // the ones the pack's catalog lists once it was read (Dials was opened on this backend), every file inside loras/dials/
+ // while it was not (`isPickerDial`).
+ const dialCatalogRead=dialInfo.map?{map:dialInfo.map,partial:dialInfo.partial}:undefined;
+ const pickerLora=(m:LocalModel)=>!isPickerDial(m.name,dialCatalogRead)||loras.some(l=>l.name===m.name);
+ const pickerLoraModels=allLoraModels.filter(pickerLora);
+ const browsedLoraModels=favoriteView?pickerLoraModels.filter(m=>isFavorite(m.path)):hideOtherLoraFamilies&&!bulkSelecting?loraModels.filter(pickerLora):pickerLoraModels;
  const browsedModels=favoriteView?allModels.filter(m=>isFavorite(m.path)):allModels;
  const bulkMatching=(dockTab==='loras'?browsedLoraModels:browsedModels).filter(m=>match(m)&&familyEditable(m));
  const bulkTargets=(models??[]).filter(m=>bulkPaths.has(m.path)&&familyEditable(m));
@@ -662,6 +693,19 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  // De-rope re-renders a plain MiniMax H3 generation from its own latent (not HyperFlow, not TVE).
  const derope=videoFamily==='minimax-h3'?deropePref:defaultDerope;
  const videoPost=isVideo?withDerope(toVideoPost(tve),derope):undefined;
+ // Offered for adding: the dial files of the list, less those the pack's catalog says were made for another model family (the node refuses them on
+ // MiniMax H3). Without a catalog every dial file is offered, as before.
+ const dialFiles=dialCatalog(dialListed??[]).filter(f=>!dialOtherFamily(dialInfo.map?.[f]));
+ const dialPipeline=dialPipelineOf(videoModeName);
+ // The lanes of the rack dialog: the clip the next job renders, or the whole Continuity piece when the plan starts it or continues a clip whose
+ // frame count the plan holds (`plan.source.frames`, kept when the source is picked). Continued steps of a
+ // reference pipeline carry `durationSeconds` (REF2VA, `buildVideoIntent`); the others are snapped from their frame count.
+ const dialSpan=dialTimeline(frames,dialsHere&&continuityOn?plan:null,continuityReferences);
+ // Time-curve refusals of the compiler, shown before Run. With Continuity on they are judged for the plan's next step.
+ const dialNext=dialsHere&&continuityOn?nextStep(plan)?.continuity:undefined;
+ const dialConflicts=dialCurveConflicts({rows:dials,steps,faceRefine:faceRefine.auto,tiledUpscale:latentEnabled,derope:!!videoPost?.derope,continued:!!dialNext?.sourceId,importedVideo:dialNext?.sourceKind==='video',pieceStartUnknown:dialSpan.basis==='planSource',...(dialSpan.basis==='planContinued'&&dialNext?.sourceId?{windowStart:dialSpan.window?dialSpan.window.start:null}:{}),noCurve:dialNoCurveNames(dialInfo.map),nodes:choices?.nodes});
+ // A join's generated transitions sample their own window: not offered while a row with a time curve is on.
+ const dialTransitionBlock=dialCurveConflicts({rows:dials,steps,transition:true}).includes('transition');
  const streamRequested=isVideo&&videoFamily==='minimax-h3'&&streamDecode;
  const streamReason=!(latentEnabled||regenerateEnabled)?t('studio.run.streamDecode.requires')
   :continuityOn&&plan.outputMode==='segment'?t('studio.run.streamDecode.fullTimeline')
@@ -729,6 +773,12 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   ...(split&&isVideo&&family?.textProjections&&!split.projections.includes(textProjection)?[textProjection||t('studio.run.video.textProjection')]:[]),
   ...(isVideo&&((tve.frameGen&&tve.engine==='rife'&&!tve.rifeModel)||(tve.loop&&tve.loopBackend==='rife'&&!tve.loopModel))?[t('studio.tve.post.needsRifeModel')]:[]),
   ...(isVideo&&derope.enabled&&derope.mode==='turbo'&&!derope.lora?[t('studio.run.derope.needsLora')]:[]),
+  // Active dial rows that cannot run block Run with the reason instead of being dropped.
+  ...(activeDials(dials).length?[...(dialBlock==='nodeMissing'?[t('studio.dials.nodeMissingRun')]:[]),
+   ...(dialListed?activeDials(dials).filter(r=>!dialListed.includes(r.dial)).map(r=>t('studio.dials.unavailable',{name:r.dial})):[]),
+   // A row of another model family (from a preset, history or an older session): the node refuses it on MiniMax H3. Known only with the catalog.
+   ...activeDials(dials).filter(r=>dialOtherFamily(dialInfo.map?.[dialName(r.dial)])).map(r=>t('studio.dials.otherFamilyRun',{name:r.dial,family:dialInfo.map![dialName(r.dial)].family!})),
+   ...dialConflicts.map(c=>t(`studio.dials.conflict.${c}`))]:[]),
   ...(isVideo&&videoPost&&choices?[...(videoPost.upscaleModel&&!choices.upscaleModels?.includes(videoPost.upscaleModel)?[videoPost.upscaleModel]:[]),
    ...(videoPost.rtx&&!choices.nodes.includes('DaSiWa_RTX_UpscalerRefiner')?['DaSiWa_RTX_UpscalerRefiner']:[]),
    ...(videoPost.frameGeneration?.engine==='rtx'&&!choices.nodes.includes('DaSiWa_RTX_FrameGeneration')?['DaSiWa_RTX_FrameGeneration']:[]),
@@ -1124,6 +1174,11 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    if(vf==='minimax-h3'&&intent.family==='minimax-h3'&&latentEnabled)intent={...intent,latentUpscale:{model:latentModel,scale:latentPref.scale,steps:latentPref.steps,denoise:latentPref.denoise,...(latentAdvanced?{advanced:latentAdvanced}:{})}};
    if(isH3Video(vf)&&faceRefine.auto)intent={...intent,faceRefine:faceRefineBlock};
    if(vf==='minimax-h3'&&streamDecode)intent={...intent,streamDecode:true};
+   intent=withDials(intent,dials);
+   // A step that pins a clip whose frame count the rack's lanes were laid out with: on a plan that continues a clip whose count the plan
+   // holds, the picked clip's plus every finished step's extension; on a plan that starts the piece, the take's frames plus every finished
+   // step's extension. Send it for native to confirm against the session list.
+   if(cont&&(dialSpan.basis==='planContinued'||dialSpan.basis==='plan'))intent=withDialSourceFrames(intent,dialSpan.window?.source);
    return intent;
  }
  async function runVideo(naming:string,out:VideoOutput,capturedSeed:number,step?:{index:number;all:boolean}){
@@ -1682,7 +1737,7 @@ const promptTools=forgeContext&&<>
    advancedSettings.current=saved;beginnerSamplingEdited.current=false;beginnerMusicEdited.current.clear();
    advancedReferences.current={imageRefs,refs,refmods,lastFrame,lastOnlySrc,sourceVideo,framePeople,plan};
    setSourceVideo(null);setImageRefs([]);setRefs([]);setRefmods([]);setFramePeople({});setLastFrame(null);setLastOnlySrc(null);setPlan(p=>({...p,enabled:false}));
-   setLoras(model&&beginnerLoraDraft.current?.model===identity(model)?beginnerLoraDraft.current.loras:[]);setNegative('');setPost(false);setTve(defaultTve);setDerope(defaultDerope);setH3Latent(defaultLatent);setLtxLatent(defaultLatent);setWildcardEnabled(false);setOptions(defaultOptions);setLyingSigma({...defaultLyingSigma});setSeedMode('random');setEdit('resample');setTextEncoder('');setVae('');setComponentOverrides(defaultComponentOverrides);
+   setLoras(model&&beginnerLoraDraft.current?.model===identity(model)?beginnerLoraDraft.current.loras:[]);setNegative('');setPost(false);setTve(defaultTve);setDerope(defaultDerope);setDialRows([]);setH3Latent(defaultLatent);setLtxLatent(defaultLatent);setWildcardEnabled(false);setOptions(defaultOptions);setLyingSigma({...defaultLyingSigma});setSeedMode('random');setEdit('resample');setTextEncoder('');setVae('');setComponentOverrides(defaultComponentOverrides);
    // Entering Beginner keeps the user's Steps/CFG; only a model change resets them to family starting values.
    if(model&&!isMusic){startingSettings(model);setSteps(steps);setCfg(cfg);}beginnerModelKey.current=model?identity(model):'';
   }else if(advancedSettings.current){
@@ -1761,7 +1816,7 @@ const promptTools=forgeContext&&<>
    else {
     if(restoredFamily?.id!==family?.id){
      setTextEncoder('');setTextEncoder2('');setVae('');setVideo(defaultVideo);setOptions({...structuredClone(defaultOptions),outputNaming:optionsPref.outputNaming});
-     setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setTve(defaultTve);setDerope(defaultDerope);setH3Latent({...h3Latent,enabled:false});setLtxLatent({...ltxLatent,enabled:false});
+     setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setTve(defaultTve);setDerope(defaultDerope);setDialRows([]);setH3Latent({...h3Latent,enabled:false});setLtxLatent({...ltxLatent,enabled:false});
      setSourceVideo(null);setImageRefs([]);setRefs([]);setRefmods([]);setFramePeople({});setLastFrame(null);setLoras([]);setWildcardEnabled(false);
     }
     if(!restoredFamily?.pipelines.includes(pipeline)&&restoredFamily)setPipeline(restoredFamily.video?'t2v':'t2i');
@@ -1853,6 +1908,7 @@ const promptTools=forgeContext&&<>
   setMossSkip(isImageIntent(intent)?intent.skipLayers??'':'');
   setWidth(intent.width);setHeight(intent.height);setResolution('fixed');setAspect('auto');
   setLoras((intent.loras??[]).map(l=>({...l,enabled:true})));setOptions({...value.options,outputNaming:outputNamingTemplate(optionsPref.outputNaming)});
+  setDialRows(fromDials(isVideoIntent(intent)&&(intent.family==='minimax-h3'||intent.family==='minimax-h3-hyperflow')?intent.dials:undefined));
   setPipeline(value.pipeline);setComponentOverrides({textEncoders:true,vaes:true,audioVaes:true,textProjections:true});
   setImageRefs(value.references.map(ref=>({item:{name:ref.name,media:'image',src:''},strength:ref.strength})));
   setPost(false);setPostTiled(false);setUpscale(2);setUpscaleModel('');setInputScaling('off');setEdit('resample');
@@ -1888,7 +1944,7 @@ const promptTools=forgeContext&&<>
  const componentPick=(id:string,slot:ComponentSlot,value:string,list:readonly string[],set:(value:string)=>void)=><span key={slot} style={{display:'contents'}} data-run-component={slot}><ComponentPicker label={t(id)} value={value} automatic={recommended?.[slot][0]??''} files={list} all={componentOverrides[slot]} onAll={all=>setComponentOverrides({...componentOverrides,[slot]:all})} onChange={set}/>{companionChecks.find(c=>c.slot===slot&&c.name===(value||recommended?.[slot][0]||''))&&<ModelAdvice check={companionChecks.find(c=>c.slot===slot&&c.name===(value||recommended?.[slot][0]||''))!.check}/>}</span>;
  const naming=outputPrefix(outputNamingTemplate(optionsPref.outputNaming),{type:isMusic?'audio':isVideo?'video':'image',seed,model:checkpoint});
  // The plan shows the cover source by its dock name only; the upload handle exists after Run.
- const samControls=()=><Sam3Controls value={samValue} onChange={setSamValue} models={samModels} margin={maskGrow} onMargin={setMaskGrow} unavailable={samUnavailable} refineUnavailable={samTargets(samText).length?samUnavailable:undefined} status={samStatus} busy={serialBlocked||admissionBlocked} onRefine={()=>void refineObjects()} canRefine={!!media&&(masked||!!samTargets(samText).length)}/>;
+ const samControls=()=><Sam3Controls value={samValue} onChange={setSamValue} models={samModels} margin={maskGrow} onMargin={setMaskGrow} unavailable={samUnavailable} refineUnavailable={samTargets(samText).length?samUnavailable:undefined} status={samStatus} busy={serialBlocked||admissionBlocked} onMask={inpaint?()=>void maskWithSam():undefined} maskDisabled={samBusy||!samTargets(samText).length} onRefine={()=>void refineObjects()} canRefine={!!media&&(masked||!!samTargets(samText).length)}/>;
  const preview=planVisible&&naming!==null?(isMusic?(aceProfile&&(pipeline!=='t2m'||musicSource)?null:buildMusicIntent(naming,seed,musicSource?.name??'')):isVideo?(videoFamily&&model&&split?buildVideoIntent(videoFamily,naming,optionsPref.output??defaultVideoOutput,(item,force=false)=>(!force&&comfyName(item))||item.path||item.name):null):buildImageIntent(naming,optionsPref.output??defaultVideoOutput)):null;
  const previewDrop=useRef(async(_paths:string[])=>{});
  // The beginner starting-image row accepts image drops like picking one in the media panel.
@@ -1966,8 +2022,13 @@ const promptTools=forgeContext&&<>
  // One Steps/CFG control set for Advanced and Beginner: same state, limits and fixed-schedule rule.
  const editSteps=(n:number)=>{if(beginner)beginnerSamplingEdited.current=true;setSteps(n);},editCfg=(n:number)=>{if(beginner)beginnerSamplingEdited.current=true;setCfg(n);};
  const samplerField=family?.fixedSampler?<label className="wb-field"><span>{t('studio.recipe.sampler')}</span><select value={family.fixedSampler} disabled title={family.defaultsNote}><option value={family.fixedSampler}>{family.fixedSampler}</option></select></label>:pick('studio.recipe.sampler',sampler,choices?.samplers??[],setSampler,loadChoices);
- const samplingFields=<>{family?.stepChoices?<label className="wb-field"><span>{t('studio.run.steps')}</span><select data-num="steps" value={steps} onChange={e=>editSteps(Number(e.target.value))}>{family.stepChoices.map(n=><option key={n} value={n}>{n}</option>)}</select></label>:num('steps',sigmas?sigmas.length-1:steps,editSteps,1,150,1,sigmas&&t('studio.run.customSchedule.hint'),true)}{num('cfg',cfg,editCfg,0,30,0.5,undefined,true)}</>;
- const playingPreview=temporalPreview&&!viewer&&!continuityOpen&&!referencesOpen&&!visionDownload&&!latentDownload&&!stopChoice?temporalPreview:undefined;
+ const stepsField=family?.stepChoices?<label className="wb-field"><span>{t('studio.run.steps')}</span><select data-num="steps" value={steps} onChange={e=>editSteps(Number(e.target.value))}>{family.stepChoices.map(n=><option key={n} value={n}>{n}</option>)}</select></label>:num('steps',sigmas?sigmas.length-1:steps,editSteps,1,150,1,sigmas&&t('studio.run.customSchedule.hint'),true);
+ const cfgField=num('cfg',cfg,editCfg,0,30,0.5,undefined,true);
+ const samplingFields=<>{stepsField}{cfgField}</>;
+ const schedulerField=sigmas?<label className="wb-field"><span>{t('studio.recipe.scheduler')}</span><select value="custom" disabled title={t('studio.run.customSchedule.hint')}><option value="custom">{t('studio.run.customSchedule')}</option></select></label>
+       :pick('studio.recipe.scheduler',scheduler,choices?.schedulers??[],setScheduler,loadChoices);
+ const pair=(left:ReactNode,right:ReactNode)=><div className="wb-controls wb-wide">{left}{right}</div>;
+ const playingPreview=temporalPreview&&!viewer&&!continuityOpen&&!showDials&&!referencesOpen&&!visionDownload&&!latentDownload&&!stopChoice?temporalPreview:undefined;
  // Only more queued work (jobs, preparations, a Run all sequence) needs the choice; a single run just stops.
  const stopQueue=jobs.filter(j=>j.state==='queued'||j.state==='running'||(j.state==='unknown'&&!stopped.current.has(j.id))).length+preparing+(busy?1:0)+(autoPlan?1:0);
  const stopCurrent=jobs.find(j=>j.id===stopChoice?.jobId);
@@ -2121,9 +2182,8 @@ const promptTools=forgeContext&&<>
     {pipeline==='v2v'&&<p className="wb-active"><span>{t('studio.run.video.source')}</span><strong title={media?.path}>{videoSource?.name??''}</strong></p>}
     {musicSourceFields}
      <div className="wb-controls">
-     {h3Image&&<p className="wb-resolution-hint wb-wide">{t('studio.run.h3EditHint')}</p>}
      {isMusic?musicSettings
-     :inpaint?<>{num('denoise',h3Image?h3Denoise:strength,h3Image?setH3Denoise:setStrength,0,1,0.05,undefined,true)}<p className="wb-resolution-hint">{t('studio.run.edit.size',{width:String(outputSize.width),height:String(outputSize.height)})}</p></>:<>
+     :inpaint?<p className="wb-resolution-hint">{t('studio.run.edit.size',{width:String(outputSize.width),height:String(outputSize.height)})}</p>:<>
       <label className="wb-field"><span>{t('studio.run.resolution.aspect')}</span><span className="wb-aspect-picker"><span className="wb-aspect-swatch" aria-hidden="true"><span style={{width:18*Math.min(1,swatchRatio),height:18*Math.min(1,1/swatchRatio)}}/></span><select data-aspect value={aspect} onChange={e=>{setAspect(e.target.value as typeof aspect);if(resolution==='fixed')setResolution('model');}}>{aspects.filter(a=>a!=='auto'||mediaPipeline).map(a=><option key={a} value={a}>{a==='auto'||a==='custom'?t(`studio.run.resolution.${a}`):a}</option>)}</select></span></label>
       <label className="wb-field"><span>{t('studio.run.resolution.title')}</span><select data-resolution value={resolution} onChange={e=>setResolution(e.target.value)}>{['fixed','model',...Object.keys(resolutions),'custom'].map(r=><option key={r} value={r} disabled={r==='model'&&!family?.defaults}>{r in resolutions?r:t(`studio.run.resolution.${r}`)}</option>)}</select></label>
       {aspect==='custom'&&<>{num('resolution.aspectWidth',aspectWidth,setAspectWidth,1,100,0.1)}{num('resolution.aspectHeight',aspectHeight,setAspectHeight,1,100,0.1)}</>}
@@ -2144,22 +2204,23 @@ const promptTools=forgeContext&&<>
        {refsTab&&<button ref={referencesButton} type="button" className="wb-dock-action wb-wide" data-open-references aria-haspopup="dialog" aria-expanded={referencesOpen} onClick={()=>setReferencesOpen(true)} onDragOver={e=>{if(e.dataTransfer.types.includes(MEDIA_DRAG))e.preventDefault();}} onDrop={e=>{const item=draggedItem(e.dataTransfer);if(item){e.preventDefault();setRolePick(item);setReferencesOpen(true);}}}>{t('studio.run.dock.references')} · {refs.length+refmods.length+(firstFrame?1:0)+(lastFrame?1:0)+(videoSource?1:0)}</button>}
        {isH3Video(videoFamily)&&(pipeline==='v2v'||pipeline==='ref2v')&&!/ref2va/i.test(checkpoint)&&<p className="wb-resolution-hint wb-wide">{t('studio.run.video.ref2vaHint')}</p>}
        {forgeContext&&onOpenPromptForge&&<button type="button" className="wb-dock-action wb-wide" data-open-prompt-forge onClick={onOpenPromptForge}>{t('studio.tab.forge')}</button>}
+       {dialsHere&&<button ref={dialsButton} type="button" className="wb-dock-action wb-wide" data-open-dials aria-haspopup="dialog" aria-expanded={showDials} onClick={()=>{setDialsOpen(true);if(native&&endpoint.trim())void refreshChoices(false);}}>{t('studio.run.dock.dials')}{dockBadge(activeDials(dials).length)}</button>}
        {continuityAvailable&&<button ref={continuityButton} type="button" className="wb-dock-action wb-wide" data-continuity-open aria-haspopup="dialog" aria-expanded={continuityOpen} data-continuity-enabled={continuityOn} onClick={()=>setContinuityOpen(true)}>{t(continuityOn?'studio.run.dock.continuity':'studio.run.dock.continuityOff')}</button>}
        {frameVideo&&<p className="wb-resolution-hint wb-wide">{lastFrame?<>{t('studio.run.video.lastFrame')}: <strong>{lastFrame.name}</strong> <button type="button" aria-label={t('studio.run.cont.remove')} title={t('studio.run.cont.remove')} onClick={()=>removeVideoRole('last')}>✕</button></>:t('studio.run.video.lastFrameHint')}</p>}
       </>}
-      {pipeline==='i2i'&&!inpaint&&<><label className="wb-field wb-wide"><span>{t('studio.run.resolution.scaling')}</span><select value={inputScaling} title={t(`studio.run.resolution.hint.${inputScaling}`)} onChange={e=>setInputScaling(e.target.value as ScalingMode)}>{scalingModes.map(s=><option key={s} value={s}>{t(`studio.run.resolution.scale.${s}`)}</option>)}</select></label><p className="wb-resolution-hint">{t(`studio.run.resolution.hint.${inputScaling}`)}</p>{num('denoise',h3Image?h3Denoise:denoise,h3Image?setH3Denoise:setDenoise,0,1,0.05,undefined,true)}{h3Image&&<>{num('video.shiftVideo',video.shiftVideo,n=>setVideo({...video,shiftVideo:clamp(n,0.01,100)}),0.01,100,0.5)}{num('video.shiftAudio',video.shiftAudio,n=>setVideo({...video,shiftAudio:clamp(n,0.01,100)}),0.01,100,0.5)}</>}</>}
-      {inpaint&&<>
-       <label className="wb-field wb-wide" title={t('studio.run.maskGrowHelp')}><span><input type="checkbox" style={{width:'auto'}} checked={inpaintOnlyMasked} onChange={e=>setInpaintOnlyMasked(e.target.checked)}/>{t('studio.run.inpaintOnlyMasked')}</span></label>
-        {num('maskGrow',maskGrow,n=>{if(isMaskGrow(n))setMaskGrow(n);},0,512,1,inpaintOnlyMasked?undefined:t('studio.run.maskGrowInactive'),true)}
-       <button type="button" className="wb-dock-action wb-wide" data-sam="mask" disabled={serialBlocked||admissionBlocked||samBusy} title={samUnavailable||undefined} onClick={()=>{const hasTargets=samTargets(samText).length>0;focusDockTab.current=hasTargets;focusPostOverlay.current=false;setDockTab('post');loadChoices();if(hasTargets)void maskWithSam();else{setOpenPostCategory('sam');setSamTargetReveal(n=>n+1);}}}>{t('studio.sam.mask')}</button>
-       {samStatus&&<p className="wb-wide" role="status">{samStatus}</p>}
-       {num('maskBlur',maskBlur,n=>{if(isMaskBlur(n))setMaskBlur(n);},0,31,1,undefined,true)}
-       {h3Image&&<>{num('video.shiftVideo',video.shiftVideo,n=>setVideo({...video,shiftVideo:clamp(n,0.01,100)}),0.01,100,0.5)}{num('video.shiftAudio',video.shiftAudio,n=>setVideo({...video,shiftAudio:clamp(n,0.01,100)}),0.01,100,0.5)}</>}
-      </>}
-      {samplingFields}
-      {samplerField}
-      {sigmas?<label className="wb-field"><span>{t('studio.recipe.scheduler')}</span><select value="custom" disabled title={t('studio.run.customSchedule.hint')}><option value="custom">{t('studio.run.customSchedule')}</option></select></label>
-       :pick('studio.recipe.scheduler',scheduler,choices?.schedulers??[],setScheduler,loadChoices)}
+      {pipeline==='i2i'&&!inpaint&&<label className="wb-field wb-wide"><span>{t('studio.run.resolution.scaling')}</span><select value={inputScaling} title={t(`studio.run.resolution.hint.${inputScaling}`)} onChange={e=>setInputScaling(e.target.value as ScalingMode)}>{scalingModes.map(s=><option key={s} value={s}>{t(`studio.run.resolution.scale.${s}`)}</option>)}</select></label>}
+      {pipeline==='i2i'?<>
+       {pair(stepsField,null)}
+       {pair(samplerField,schedulerField)}
+       {pair(cfgField,num('denoise',h3Image?h3Denoise:inpaint?strength:denoise,h3Image?setH3Denoise:inpaint?setStrength:setDenoise,0,1,0.05,undefined,true))}
+       {h3Image&&pair(num('video.shiftVideo',video.shiftVideo,n=>setVideo({...video,shiftVideo:clamp(n,0.01,100)}),0.01,100,0.5),num('video.shiftAudio',video.shiftAudio,n=>setVideo({...video,shiftAudio:clamp(n,0.01,100)}),0.01,100,0.5))}
+       {inpaint&&<>
+        <label className="wb-field wb-wide" title={t('studio.run.maskGrowHelp')}><span><input type="checkbox" style={{width:'auto'}} checked={inpaintOnlyMasked} onChange={e=>setInpaintOnlyMasked(e.target.checked)}/>{t('studio.run.inpaintOnlyMasked')}</span></label>
+        {pair(num('maskGrow',maskGrow,n=>{if(isMaskGrow(n))setMaskGrow(n);},0,512,1,inpaintOnlyMasked?undefined:t('studio.run.maskGrowInactive'),true),
+          num('maskBlur',maskBlur,n=>{if(isMaskBlur(n))setMaskBlur(n);},0,31,1,undefined,true))}
+        {samStatus&&<p className="wb-wide" role="status">{samStatus}</p>}
+       </>}
+      </>:<>{samplingFields}{samplerField}{schedulerField}</>}
       {!isVideo&&!isMusic&&<LyingSigmaControls value={lyingSigma} onChange={setLyingSigma} unavailable={lyingSigmaUnavailable}/>}
       <div className="wb-field wb-seed">
        <div className="wb-seed-heading"><span>{t('studio.run.seed')}</span><div className="wb-seed-row" data-seed-actions><button type="button" aria-label={t('studio.run.seedDecrease')} title={t('studio.run.seedDecrease')} onClick={()=>fixedSeed(seed===0?Number.MAX_SAFE_INTEGER:seed-1)}>−</button><button type="button" aria-label={t('studio.run.seedIncrease')} title={t('studio.run.seedIncrease')} onClick={()=>fixedSeed(seed===Number.MAX_SAFE_INTEGER?0:seed+1)}>+</button>{(['random','fixed'] as const).map(mode=><button key={mode} type="button" aria-pressed={seedMode===mode} onClick={()=>setSeedMode(mode)}>{t(`studio.run.seedMode.${mode}`)}</button>)}<button type="button" aria-label={t('studio.run.newSeed')} title={t('studio.run.newSeed')} onClick={()=>setSeed(randomSeed())}>⟳</button></div></div>
@@ -2355,11 +2416,12 @@ const promptTools=forgeContext&&<>
     </div>
    </section>}
 
+
    {dockTab==='options'&&<section className="wb-dock-panel" aria-label={t('studio.run.dock.options')}><OptionsPanel value={optionsPref} onChange={setOptions} allow={choices} family={family?.id} video={isVideo} imageInput={pipeline==='i2i'} onRead={loadChoices} canRead={native&&!!endpoint.trim()}/></section>}
    {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel wb-model-browser-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
     {!models&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
     {models&&dockTab==='models'&&(browsedModels.length===0?<div className="media-browser">{folderTree(allModels)}<p className="media-help">{t(favoriteView?'library.noFavorites':'studio.run.noModels')}</p></div>:<div className="media-browser">{folderTree(favoriteView?allModels:browsedModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles" data-run-checkpoint>{visibleModelTiles(browsedModels).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul>{moreModelTiles(browsedModels)}</div></div>)}
-    {favoriteError&&<p role="alert">{t('library.organizationFailed')}</p>}{models&&dockTab==='loras'&&(browsedLoraModels.length===0?<div className="media-browser">{folderTree(allLoraModels)}<p className="media-help">{t(favoriteView?'library.noFavorites':'studio.run.noLoras')}</p></div>:<div className="media-browser">{folderTree(favoriteView?allLoraModels:browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,activeLoras.some(l=>l.name===m.name),()=>on&&(on.enabled===false||!selectedLoras.includes(on))?setLoras(loras.map(l=>l.name===m.name?{...l,enabled:true}:l)):toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
+    {favoriteError&&<p role="alert">{t('library.organizationFailed')}</p>}{models&&dockTab==='loras'&&(browsedLoraModels.length===0?<div className="media-browser">{folderTree(pickerLoraModels)}<p className="media-help">{t(favoriteView?'library.noFavorites':'studio.run.noLoras')}</p></div>:<div className="media-browser">{folderTree(favoriteView?pickerLoraModels:browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,activeLoras.some(l=>l.name===m.name),()=>on&&(on.enabled===false||!selectedLoras.includes(on))?setLoras(loras.map(l=>l.name===m.name?{...l,enabled:true}:l)):toggleLora(m.name,!on),on&&<input type="number" aria-label={t('studio.run.strength',{name:m.name})} value={on.strength} min={-10} max={10} step={0.05} onChange={e=>{const n=Number(e.target.value);if(Number.isFinite(n)&&Math.abs(n)<=10)setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l));}}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
    </section>}
   </div>
  </div>
@@ -2382,7 +2444,13 @@ const promptTools=forgeContext&&<>
    </div>)}
   </div>
  </section>,forgeHost)}
- {continuityOpen&&continuityAvailable&&!planVisible&&<ContinuityOverlay captureTransition={continuityAvailable&&videoFamily&&model&&split&&naming!==null?()=>{
+ {showDials&&<dialog ref={dialsDialog} className="continuity-overlay" data-dials-settings aria-label={t('studio.run.dock.dials')} onCancel={e=>{e.preventDefault();closeDials();}}>
+  <header className="continuity-overlay-header"><h2>{t('studio.run.dock.dials')}</h2><button ref={dialsClose} type="button" onClick={closeDials}>{t('studio.close')}</button></header>
+  <div className="continuity-overlay-body"><DialStrip value={dialRows} onChange={setDialRows} files={dialFiles} listed={dialListed} gate={dialBlock} seconds={dialSpan.seconds} onRead={loadChoices} conflicts={dialConflicts} rackRef={rackButton} onOpenRack={()=>setRackOpen(true)} onOpenPresets={()=>setDialPresetsOpen(true)} info={dialInfo.map} infoStatus={dialInfo.status} onRefreshInfo={dialBlock?undefined:dialInfo.refresh}/></div>
+ </dialog>}
+ {showDials&&rackOpen&&<DialRackDialog value={dialRows} onChange={setDialRows} files={dialFiles} listed={dialListed} gate={dialBlock} onRead={loadChoices} timeline={dialSpan} steps={steps} conflicts={dialConflicts} endpoint={endpoint} info={dialInfo.map} infoStatus={dialInfo.status} onRefreshInfo={dialBlock?undefined:dialInfo.refresh} pipeline={dialPipeline} onClose={()=>{setRackOpen(false);rackButton.current?.focus();}}/>}
+ {showDials&&dialPresetsOpen&&!rackOpen&&<DialPresetsDialog endpoint={endpoint} rows={dialRows} seconds={dialSpan.seconds} onLoad={setDialRows} onClose={()=>setDialPresetsOpen(false)}/>}
+ {continuityOpen&&continuityAvailable&&!planVisible&&<ContinuityOverlay blocker={dialTransitionBlock?t('studio.dials.conflict.transition'):undefined} captureTransition={continuityAvailable&&videoFamily&&model&&split&&naming!==null&&!dialTransitionBlock?()=>{
     const epoch=admissionEpoch.current,capturedEndpoint=endpoint,uploads=new Set<string>();
     const identify=(item:MediaItem,force=false)=>{const name=!force&&comfyName(item);if(name)return name;uploads.add(item.path!);return item.path!;};
     const intent=structuredClone(buildVideoIntent(videoFamily,naming,optionsPref.output??defaultVideoOutput,identify));

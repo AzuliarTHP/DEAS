@@ -207,11 +207,12 @@ test.each([['point',false],['point',true],['box',false],['target',false]] as con
  await waitFor(()=>expect(document.querySelector<HTMLButtonElement>('[data-sam-tool="samPoint"]')!.disabled).toBe(false));
  expect(document.querySelector('.wb-side [data-sam-controls]')).toBeNull();
  expect(within(document.querySelector('.wb-side')!).queryByRole('button',{name:'Post-Processing'})).toBeNull();
- expect(document.querySelector('.wb-side [data-sam="mask"]')).not.toBeNull();
- fireEvent.click(document.querySelector('.wb-side [data-sam="mask"]')!);
+ expect(document.querySelector('.wb-side [data-sam="mask"]')).toBeNull();
+ dock('Post-Processing');
+ fireEvent.click(document.querySelector('[data-post-card="sam"]')!);
  const target=document.querySelector<HTMLInputElement>('.wb-post [data-sam="targets"]')!;
  expect(document.querySelector('[data-dock-tab="post"]')?.getAttribute('aria-selected')).toBe('true');
- expect(target.classList.contains('search-flash')).toBe(true);expect(document.activeElement).toBe(target);
+ expect(document.querySelector('.wb-post [data-sam="mask"]')).toHaveProperty('disabled',true);
  expect(runWorkbenchJob).not.toHaveBeenCalled();expect(uploadMask).not.toHaveBeenCalled();expect(autoRefine).not.toHaveBeenCalled();
  fireEvent.change(target,{target:{value:'eyes'}});
  expect(document.querySelector('.wb-post [data-sam-controls]')).not.toBeNull();
@@ -222,7 +223,7 @@ test.each([['point',false],['point',true],['box',false],['target',false]] as con
  Object.defineProperty(viewport,'setPointerCapture',{configurable:true,value:vi.fn()});Object.defineProperty(viewport,'releasePointerCapture',{configurable:true,value:vi.fn()});
  const pointer=(type:string,x:number,y:number)=>{const event=new MouseEvent(type,{bubbles:true,button:0,clientX:x,clientY:y});Object.defineProperty(event,'pointerId',{value:1});fireEvent(viewport,event);};
  vi.spyOn(screen.getByTestId('editor-world'),'getBoundingClientRect').mockReturnValue({left:0,top:0,width:1024,height:640} as DOMRect);
- if(kind==='target')fireEvent.click(document.querySelector('.wb-side [data-sam="mask"]')!);
+ if(kind==='target')fireEvent.click(document.querySelector('.wb-post [data-sam="mask"]')!);
  else {
   fireEvent.click(document.querySelector(`[data-sam-tool="${kind==='point'?'samPoint':'samBox'}"]`)!);
   pointer('pointerdown',20,30);

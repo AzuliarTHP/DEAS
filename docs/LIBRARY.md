@@ -71,6 +71,14 @@ Changing Library categories, switching to Catalog or another main tab, and unmou
 
 Progress also goes to the central **Logs → DEAS** stream and the launching terminal (stderr), including `Library operation=scan`, job ID, file, `completed`, `total`, `remaining` and `failed`. Provider response bodies/tokens are not logged. See [Logs](LOGS.md). The task and status live for the current DEAS process, not across app exits; closing DEAS stops it. There is no cancel/resume control or automatic restart. Existing listing limits apply (5,000 files, eight subfolder levels); Linux native loopback fixtures and UI lifecycle tests verify the background behavior, not live CivitAI or Windows runtime execution.
 
+### MatlowAI Dials
+
+Open **Library → Catalog → Dials → MiniMax H3 Dials (MatlowAI)**. Select the dial
+files you want, then use **Download all**. With a configured models folder, the
+default destination is `loras/dials/`. Reopen **Dials** in Studio settings to refresh
+the backend’s file list. Downloading does not apply a dial or install its node pack.
+See [Dials](DIALS.md#what-you-need) for the backend requirements.
+
 ## Reusing existing model folders
 
 Under **Backend → Settings**, select the models **root containing category subfolders**, for example `H:\Swarmui\models`, not its `Krea2`, `checkpoints` or `Lora` subfolder. Additional model roots use the same structure. DEAS scans standard ComfyUI categories and also recognizes SwarmUI’s `Stable-Diffusion` as `checkpoints` and `Lora` as `loras`. The owned backend receives the same mappings on its next start; this does not edit SwarmUI’s configuration. Folder names do not establish the model’s loading form: diffusion-only files still belong under `diffusion_models` or `unet`, rather than the checkpoint category.

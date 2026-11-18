@@ -590,6 +590,17 @@ impl DownloadEngine {
         )
         .await
         .map_err(|_| "Browse exceeded 30 seconds")??;
+        if p.id == "huggingface" && request.scope == "repo" && request.locator == "models:MATLOWAI/H3-Dials" {
+            // The author also publishes videos and documentation in this repo; only offer Dial Rack files.
+            const DIALS: &str = "https://huggingface.co/MATLOWAI/H3-Dials/resolve/main/dials/";
+            page.resources.retain(|r| {
+                r.url.as_deref().and_then(|url| url.strip_prefix(DIALS))
+                    .is_some_and(|path| path.ends_with(".safetensors"))
+            });
+            for resource in &mut page.resources {
+                resource.license = Some("MiniMax H3 Community License Agreement".into());
+            }
+        }
         if p.kind == "http"
             && page.resources.len() == 1
             && (request.locator.starts_with("direct:") || !request.locator.ends_with(".json"))

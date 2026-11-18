@@ -10,6 +10,8 @@ The interview's first-milestone block (an image-first persistent SDXL project wo
 
 ## Current scope
 
+- **0.3 feature phase.** The basic 0.2 beta implementation milestone is complete. Develop new capabilities and improve existing workflows on that foundation. A phase change does not declare every recipe or platform accepted; keep experimental features and remaining verification explicit.
+
 - **Global recent-job history instead of project archives.** Executed settings are kept as one global history of the last 10 executed jobs in one bounded local JSON file: effective settings, status and references to existing outputs, without media copies, model weights or credentials. Restoring settings is explicit and never starts computation; missing files show as missing; evicting an entry removes metadata only. Delivered in 0.1.55.
 - **Deferred:** managed generated-PNG adoption, immutable i2i revision lineage and full persistent-project recovery. Existing project drafts and their files stay supported; do not remove or silently expand them. The project decisions below remain the target if that work is resumed.
 - **Integrations need explicit owner priority.** New model families, enhancement, assembly, training and other large integrations are started only when the owner prioritizes them (as was done for MOSS, image references, TVE, learned latent upscale, GGUF and YuE2). Deferring the project milestone does not waive testing, safe writes or platform evidence for changed behavior.

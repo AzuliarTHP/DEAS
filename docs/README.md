@@ -1,6 +1,6 @@
 # DEAS documentation
 
-**Current version: 0.2.17 BETA**, released. Existing platform/model limitations and open acceptance gates still apply; see [the plan](PLAN.md).
+**Current version: 0.3.0 — Feature phase.** The basic beta milestone is complete; platform/model limitations and open acceptance gates still apply. See [the plan](PLAN.md).
 
 [Documentation index](README.md) · [Plan](PLAN.md)
 
@@ -24,6 +24,8 @@ Top-level tabs: Studio · Library · Prompt Forge · Chat · TVE · Comfy on the
 | Create and edit local colour/image theme packs | [Make and edit themes](THEME-PACKS.md) |
 | Beginner experience: generation, model guides and Media page without technical settings | [Beginner mode](BEGINNER-MODE.md) |
 | Music: Text to Music with YuE2 or ACE-Step; Cover Music with YuE2 | [Music](MUSIC.md) |
+| Experimental MiniMax H3 Dials (Studio settings, strength and time curves, shared rack presets, file metadata, and Library downloads) | [Dials](DIALS.md) |
+| Contributor tooling: driving the running Linux app from a script or an agent through the web view's inspector | [Piloting the running app](AGENT-PILOTING.md) |
 | TVE tab: video source inspection and backend video-enhance recipes with paired outputs | [TVE workspace](STUDIO.md#tve-workspace) |
 | Monitoring tab: last ten generations with timing, live host/GPU telemetry | [Monitoring tab](STUDIO.md#monitoring-tab) |
 | Native image-draft projects, autosave and managed PNG input (not job/result recovery) | [Projects](PROJECTS.md) |

@@ -2,7 +2,7 @@
 
 A Rust/Tauri desktop workstation for ComfyUI and DaSiWa tools: generation, model-aware prompting, model/resource browsing and image editing in one interface. Studio, Library, Prompt Forge, Chat, TVE, Run Plan and the original Comfy editor share the same owned backend; installation, provider authorization and settings live in the Backend tab, diagnostics in Logs.
 
-**Beta.** DEAS puts the whole ComfyUI workflow in one desktop app — no JSON, no browser tabs:
+**0.3 — Feature phase.** DEAS puts the whole ComfyUI workflow in one desktop app — no JSON, no browser tabs:
 
 | Tab | What you get |
 | --- | --- |
@@ -17,7 +17,7 @@ A Rust/Tauri desktop workstation for ComfyUI and DaSiWa tools: generation, model
 | **Media & Monitoring** | Every result kept with its full generation metadata for one-click reuse; live CPU/RAM/GPU telemetry |
 | **Comfy** | The original workflow editor, one tab away when you need it |
 
-Six languages, themed throughout. Beta software — see [current status and limitations](docs/PLAN.md).
+Six languages, themed throughout. See [current status and limitations](docs/PLAN.md).
 
 [Documentation](docs/README.md) · [Getting started](docs/GETTING-STARTED.md) · [News](docs/NEWS.md) · [Changelog](docs/CHANGELOG.md) · [Credits](docs/CREDITS.md)
 
@@ -27,7 +27,7 @@ Six languages, themed throughout. Beta software — see [current status and limi
 
 ## Install and start
 
-Check [official releases](https://github.com/darksidewalker/DEAS/releases) for platform-specific downloads and instructions. GitHub's **Download ZIP** is source, not an installed application. The beta is not a signed universal portable release.
+Check [official releases](https://github.com/darksidewalker/DEAS/releases) for platform-specific downloads and instructions. GitHub's **Download ZIP** is source, not an installed application. Platform downloads are not a signed universal portable release.
 
 To build from source, first install Git, Node.js 22/npm, Rust and the [Windows/Linux prerequisites](docs/GETTING-STARTED.md#before-you-start).
 

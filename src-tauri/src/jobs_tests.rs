@@ -1868,6 +1868,155 @@ async fn derope_keep_background_prepare_rejects_missing_old_or_incompatible_reco
 }
 
 #[tokio::test]
+async fn dials_prepare_requires_the_optional_nodes_and_the_listed_dial_files() {
+    let mut intent = crate::jobs_video::tests::h3();
+    intent["videoPost"] = json!({"derope":{"preset":"balanced","inject":0.48}});
+    intent["dials"] = json!([
+        {"dial":"dials/h3_motion.safetensors","strength":1.5},
+        {"dial":"dials/h3_calm.safetensors","strength":1,"time":{"type":"keys","points":[[0,0],[2,1]],"unit":"seconds"}},
+        {"dial":"dials/unused.safetensors","strength":1,"on":false},
+    ]);
+    let graph = compile(&intent).unwrap();
+    let mut all = nodes();
+    for node in graph.as_object().unwrap().values() {
+        let class = node["class_type"].as_str().unwrap();
+        if all.get(class).is_none() {
+            all[class] = json!({});
+        }
+    }
+    all["DaSiWa_EnhancedVideoCombine"]["output"] = json!(["IMAGE", "STRING"]);
+    all["DEAS_VideoPostprocessGate"] = json!({"input":{"required":{"baseline":["IMAGE,STRING"],"image":["IMAGE",{"lazy":true}]},"optional":{"audio":["AUDIO",{"lazy":true}]}},"output":["IMAGE","AUDIO"]});
+    for (field, names) in crate::jobs_video::requirements(&intent) {
+        let (node, input) = match field {
+            "diffusionModels" => ("UNETLoader", "unet_name"),
+            "textEncoders" => ("CLIPLoader", "clip_name"),
+            "clipTypes" => ("CLIPLoader", "type"),
+            "vaes" => ("VAELoader", "vae_name"),
+            "images" => ("LoadImage", "image"),
+            // Dial files sit in models/loras/dials: the backend lists them with the LoRAs.
+            "loras" => {
+                assert_eq!(
+                    names,
+                    ["dials/h3_motion.safetensors", "dials/h3_calm.safetensors"]
+                );
+                ("LoraLoader", "lora_name")
+            }
+            _ if names.is_empty() => continue,
+            _ => unreachable!("{field}"),
+        };
+        all[node]["input"]["required"][input] = json!([names]);
+    }
+    all["KSampler"]["input"]["required"]["sampler_name"] = json!([[intent["sampler"]]]);
+    all["KSampler"]["input"]["required"]["scheduler"] = json!([[intent["scheduler"]]]);
+    for case in [
+        "ready",
+        "no rack",
+        "no hold map",
+        "no pack",
+        "no file",
+        "windows",
+    ] {
+        let mut info = all.clone();
+        match case {
+            "no rack" => {
+                info.as_object_mut().unwrap().remove("MAIDialRack");
+            }
+            "no hold map" => {
+                info.as_object_mut().unwrap().remove("MAIDialHoldMap");
+            }
+            "no pack" => {
+                for node in crate::jobs_video::DIAL_NODES {
+                    info.as_object_mut().unwrap().remove(node);
+                }
+            }
+            "no file" => {
+                info["LoraLoader"]["input"]["required"]["lora_name"] =
+                    json!([["dials/h3_motion.safetensors"]])
+            }
+            // A Windows backend lists native separators; the intent keeps forward slashes.
+            "windows" => {
+                info["LoraLoader"]["input"]["required"]["lora_name"] =
+                    json!([["dials\\h3_motion.safetensors", "dials\\h3_calm.safetensors"]])
+            }
+            _ => {}
+        }
+        let (base, task) = server(move |path, _| {
+            assert_eq!(
+                path, "GET /comfy/object_info HTTP/1.1",
+                "prepare must not execute"
+            );
+            (200, info.to_string())
+        })
+        .await;
+        let jobs = Jobs::default();
+        let result = jobs.prepare(base.clone(), intent.clone()).await;
+        match case {
+            "ready" | "windows" => {
+                let plan = result.unwrap();
+                assert_eq!(plan["graph"]["DR"]["class_type"], "MAIDialRack", "{case}");
+                assert_eq!(
+                    plan["graph"]["DRH"]["class_type"], "MAIDialHoldMap",
+                    "{case}"
+                );
+            }
+            "no rack" | "no pack" => assert_eq!(
+                result.unwrap_err(),
+                "Diagnostic nodes are not available on this backend: MAIDialRack",
+                "{case}"
+            ),
+            "no hold map" => assert_eq!(
+                result.unwrap_err(),
+                "Diagnostic nodes are not available on this backend: MAIDialHoldMap"
+            ),
+            _ => assert_eq!(
+                result.unwrap_err(),
+                "Diagnostic loras are not available on this backend: dials/h3_calm.safetensors"
+            ),
+        }
+        // Without active dials the same backend needs none of it.
+        let mut plain = intent.clone();
+        plain["dials"] = json!([{"dial":"dials/unused.safetensors","strength":1,"on":false}]);
+        assert!(jobs.prepare(base, plain).await.is_ok(), "{case}");
+        task.abort();
+    }
+}
+
+/// prepare() reads the pinned clip's frame count from the session list. An intent whose dial time
+/// curve was laid out for another count (Studio sends the one it drew with), or whose clip the
+/// list no longer has, is refused before anything else is asked of the backend.
+#[tokio::test]
+async fn dials_prepare_refuses_a_pinned_clip_whose_frame_count_changed() {
+    let mut intent = crate::jobs_video::tests::h3();
+    intent["h3"]["continuity"] = json!({"session":"deas-ab12cd34","sourceId":"clip_1","sourceFrames":73,"capture":true,"action":"she turns around","outputMode":"full"});
+    intent["dials"] = json!([{"dial":"dials/h3_calm.safetensors","strength":1,"time":{"type":"keys","points":[[2.125,0],[4.125,1]],"unit":"seconds"}}]);
+    for (case, frames) in [("changed", Some(243)), ("gone", None), ("same", Some(73))] {
+        let (base, task) = server(move |path, _| {
+            if path == "GET /comfy/df_h3_continuity/session/deas-ab12cd34 HTTP/1.1" {
+                let clips = frames
+                    .map(|n| json!([{"clip_id":"clip_1","parent_id":"","frames":n,"completed_ns":1}]))
+                    .unwrap_or(json!([]));
+                return (200, json!({"latest_id":"clip_1","clips":clips}).to_string());
+            }
+            assert_eq!(case, "same", "a refused job asks the backend nothing more");
+            assert_eq!(path, "GET /comfy/object_info HTTP/1.1");
+            (200, json!({}).to_string())
+        })
+        .await;
+        let error = Jobs::default()
+            .prepare(base, intent.clone())
+            .await
+            .unwrap_err();
+        match case {
+            "changed" => assert_eq!(error, "Invalid dials: the pinned clip has 243 frames in the session list, but the time curves were laid out for 73; press Load checkpoints in the Continuity dialog and check the curves"),
+            "gone" => assert_eq!(error, "Invalid dials: the pinned clip's frame count (73 when the time curves were laid out) could not be read from the session list; press Load checkpoints in the Continuity dialog"),
+            // The count agrees: the job compiles and reaches the prerequisite check (this fixture backend lists nothing).
+            _ => assert!(error.starts_with("Diagnostic ") && error.contains(" are not available on this backend"), "{error}"),
+        }
+        task.abort();
+    }
+}
+
+#[tokio::test]
 async fn h3_regenerate_original_prepare_skips_upscaler_but_requires_supported_target_and_lora() {
     let mut intent = crate::jobs_video::tests::h3();
     intent["latentUpscale"] = json!({"model":"interpolation", "regenerate":{

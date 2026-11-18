@@ -4,7 +4,7 @@
 
 ## Getting started — Windows and Linux
 
-**DEAS 0.2.17 is BETA software.** Linux CPU/NVIDIA installation has been tested; Windows builds exist, but running the app and its installer on Windows has not yet been verified. AMD/Intel GPU installation remains blocked. Video recipes exist, with a recorded successful H3 job; Linux video playback uses the native libmpv player, while audible A/V sync, normal-driver interaction and Windows playback acceptance remain open; see [video limitations](STUDIO.md#video-generation). Use a separate folder, not an existing ComfyUI installation.
+**DEAS 0.3 starts the feature phase.** The basic beta milestone is complete, but support varies by platform, device and recipe. Check the [plan](PLAN.md) for current support and the [verification journal](VERIFICATION.md) for tested configurations. Linux video playback uses the native libmpv player. For managed setup, use a separate folder, not an existing ComfyUI installation.
 
 **Start here:** [Windows](#windows-step-by-step) · [Linux](#linux-step-by-step) · [First setup inside DEAS](#first-setup-inside-deas) · [Help](#if-something-goes-wrong)
 
@@ -53,7 +53,7 @@ The first build downloads dependencies and can take a while. It has finished suc
 
 #### 3. Open the app
 
-In File Explorer, open `DEAS-work → DEAS → artifacts` and double-click **`deas-windows-x86_64.exe`**. Keep it in that writable folder for initial setup. If Windows blocks the file, check its source and the warning; do not disable antivirus or Windows security globally. This beta is not a signed production release.
+In File Explorer, open `DEAS-work → DEAS → artifacts` and double-click **`deas-windows-x86_64.exe`**. Keep it in that writable folder for initial setup. If Windows blocks the file, check its source and the warning; do not disable antivirus or Windows security globally. This executable is not signed.
 
 Continue with [First setup inside DEAS](#first-setup-inside-deas).
 
