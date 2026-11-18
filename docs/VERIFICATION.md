@@ -4,6 +4,8 @@
 
 The frontend build, 2,343 UI tests and 467 Chromium layout checks passed. Core
 checks recorded 166 passes and one skip. The Windows release build completed.
+The native Library model suite passed 65 tests with three ignored using a
+disposable fixture directory.
 
 H3 fixture coverage includes role assignment, automatic image additions,
 resetting after the last image reference is removed, mocked file-manager drop
