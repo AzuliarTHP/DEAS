@@ -250,6 +250,22 @@ fn parse_snapshot(
 
 // Bounds apply even to chunked responses with no Content-Length.
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const LOCAL_DISCOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+const DEFAULT_DISCOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn classic_discovery_timeout(base: &Url) -> std::time::Duration {
+    if base.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    }) {
+        LOCAL_DISCOVERY_TIMEOUT
+    } else {
+        DEFAULT_DISCOVERY_TIMEOUT
+    }
+}
 
 // Shared probe diagnostics limiter: once per endpoint+code per minute.
 static BACKEND_PROBE_LAST: std::sync::Mutex<
@@ -277,7 +293,7 @@ pub(crate) fn warn_backend_limited(key: &str, text: impl FnOnce() -> String) {
     }
 }
 
-fn backend_request_error(endpoint: &str, error: reqwest::Error) -> String {
+fn backend_request_error(endpoint: &str, error: reqwest::Error, elapsed_ms: u128) -> String {
     let (code, message) = if error.is_timeout() {
         ("BACKEND_TIMEOUT", "The backend did not respond in time. It may still be starting or busy. Wait briefly and retry; check Backend and Logs if this continues.")
     } else if error.is_connect() {
@@ -290,7 +306,7 @@ fn backend_request_error(endpoint: &str, error: reqwest::Error) -> String {
     };
     // Only the fixed discovery endpoints call this helper; repeated readiness probes share diagnostics.
     warn_backend_limited(&format!("{endpoint}:{code}"), || {
-        format!("WARN: backend operation=GET endpoint={endpoint} code={code}: {} (repeats limited to once per minute)", error.without_url())
+        format!("WARN: backend operation=GET endpoint={endpoint} code={code} elapsed_ms={elapsed_ms}: {} (repeats limited to once per minute)", error.without_url())
     });
     format!("{code}: {message}")
 }
@@ -304,22 +320,25 @@ async fn get_json(
     let url = base
         .join(endpoint)
         .map_err(|_| "Invalid backend endpoint".to_string())?;
-    let mut response = client
+    let started = std::time::Instant::now();
+    let transport_error =
+        |error| backend_request_error(endpoint, error, started.elapsed().as_millis());
+    let mut request = client
         .get(url)
-        .header(reqwest::header::ACCEPT, "application/json")
-        .send()
-        .await
-        .map_err(|error| backend_request_error(endpoint, error))?;
+        .header(reqwest::header::ACCEPT, "application/json");
+    if optional {
+        request = request.timeout(DEFAULT_DISCOVERY_TIMEOUT);
+    }
+    let mut response = request.send().await.map_err(transport_error)?;
     if optional && response.status() == reqwest::StatusCode::NOT_FOUND {
         return Ok(None);
     }
     // error_for_status doesn't reject redirects, so require a success explicitly.
     if !response.status().is_success() {
         let status = response.status();
-        logs::push(
-            logs::Source::Deas,
-            &format!("WARN: backend operation=GET endpoint={endpoint} returned HTTP {status}"),
-        );
+        warn_backend_limited(&format!("{endpoint}:HTTP:{status}"), || {
+            format!("WARN: backend operation=GET endpoint={endpoint} returned HTTP {status} elapsed_ms={} (repeats limited to once per minute)", started.elapsed().as_millis())
+        });
         return Err(format!(
             "BACKEND_HTTP_ERROR: {endpoint} returned HTTP {status}"
         ));
@@ -333,11 +352,7 @@ async fn get_json(
         ));
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|error| backend_request_error(endpoint, error))?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(transport_error)? {
         if chunk.len() > MAX_RESPONSE_BYTES - body.len() {
             return Err(format!(
                 "{endpoint} exceeded response size limit ({MAX_RESPONSE_BYTES} bytes)"
@@ -345,13 +360,22 @@ async fn get_json(
         }
         body.extend_from_slice(&chunk);
     }
-    serde_json::from_slice(&body)
-        .map(Some)
-        .map_err(|error| format!("{endpoint} returned invalid JSON: {error}"))
+    let json = serde_json::from_slice(&body)
+        .map_err(|error| format!("{endpoint} returned invalid JSON: {error}"))?;
+    let elapsed = started.elapsed();
+    if elapsed >= std::time::Duration::from_secs(2) {
+        logs::push(logs::Source::Deas, &format!(
+            "INFO: backend operation=GET endpoint={endpoint} elapsed_ms={} response_bytes={} (slow response)",
+            elapsed.as_millis(), body.len()
+        ));
+    }
+    Ok(Some(json))
 }
 
 pub mod commands {
-    use super::{get_json, parse_snapshot, validate_base_url, BackendSnapshot};
+    use super::{
+        classic_discovery_timeout, get_json, parse_snapshot, validate_base_url, BackendSnapshot,
+    };
     use std::time::Duration;
 
     /// Observe an existing backend only: never install, launch, mutate, or stop it.
@@ -360,7 +384,7 @@ pub mod commands {
         let base = validate_base_url(&base_url)?;
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(10))
+            .timeout(classic_discovery_timeout(&base))
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .build()
@@ -384,11 +408,18 @@ mod tests {
     async fn serve(
         responses: Vec<(&'static str, String)>,
     ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        serve_delayed(responses, usize::MAX).await
+    }
+
+    async fn serve_delayed(
+        responses: Vec<(&'static str, String)>,
+        delay_response_index: usize,
+    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move {
             let mut requests = vec![];
-            for (status, body) in responses {
+            for (index, (status, body)) in responses.into_iter().enumerate() {
                 let (mut stream, _) = listener.accept().await.unwrap();
                 let mut bytes = vec![0; 4096];
                 let count = stream.read(&mut bytes).await.unwrap();
@@ -401,6 +432,9 @@ mod tests {
                 );
                 let header = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n", body.len());
                 stream.write_all(header.as_bytes()).await.unwrap();
+                if index == delay_response_index {
+                    tokio::time::sleep(std::time::Duration::from_millis(10_300)).await;
+                }
                 // The client is permitted to drop the connection on an oversized response.
                 let _ = stream.write_all(body.as_bytes()).await;
             }
@@ -554,17 +588,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn inspection_times_out_stalled_backend() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (_stream, _) = listener.accept().await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-        });
-        let start = std::time::Instant::now();
+    async fn classic_local_discovery_accepts_slow_object_info_bodies() {
+        let (inspect_url, inspection_server) = serve_delayed(
+            vec![
+                ("200 OK", "{}".into()),
+                ("200 OK", r#"{"devices":[]}"#.into()),
+                ("404 Not Found", "".into()),
+            ],
+            0,
+        )
+        .await;
+        let (recipe_url, recipe_server) = serve_delayed(vec![("200 OK", "{}".into())], 0).await;
+        let start = crate::native_logs(0).last().map_or(0, |e| e.seq);
+        let (inspection, recipe) = tokio::join!(
+            super::inspect_backend(inspect_url),
+            crate::recipe_prerequisites::native_recipe_prerequisites(recipe_url),
+        );
+        assert_eq!(inspection.unwrap().node_count, 0);
+        recipe.unwrap();
+        inspection_server.await.unwrap();
+        recipe_server.await.unwrap();
+        assert!(crate::native_logs(start)
+            .iter()
+            .any(|e| e.source == crate::logs::Source::Deas
+                && e.text.contains("endpoint=object_info elapsed_ms=")
+                && e.text.contains("(slow response)")));
+    }
+
+    #[tokio::test]
+    async fn inspection_keeps_shorter_timeout_for_optional_features() {
+        let (url, server) = serve_delayed(
+            vec![
+                ("200 OK", "{}".into()),
+                ("200 OK", r#"{"devices":[]}"#.into()),
+                ("200 OK", "{}".into()),
+            ],
+            2,
+        )
+        .await;
         let error = super::inspect_backend(url).await.unwrap_err();
         assert!(error.starts_with("BACKEND_TIMEOUT:"), "{error}");
-        assert!(start.elapsed() < std::time::Duration::from_secs(15));
         server.abort();
     }
 

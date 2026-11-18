@@ -1,5 +1,13 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## DEAS 0.3.1 — Slow local backend readiness
+
+Linux loopback HTTP fixtures verified owned startup with 2.25-second responses on both required endpoints, no retries, retained ownership and no generation-readiness claim. Separate inspection and recipe discovery fixtures accepted a 10.3-second `object_info` body. Tests also covered the existing overall startup cutoff, stopping during a probe, the shorter optional-feature timeout and DEAS-source timing logs. TypeScript, 167 core checks and strict Linux and Windows-target Clippy passed. The Linux build was staged as `artifacts/deas-linux-amd64` (SHA-256 `55f6941b0549d66751e154ecbf986310e94eaa8add7d81ec9768a2078695f63d`).
+
+The two known backend shutdown deadline fixtures failed on both the patched and baseline builds; the readiness and stop-during-probe fixtures passed.
+
+Windows runtime confirmation of [#39](https://github.com/darksidewalker/DEAS/issues/39) remains open: the test host was unreachable. The fixtures verify the DEAS timeout behavior, not the cause of the slow ComfyUI response on the reporter's machine.
+
 ## DEAS 0.3.0 — Feature phase release
 
 Published [v0.3.0](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.0) from `f43286f6f4d65d274d52cb8fed0a1fbc1aea2e22`. The local release build produced unsigned Linux and cross-built Windows x86-64 executables, a source/build manifest, and checksums. The Linux executable requires glibc 2.39 or later. All published assets were downloaded from the draft and verified against the staged checksums before publication. No Windows installer was produced, and native Windows or GPU acceptance was not repeated for this release.

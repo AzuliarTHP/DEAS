@@ -466,6 +466,37 @@ fn real_owned_child_requires_api_before_running_and_stop_is_exact() {
     assert!(!lifecycle.stop().generation_ready);
 }
 #[test]
+fn owned_api_readiness_accepts_slow_responses_without_retries() {
+    let (tmp, approved) =
+        fixture(&SERVER.replace("  body=json.dumps", "  time.sleep(2.25)\n  body=json.dumps"));
+    let lifecycle = Lifecycle::default();
+    let start = crate::native_logs(0).last().map_or(0, |entry| entry.seq);
+    lifecycle.launch(approved, Duration::from_secs(8)).unwrap();
+    let status = await_state(&lifecycle, "running");
+    assert!(!status.generation_ready);
+    let endpoint = reqwest::Url::parse(&status.endpoint.unwrap()).unwrap();
+    let port = endpoint.port().unwrap();
+    assert_eq!(
+        fs::read_to_string(tmp.path().join("ComfyUI/requests.log")).unwrap(),
+        "/object_info\n/system_stats\n"
+    );
+    let logs = crate::native_logs(start);
+    for marker in [
+        format!("operation=readiness port={port} listener_ready_ms="),
+        format!("operation=readiness port={port} elapsed_ms="),
+        "endpoint=object_info elapsed_ms=".into(),
+        "endpoint=system_stats elapsed_ms=".into(),
+    ] {
+        assert!(
+            logs.iter()
+                .any(|entry| entry.source == crate::logs::Source::Deas
+                    && entry.text.contains(&marker)),
+            "missing DEAS log: {marker}"
+        );
+    }
+    assert_eq!(lifecycle.stop().state, "stopped");
+}
+#[test]
 fn readiness_timeout_kills_only_owned_process() {
     let (_tmp, approved) = fixture("import time; print('not an API',flush=True); time.sleep(60)");
     let lifecycle = Lifecycle::default();
@@ -563,10 +594,9 @@ fn stalled_owned_http_respects_overall_readiness_deadline() {
     );
 
     assert!(
-        status
-            .error
-            .as_deref()
-            .is_some_and(|error| error.contains("Overall readiness deadline reached")),
+        status.error.as_deref().is_some_and(
+            |error| error.contains("Overall readiness deadline reached at object_info")
+        ),
         "{timing}; {status:?}"
     );
     assert!(!status.generation_ready, "{timing}; {status:?}");
@@ -618,7 +648,7 @@ fn invalid_owned_api_never_marks_running() {
         status
             .error
             .as_ref()
-            .is_some_and(|e| e.contains("object_info")),
+            .is_some_and(|e| e.contains("object_info must be a JSON object")),
         "{status:?}"
     );
     assert!(status.endpoint.is_none());
