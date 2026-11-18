@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+- **Slow local backend startup ([#39](https://github.com/darksidewalker/DEAS/issues/39)).** Owned ComfyUI readiness, local backend inspection and recipe discovery allow 45 seconds for each required API response. Startup retains its 120-second overall deadline and exact listener ownership checks. The DEAS log identifies the probe, time spent waiting, and startup outcome.
+
 ## 0.3.0 — Feature phase
 
 The basic 0.2 beta implementation milestone is complete. The 0.3 series focuses on new capabilities and improvements to existing workflows; feature and platform limits remain documented in the [plan](PLAN.md).

@@ -1098,14 +1098,15 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
             return;
         }
     };
-    let deadline = Instant::now() + timeout;
+    let started = Instant::now();
+    let deadline = started + timeout;
     let base =
         reqwest::Url::parse(&format!("http://127.0.0.1:{port}/")).expect("constant loopback URL");
     let client = match reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_millis(500))
-        .timeout(Duration::from_secs(2))
+        .timeout(crate::LOCAL_DISCOVERY_TIMEOUT)
         .build()
     {
         Ok(client) => client,
@@ -1118,6 +1119,7 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
         }
     };
     let mut last_error = "Owned listener not ready".to_string();
+    let mut attempts = 0u32;
     loop {
         {
             let mut guard = locked(&inner);
@@ -1139,7 +1141,7 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
             if Instant::now() >= deadline {
                 fail(
                     &mut guard,
-                    format!("Backend readiness timed out: {last_error}"),
+                    format!("Backend readiness timed out after {} ms ({attempts} API attempts): {last_error}", started.elapsed().as_millis()),
                 );
                 return;
             }
@@ -1156,22 +1158,36 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
                 continue;
             }
         }
+        attempts += 1;
+        if attempts == 1 {
+            log(&format!(
+                "INFO: backend operation=readiness port={port} listener_ready_ms={} response_timeout_ms={} startup_deadline_ms={}",
+                started.elapsed().as_millis(), crate::LOCAL_DISCOVERY_TIMEOUT.as_millis(), timeout.as_millis()
+            ));
+        }
+        let mut stage = "object_info";
+        let mut stage_started = Instant::now();
         let result = runtime
             .block_on(async {
                 tokio::time::timeout(deadline.saturating_duration_since(Instant::now()), async {
                     let nodes = crate::get_json(&client, &base, "object_info", false)
                         .await?
                         .ok_or("Missing object_info")?;
-                    let stats = crate::get_json(&client, &base, "system_stats", false)
+                    stage = "system_stats";
+                    stage_started = Instant::now();
+                    let stats = crate::get_json(&client, &base, stage, false)
                         .await?
                         .ok_or("Missing system_stats")?;
+                    stage = "snapshot_validation";
+                    stage_started = Instant::now();
                     crate::parse_snapshot(&base, &nodes, &stats, None).map(|_| ())
                 })
                 .await
             })
             .unwrap_or_else(|_| {
                 Err(format!(
-                    "Overall readiness deadline reached; last probe: {last_error}"
+                    "Overall readiness deadline reached at {stage} after {} ms; last probe: {last_error}",
+                    stage_started.elapsed().as_millis()
                 ))
             });
         let mut guard = locked(&inner);
@@ -1189,7 +1205,10 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
         {
             guard.status.state = "running".into();
             guard.status.endpoint = Some(base.to_string());
-            log("Owned ComfyUI API responded; generation/model readiness remains unverified");
+            log(&format!(
+                "INFO: backend operation=readiness port={port} elapsed_ms={} attempts={attempts}: Owned ComfyUI API responded; generation/model readiness remains unverified",
+                started.elapsed().as_millis()
+            ));
             // Liveness only; the UI polls once a second too, so 100 ms would be 10x wasted /proc scans.
             drop(guard);
             loop {
@@ -1209,7 +1228,20 @@ fn supervise(inner: Arc<Mutex<Inner>>, serial: u64, port: u16, timeout: Duration
             }
         }
         if let Err(error) = result {
-            last_error = error;
+            if Instant::now() >= deadline {
+                fail(&mut guard, format!("Backend readiness timed out after {} ms ({attempts} API attempts): {error}", started.elapsed().as_millis()));
+                return;
+            }
+            if attempts == 1 && !error.starts_with("BACKEND_") {
+                log(&format!(
+                    "WARN: backend operation=readiness port={port} stage={stage} elapsed_ms={}: {error}; retrying",
+                    stage_started.elapsed().as_millis()
+                ));
+            }
+            last_error = format!(
+                "{stage} after {} ms: {error}",
+                stage_started.elapsed().as_millis()
+            );
         }
         drop(guard);
         std::thread::sleep(Duration::from_millis(100));

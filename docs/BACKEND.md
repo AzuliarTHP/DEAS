@@ -48,4 +48,6 @@ See [source](../src-tauri/src/startup.rs), [LLM settings](PROMPTING.md#shared-ll
 
 ## Changes and troubleshooting
 
+If ComfyUI starts but DEAS stays on **Starting**, check the **DEAS** source in **Logs**. Look for `operation=readiness` to see when the owned listener appeared, the overall startup budget (120 seconds) and the result. Required local API probes such as `object_info` and `system_stats` can take up to 45 seconds each, within the remaining startup budget. Slow responses and request failures include the endpoint and elapsed time. Export the DEAS and ComfyUI logs together when reporting a startup timeout; a timeout alone is not a reason to reinstall.
+
 Follow [first setup](GETTING-STARTED.md#first-setup-inside-deas) for storage/models/consent. Driver and Git remain external prerequisites. Unsupported profiles/options and missing resources block execution. Read [Logs](LOGS.md); never delete existing environments or stop foreign services to clear a blocker. Full repair/resume, staged rollback and broad hardware/Windows acceptance remain incomplete.

@@ -534,7 +534,7 @@ pub async fn native_recipe_prerequisites(base_url: String) -> Result<Value, Stri
     let base = crate::validate_base_url(&base_url)?;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(10))
+        .timeout(crate::classic_discovery_timeout(&base))
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .build()
@@ -1460,17 +1460,21 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn enforces_ten_second_total_request_timeout() {
-        let (base, request) = fixture_response(String::new(), Duration::from_secs(11)).await;
-        let started = std::time::Instant::now();
-        assert!(native_recipe_prerequisites(base)
-            .await
-            .unwrap_err()
-            .starts_with("BACKEND_TIMEOUT:"));
-        assert!(started.elapsed() >= Duration::from_secs(9));
-        assert!(started.elapsed() < Duration::from_secs(11));
-        request.await.unwrap();
+    #[test]
+    fn only_loopback_discovery_gets_the_longer_request_budget() {
+        for (base, seconds) in [
+            ("http://127.0.0.1:8188", 45),
+            ("http://[::1]:8188", 45),
+            ("http://localhost:8188", 45),
+            ("http://192.0.2.1:8188", 10),
+            ("https://backend.example/comfy", 10),
+        ] {
+            let base = crate::validate_base_url(base).unwrap();
+            assert_eq!(
+                crate::classic_discovery_timeout(&base),
+                Duration::from_secs(seconds)
+            );
+        }
     }
 
     #[tokio::test]

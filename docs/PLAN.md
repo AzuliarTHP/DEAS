@@ -145,7 +145,7 @@ An item is only as accepted as its strongest evidence. Keep the levels separate 
 | --- | --- | --- |
 | Shell, navigation, layout | Implemented. Creative tabs left: Studio, Library, Prompt Forge, Chat, TVE, Comfy; utility tabs right: Monitoring, Run Plan, Backend, Logs. Shared viewport gate `npm run test:layout` | Windows/native visual acceptance |
 | Provisioning (installer) | Partial. Immutable consented plans, Linux/Windows x86_64 CPU/NVIDIA baseline, pinned ComfyUI-GGUF, checked reopening, foreign-install takeover, explicit Upgrade/Reinstall | §4.8 |
-| Owned backend lifecycle | Implemented, bounded. Approved ownership, default-on autostart, explicit Stop, Windows Job Object / Linux process group; graceful maintenance stop and previous-state resume | Native Windows graceful-stop/update/move acceptance, real GPU restart matrix, crash/power-loss recovery |
+| Owned backend lifecycle | Implemented, bounded. Approved ownership, default-on autostart, explicit Stop, Windows Job Object / Linux process group; graceful maintenance stop and previous-state resume | Native Windows slow-start confirmation ([#39](https://github.com/darksidewalker/DEAS/issues/39)) and graceful-stop/update/move acceptance, real GPU restart matrix, crash/power-loss recovery |
 | Downloads and Library | Partial. Catalogs, providers, managed placement, integrity, cancellation, Scan Files | Resume, free-space UX, §4.7 backlog, broad authenticated-provider acceptance |
 | Authentication | Partial. Native exact-origin credentials, metadata-only readback | Real OS-store and provider acceptance beyond fixtures |
 | Localization | Implemented, bounded. Six languages, module-owned locales | Native-speaker review |
