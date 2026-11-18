@@ -16,8 +16,35 @@ pub fn native_open_token_page(provider_id: String) -> Result<(), String> {
     open_url(token_page(&provider_id).ok_or("Unknown provider")?)
 }
 
-/// Opens a fixed, compiled-in URL in the system browser.
-pub(crate) fn open_url(url: &'static str) -> Result<(), String> {
+pub(crate) fn valid_civitai_creator(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 80
+        && !matches!(name, "." | "..")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+}
+
+#[tauri::command]
+pub fn native_open_civitai_model(model_id: u64, version_id: u64) -> Result<(), String> {
+    if model_id == 0 || version_id == 0 {
+        return Err("Invalid CivitAI model or version".into());
+    }
+    open_url(&format!(
+        "https://civitai.com/models/{model_id}?modelVersionId={version_id}"
+    ))
+}
+
+#[tauri::command]
+pub fn native_open_civitai_creator(username: String) -> Result<(), String> {
+    if !valid_civitai_creator(&username) {
+        return Err("Invalid CivitAI username".into());
+    }
+    open_url(&format!("https://civitai.com/user/{username}"))
+}
+
+/// Opens a compiled-in URL or one constructed from validated identifiers.
+pub(crate) fn open_url(url: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     let mut cmd = {
         let mut c = Command::new("xdg-open");
@@ -52,5 +79,8 @@ mod tests {
         );
         assert!(token_page("https://evil.example").is_none());
         assert!(native_open_token_page("nope".into()).is_err());
+        assert!(native_open_civitai_model(1, 0).is_err());
+        assert!(native_open_civitai_creator("x&start.exe".into()).is_err());
+        assert!(valid_civitai_creator("Creator_123"));
     }
 }
