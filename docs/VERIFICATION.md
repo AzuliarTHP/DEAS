@@ -1,5 +1,11 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## DEAS 0.3.0 — Feature phase release
+
+Published [v0.3.0](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.0) from `f43286f6f4d65d274d52cb8fed0a1fbc1aea2e22`. The local release build produced unsigned Linux and cross-built Windows x86-64 executables, a source/build manifest, and checksums. The Linux executable requires glibc 2.39 or later. All published assets were downloaded from the draft and verified against the staged checksums before publication. No Windows installer was produced, and native Windows or GPU acceptance was not repeated for this release.
+
+TypeScript, 167 core tests, 2,335 UI tests, 467 Chromium layout checks, and strict Linux and Windows-target Clippy passed. The serial native suite under a private temporary directory recorded 1,092 passed, 80 ignored, and two failures: the previously documented backend shutdown deadline fixtures. Both passed when rerun individually; the full serial run was not entirely green. The initial run under the shared temporary directory also hit the expected owned-directory safety checks; these passed in the private-directory run.
+
 ## DEAS 0.2.42 Dials integration
 
 Integrated [PR #40](https://github.com/darksidewalker/DEAS/pull/40) at `3de452b`. Local checks passed: TypeScript, 167 core tests, 217 focused UI tests, strict Clippy, 23 focused Rust tests (one live installer fixture ignored), 467 Chromium workspace checks and 225 Chromium Dials checks. Browser tests used synthetic IPC; they do not establish native playback or real model behavior. The Linux release build passed and staged `artifacts/deas-linux-amd64` (SHA-256 `87075a04b6ceb267c9e3c96c2514fec47936dcef555d78f6efee41e8dda15fed`).
