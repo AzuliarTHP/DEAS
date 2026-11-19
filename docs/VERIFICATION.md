@@ -5006,6 +5006,70 @@ case. Changing the default is an owner decision (the item was approved as opt-in
 but it is the number that admission must check, and a text-encoder release policy is the only
 lever that would reduce it.
 
+### Host RAM admission implemented (0.3.4, 2026-11-19)
+
+The residency verdict above turned P-02's "RAM admission" bullet from a guess into an arithmetic
+check, so it is now implemented: `src-tauri/src/host_memory.rs`, called from
+`jobs.rs::submit_inner` **before the plan is consumed** and before the compute gate is reserved.
+
+**Estimate (two terms, both measured):**
+- *Model residency* — every distinct model file the compiled graph names, resolved against the
+  plan's model roots (category-relative names, then a bounded shallow listing), counted once per
+  file. The 362-frame graph resolves to 42.54 GiB, matching the measured 43.04 GiB RSS to ~0.5 GiB.
+- *Pixel batches* — `frames × width × height × 3 × 4` for the baseline decode, plus the same for
+  the post-upscale/Hi-Res canvas when latent upscale is on, **unless** the bounded streaming path
+  was selected (`streamDecode`), which then contributes a flat 2 GiB allowance (measured extra was
+  ~1.1 GiB). The incident case computes 2.763 + 10.626 = 13.39 GiB, exactly the PLAN's numbers.
+
+**Decision:** `need + margin(need) ≤ MemAvailable`, `margin = need/10 + 2 GiB`. Refusal goes to
+central Logs with the numbers, and the job is not started and not consumed:
+
+> `HOST_MEMORY: estimated need 55.9 GiB system RAM (42.5 GiB in 6 model files + 13.4 GiB full-frame
+> decode buffers), 3.2 GiB available of 61.7 GiB; page file/swap 8.0 GiB free of 94.8. DEAS did not
+> start this job: at this level the operating system's memory guard kills the backend mid-run, which
+> is how the reported failure looked. Close memory-heavy programs (other GPU apps, browsers, local
+> models), turn on Streaming decode where it is offered, or lower the canvas/duration.
+> DEAS_HOST_MEMORY_ADMISSION=warn starts anyway.`
+
+`warn` starts the job and Logs the same line; `off` skips the check. There is deliberately **no
+Studio control**: an admission the user can quietly disable is not an admission, and adding a
+control would also need six locales, global search and STUDIO documentation for a field almost
+nobody should touch. Advice to enable Streaming decode is only added when that path is actually
+legal for the job.
+
+**CPU test evidence** (`cargo test --lib`, 2026-11-19 18:5x, 1116 passed / 80 ignored):
+
+| test | what it pins |
+|---|---|
+| `incident_model_footprint_counts_each_file_once` | the six real byte counts (45 679 775 351 B) resolve to 42.54 GiB; a text encoder used by two nodes counts once |
+| `non_streaming_path_estimates_both_pixel_batches` | 362 f at 736×928 + 1440×1824 = 13.39 GiB, byte-exact |
+| `streaming_decode_removes_the_pixel_buffers_from_the_estimate` | `streamDecode` ⇒ 0 pixel bytes |
+| `the_measured_case_fits_with_streaming_and_does_not_without` | at the session's real 52.9 GiB headroom: streaming fits, non-streaming is refused; at 2.8 GiB nothing fits |
+| `small_jobs_still_start_on_a_pressured_desktop` | a 40 MiB model at 3.2 GiB free still starts (regression for the first margin) |
+| `refusal_says_what_to_change_and_warn_names_the_override` | wording, advice only where legal, `warn` starts anyway |
+| `off_mode_and_unknown_inputs_never_block` | `off`, unreadable RAM, and unresolvable graphs never invent a refusal |
+| `model_names_resolve_with_and_without_their_subfolder` | category-relative names resolve; missing references are reported, not guessed |
+| `host_memory_admission_refuses_before_the_backend_and_stays_retryable` | real submission path: `HOST_MEMORY:` error, **zero** HTTP posts, no job in the session, and the same plan runs after the model shrinks |
+
+Two implementation bugs were caught by those tests and fixed: a flat 4 GiB margin, which blocked
+~0 GiB jobs on a busy desktop, and a directory-walk counter that stopped after six *pops* instead
+of six levels, so most model folders were invisible to the resolver.
+
+**Test-harness note.** `headroom()` returns a fixed 60 GiB-available/64 GiB-total host under
+`cfg(test)`, so submission tests never depend on what the developer's desktop is holding; the
+negative submit-path test drives the estimate instead, with a sparse 2 TiB checkpoint
+(`huge_declaration`). Related, pre-existing and unrelated to this change: 17 `settings`/`install`
+tests fail on this box when `TMPDIR=/tmp` (DEAS refuses a group/world-writable root) and pass with
+a private `TMPDIR`; `llm::tests::listing_scans_local_and_fetches_remote_in_parallel` is load-flaky
+under the full suite and passes alone.
+
+**Still open for P-02 (not claimed):** the GPU harness drives ComfyUI directly, so the product-level
+refusal has not yet been seen in a real Studio run — that is a native/Windows acceptance step (start
+any heavy H3 2K job while a memory holder is active and check Logs). Rechecks *during* a run
+(allocation boundaries, cached products, effects, encoder buffers, cgroup pressure) remain open, as
+does the streaming-path activation policy. No claim is made that the 43.6 GiB bounded footprint is
+acceptable on smaller hosts — admission only makes the failure visible before it happens.
+
 ## Closed plan items moved from PLAN.md (2026-11-19)
 
 Moved verbatim during the PLAN restructuring (IDs, types and blockers added to every open item). These texts describe delivered work, closed gates or superseded rows; any remaining gate they mention is tracked under its PLAN ID.

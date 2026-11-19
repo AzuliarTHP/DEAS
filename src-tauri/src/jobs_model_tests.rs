@@ -18,6 +18,34 @@ fn model_file(root: &Path, category: &str, name: &str) -> PathBuf {
     path
 }
 
+/// A declared checkpoint whose apparent size is `gib` GiB: the safetensors header declares one U8
+/// tensor that fills the file, and the file is sparse, so nothing lands on disk. Used to make the
+/// host-memory estimator see a huge footprint deterministically, without depending on the test
+/// machine's RAM.
+async fn huge_declaration(root: &Path, category: &str, name: &str, gib: u64) -> PathBuf {
+    let path = root.join(category).join(name);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let data = gib * 1024 * 1024 * 1024;
+    let header = serde_json::to_vec(&json!({
+        "fixture.weight": {"dtype": "U8", "shape": [data], "data_offsets": [0, data]}
+    }))
+    .unwrap();
+    let mut file = std::fs::File::create(&path).unwrap();
+    let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
+    bytes.extend(&header);
+    std::io::Write::write_all(&mut file, &bytes).unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(8 + header.len() as u64 + data)
+        .unwrap();
+    crate::downloads::models::family_operation(path.to_str().unwrap().into(), Some("sdxl".into()))
+        .await
+        .unwrap();
+    path
+}
+
 async fn declaration(root: &Path, category: &str, name: &str) -> PathBuf {
     let path = model_file(root, category, name);
     crate::downloads::models::family_operation(path.to_str().unwrap().into(), Some("sdxl".into()))
@@ -403,6 +431,47 @@ async fn local_declaration_valid_and_undeclared_preparation_submit_normally() {
         assert_eq!(job["state"], "queued");
     }
     assert_eq!(posts.load(Ordering::SeqCst), 2);
+    task.abort();
+}
+
+/// P-02 host RAM admission: a job whose model footprint cannot fit in free RAM must refuse before
+/// the backend is contacted, must leave no job behind, and must leave the plan retryable. The
+/// estimate is driven from the fixture (an 8 TiB sparse checkpoint), not from the test machine's
+/// live memory, so this is deterministic everywhere.
+#[tokio::test]
+async fn host_memory_admission_refuses_before_the_backend_and_stays_retryable() {
+    let (base, task, posts) = backend().await;
+    let root = tempfile::tempdir().unwrap();
+    // The graph names this file; its apparent size is what the estimator adds. A host with 2.2 TiB
+    // of free RAM is not a real CI machine, so the refusal is deterministic everywhere.
+    huge_declaration(root.path(), "checkpoints", "sd/model.safetensors", 2048).await;
+    let jobs = Jobs::default();
+    let plan = jobs
+        .prepare_with_models(base.clone(), intent(), vec![root.path().into()])
+        .await
+        .unwrap();
+    let error = jobs
+        .submit(plan["id"].as_str().unwrap().into(), true)
+        .await
+        .unwrap_err();
+    assert!(error.starts_with("HOST_MEMORY:"), "{error}");
+    assert!(error.contains("model files"), "{error}");
+    assert_eq!(posts.load(std::sync::atomic::Ordering::SeqCst), 0, "the backend was never asked to start this job");
+    assert!(
+        jobs.lock().unwrap().job.is_none(),
+        "a refused job must not appear in the session"
+    );
+    // The plan was not consumed: shrinking the same file back and submitting that plan runs.
+    let small = model_file(root.path(), "checkpoints", "sd/model.safetensors");
+    crate::downloads::models::family_operation(small.to_str().unwrap().into(), Some("sdxl".into()))
+        .await
+        .unwrap();
+    let job = jobs
+        .submit(plan["id"].as_str().unwrap().into(), true)
+        .await
+        .unwrap();
+    assert_eq!(job["state"], "queued");
+    assert_eq!(posts.load(std::sync::atomic::Ordering::SeqCst), 1);
     task.abort();
 }
 

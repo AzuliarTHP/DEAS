@@ -2136,6 +2136,34 @@ impl Jobs {
                 .await
                 .map_err(|_| "AUDIO_SETTINGS: Runtime validation failed")??;
         }
+        // P-02 host RAM admission (docs/PLAN.md P-02, "RAM admission" bullet): refuse before the
+        // plan is consumed, so the job can be retried after the user frees memory. Resolving the
+        // graph's model files and reading RAM stays off the async runtime and never holds the
+        // session lock, so Stop and the Workbench stay responsive.
+        let probe = {
+            let session = self.lock()?;
+            let plan = session
+                .plan
+                .as_ref()
+                .filter(|plan| plan.id == plan_id)
+                .ok_or("Unknown or stale native plan")?;
+            (
+                plan.graph.clone(),
+                plan.intent.clone(),
+                plan.local_models.roots.clone(),
+            )
+        };
+        let decision = tokio::task::spawn_blocking(move || {
+            crate::host_memory::admission(&probe.0, &probe.1, &probe.2)
+        })
+        .await
+        .map_err(|_| "Native memory admission task failed")?;
+        if let Some(line) = crate::host_memory::log_line(&decision) {
+            crate::logs::push(crate::logs::Source::Deas, line);
+        }
+        if let crate::host_memory::Decision::Refused(message) = decision {
+            return Err(message);
+        }
         // Shared compute gate: submission holds it until the backend has accepted the prompt,
         // so an audio admission decision cannot be invalidated by an interleaved start.
         // Acquired without blocking: backend Stop and cancel paths stay reachable either way.

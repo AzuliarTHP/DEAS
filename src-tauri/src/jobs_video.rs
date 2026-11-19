@@ -154,6 +154,22 @@ pub(crate) fn dial_blend_steps(steps: u64) -> u64 {
     }
 }
 
+/// Whether the bounded streaming decode path is available for this intent at all (same rules as
+/// the `streamDecode` validation in `validate`). Host-memory admission uses it only to word its
+/// advice - it never changes which path a job takes.
+pub(crate) fn h3_stream_candidate(i: &Value) -> bool {
+    is_video(i)
+        && is_h3(i["family"].as_str().unwrap_or_default())
+        && i.get("latentUpscale").is_some()
+        && i["h3"]["continuity"]["outputMode"] != "segment"
+        && i.get("videoPost").is_none()
+        && i.get("faceRefine").is_none()
+        && !matches!(
+            i["output"]["container"].as_str(),
+            Some("Animated WebP" | "Animated AVIF")
+        )
+}
+
 pub(crate) fn is_video(intent: &Value) -> bool {
     intent["recipeId"] == "video-generation"
         || crate::jobs_video_post::is_enhance(intent)

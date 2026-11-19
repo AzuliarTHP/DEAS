@@ -97,7 +97,7 @@ fn cpu() -> Option<Cpu> {
     })
 }
 #[cfg(target_os = "linux")]
-fn memory() -> (Option<Memory>, Option<Memory>) {
+pub(crate) fn memory() -> (Option<Memory>, Option<Memory>) {
     let Ok(info) = std::fs::read_to_string("/proc/meminfo") else {
         return (None, None);
     };
@@ -268,7 +268,7 @@ fn cpu() -> Option<Cpu> {
     })
 }
 #[cfg(windows)]
-fn memory() -> (Option<Memory>, Option<Memory>) {
+pub(crate) fn memory() -> (Option<Memory>, Option<Memory>) {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
     status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
@@ -308,7 +308,7 @@ fn cpu() -> Option<Cpu> {
     None
 }
 #[cfg(not(any(target_os = "linux", windows)))]
-fn memory() -> (Option<Memory>, Option<Memory>) {
+pub(crate) fn memory() -> (Option<Memory>, Option<Memory>) {
     (None, None)
 }
 

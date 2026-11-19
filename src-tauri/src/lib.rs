@@ -49,6 +49,7 @@ pub use downloads::{
 };
 pub mod api;
 pub use api::native_negotiate_api;
+pub(crate) mod host_memory;
 pub mod jobs;
 pub mod jobs_face_refine;
 pub mod jobs_music;
