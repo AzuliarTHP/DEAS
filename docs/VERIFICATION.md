@@ -4798,7 +4798,7 @@ shipped adapters in **before** startup (same mapping as `backend.rs`: `src/<name
 `*.installed-backup` copies, restores on every exit path (finally + atexit), and prints a loud
 NOTE so nobody reads a verdict as covering the released build. `--no-adapter-sync` opts out.
 
-**P-02 root cause (found on CPU, no GPU).** The Matroska/WebM muxer in the shipped ffmpeg
+**P-02 defect one of two (found on CPU, no GPU): the Matroska/WebM muxer in the shipped ffmpeg
 **silently drops metadata keys that are not ALL UPPERCASE**. Measured through the pack's own writer
 (`helper_pyav_video._metadata` + `_configure_video_stream` + `_video_frame`):
 
@@ -4809,10 +4809,10 @@ NOTE so nobody reads a verdict as covering the released build. `--no-adapter-syn
 | MP4 ← any key, `+faststart+use_metadata_tags` | survive at every size tested (up to 262 260 B) |
 | WebM ← `prompt` | dropped (matroska family) |
 
-DEAS writes lowercase provenance keys, and the `Auto` codec default puts AV1 in Matroska. So the
-streaming writer encoded all 362 frames, then its own strict readback check demanded tags the
-container had already discarded, raised a `ValueError` the candidate loop did not catch, and
-published nothing — after 7.4 minutes of generation. The fix: Matroska-family containers receive
+DEAS writes lowercase provenance keys, so any Matroska/WebM candidate loses them. That is a real
+defect on its own (and the `DEAS` envelope below is what makes those containers carry provenance
+again), but the third batch showed it was **not** the thing that killed the streaming gate — see
+[P-02 defect two of two](#third-gpu-batch--the-three-reruns-2026-11-19-1339--1423). The fix: Matroska-family containers receive
 the provenance in one uppercase `DEAS` envelope tag and `_validate_video` validates against the tag
 view the container can actually carry, so the **first** candidate succeeds instead of burning the
 encoder chain; MP4 keeps its per-key tags. Diagnostics name the key, distinguish absent / invalid
@@ -4847,6 +4847,62 @@ testing the fixed adapter via repo sync), P-03 (medium shot), V-03 (corrected tr
 and the standing gaps from the first batch still apply: LTX v2v/keyframe and H3 image-edit halves of
 V-12, V-07/V-08/V-09, I-02/I-03/I-05, M-01, D-12, A-03, V-15, all native-UI observation, all Windows
 runtime halves, and every subjective quality judgement.
+
+### Third GPU batch — the three reruns (2026-11-19 13:39 → 14:23)
+
+Same isolation (`gpu-acceptance-20261119T133945Z`), and for the first time the run exercised the
+**repo** adapters: the log records `synced adapter deas_h3_stream_video.py: backend b7f95c13… ->
+repo efcbf275… (29721 bytes)` and the manifest + `*.installed-backup` files, with the installed
+bytes restored afterwards (verified byte-identical, no listener left on the port).
+
+| gate | verdict | measured |
+|---|---|---|
+| **V-03 enhanced preview** | **accepted** | 9 live previews over `/ws`, first at T+33.6 s, last at T+67.3 s of an 85 s run, 3 493 348 base64 bytes ≈ 388 KB per preview; output still 832×480/124 f with real audio |
+| P-03 face refine (medium shot) | not accepted | 6.2 % of pixels changed inside an 859×736 box; sharpness inside that box **136.4 vs 140.7** baseline |
+| **P-02 362 f streaming export** | published, memory goal **not met** | 2 products (Original + Processed) at 1440×1824 × 362 f; **2371 s**, RAM peak 55.5 GiB, swap 8.7 GiB, VRAM 32 032 MiB |
+
+**V-03 is now closed on delivery.** Previews stream as KJNodes `kj_preview_override` events
+(base64 JPEG), arriving during sampling rather than at the end — nine of them for an eight-step
+run. What remains for V-03 is the owner's look at how the previews *look*.
+
+**P-02 defect two of two: `NaN` compared with `NaN`.** The candidate log from this batch is
+unambiguous:
+
+```
+readback check rejected this candidate, trying the next one: AV1/MP4/av1_nvenc/aac:
+Encoded metadata key 'prompt' differs after readback (3705 characters read against 3705 written;
+first difference at character 3705; wrote 'r":"simple","steps":8}}}', read 'r":"simple","steps":8}}}')
+```
+
+Read equals written, and the "first difference" sits one past the end. ComfyUI prompt graphs
+contain `is_changed: [NaN]`, and `NaN != NaN`, so the validator's `parsed == value` check rejected
+provenance that had round-tripped byte for byte — in **every** container. Seven candidates were
+rejected in turn (AV1/nvenc, AV1/nvenc+mp3, AV1/libsvt ×2, VP9/WebM, H.264/nvenc), each of which
+re-decodes 362 frames through the VAE, re-encodes and re-validates, and only the last candidate
+published (with `WARN published without full container provenance`). That is why this gate took
+2371 s; it is also what produced zero files in the earlier batches, whose message carried no key
+detail. Fixed by comparing the canonical serialization instead of object equality, with a CPU test
+that encodes NaN-bearing graph metadata and demands strict validation pass. The WebM candidate in
+this same run came back carrying the uppercase `DEAS` tag, which is the Matroska-family fix working
+as intended.
+
+**P-02's real remaining half is memory, and it is not met.** With the export fixed, the gate's own
+criterion is what fails: the owner's 48.1 GiB incident threshold is exceeded — 55.5 GiB system RAM
+and 8.7 GiB swap for a 362-frame 736×928 generation with 3D latent upscale into a 2K target on the
+tiled path (`spatial_tiling: true` in the compiled graph). Nothing OOMed on a 61.7 GiB host, but the
+symptom of the incident (swap) is present. The harness can now say *where* it comes from: it samples
+the backend's own RSS next to system RAM, counts `pswpin`/`pswout`, writes the full 2 s series to
+`memory-P-02-stream-362f.csv` and prints every sample where system RAM moved ≥ 1 GiB. The next P-02
+run should therefore attribute the growth (backend vs page cache, and which stage), which is the
+input to the memory-bounded decode/staging work this item is actually about.
+
+**P-03, second measurement, same direction.** With a medium shot the refine touched 6.2 % of the
+frame inside an 859×736 box (still frame-width, because `cropFactor 2.5` around a large face) and
+sharpness inside that region again went slightly down: 136.4 vs 140.7 (−3 %, after −9.7 % on the
+close-up). Two shots now agree that the shipped parameters (`denoise 0.35`, `cropFactor 2.5`,
+`feather 6`) do not increase measured sharpness in the refined region. Whether that is acceptable
+is a visual call for the owner; if not, the parameter question is crop-factor/denoise scaling with
+face size.
 
 ## Closed plan items moved from PLAN.md (2026-11-19)
 
