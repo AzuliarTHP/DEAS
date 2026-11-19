@@ -2,7 +2,7 @@ use super::*;
 
 const MAX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
 
-fn cdn_url(value: &str) -> Result<Url, String> {
+pub(super) fn cdn_url(value: &str) -> Result<Url, String> {
     let url = Url::parse(value).map_err(|_| "Invalid CivitAI preview URL")?;
     if url.scheme() != "https"
         || !matches!(
@@ -63,14 +63,52 @@ pub(super) async fn download(url: &str) -> Result<Cover, String> {
 
 pub(super) fn publish(source: &Source, cover: Cover) -> Result<(), String> {
     let name = format!("{}.preview.{}", source.name, cover.extension);
+    publish_bytes(source, &name, &cover.bytes, false)
+}
+
+pub(super) const CUSTOM_COVER_SUFFIX: &str = ".deas-preview.png";
+
+pub(super) fn replace_custom(source: &Source, bytes: &[u8]) -> Result<(), String> {
+    if bytes.len() > 5 * 1024 * 1024 || image_extension(bytes) != Some("png") {
+        return Err("Preview must be a PNG up to 5 MiB".into());
+    }
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_limits(png::Limits {
+        bytes: 8 * 1024 * 1024,
+    });
+    let mut reader = decoder.read_info().map_err(|_| "Invalid PNG preview")?;
+    let info = reader.info();
+    if info.width == 0
+        || info.height == 0
+        || info.width > 1024
+        || info.height > 1024
+        || info.animation_control.is_some()
+        || info.bit_depth != png::BitDepth::Eight
+    {
+        return Err("Preview must be an 8-bit still image up to 1024 pixels per side".into());
+    }
+    let size = reader.output_buffer_size();
+    reader
+        .next_frame(&mut vec![0; size])
+        .map_err(|_| "Invalid PNG preview")?;
+    let _commit = CACHE_PUBLICATION
+        .lock()
+        .map_err(|_| "Cache lock poisoned")?;
+    let name = format!("{}{CUSTOM_COVER_SUFFIX}", source.name);
+    let existing = source.dir.anchor.absent(&name).is_err();
+    if existing {
+        source.dir.regular(&name)?;
+    }
+    publish_bytes(source, &name, bytes, existing)
+}
+
+fn publish_bytes(source: &Source, name: &str, bytes: &[u8], existing: bool) -> Result<(), String> {
     let mut temp = OwnedTemp::create(&source.dir)?;
-    temp.file
-        .write_all(&cover.bytes)
-        .map_err(|e| e.to_string())?;
+    temp.file.write_all(bytes).map_err(|e| e.to_string())?;
     temp.file.sync_all().map_err(|e| e.to_string())?;
     source.verify()?;
     temp.verify()?;
-    source.dir.replace(&temp.name, &name, false)
+    source.dir.replace(&temp.name, name, existing)
 }
 
 #[cfg(test)]

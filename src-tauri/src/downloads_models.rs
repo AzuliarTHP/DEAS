@@ -500,6 +500,17 @@ pub struct CivitaiInfo {
     pub preview: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<Settings>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub examples: Vec<ModelExample>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelExample {
+    pub image: String,
+    pub prompt: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub negative_prompt: Option<String>,
 }
 
 /// Sidecar content. `civitai: None` after a fetch means the hash is unknown to CivitAI.
@@ -530,6 +541,8 @@ struct CachedMetadata {
     source: Option<SourceFingerprint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     family_override: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trigger_words: Option<Vec<String>>,
 }
 
 impl CachedMetadata {
@@ -541,6 +554,7 @@ impl CachedMetadata {
             civitai: info.civitai.clone(),
             source: info.source.clone(),
             family_override: None,
+            trigger_words: None,
         }
     }
 
@@ -577,6 +591,9 @@ impl CachedMetadata {
         }) {
             return Err("Invalid model declaration/fingerprint".into());
         }
+        if let Some(words) = &self.trigger_words {
+            validate_trigger_words(words)?;
+        }
         Ok(())
     }
 }
@@ -594,6 +611,8 @@ pub struct LocalModel {
     pub path: String,
     pub size: u64,
     pub info: Option<ModelInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trigger_words: Option<Vec<String>>,
     /// Architecture family from `crate::model_families` (header or CivitAI base); absent = unknown.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
@@ -689,6 +708,19 @@ fn validate_info(info: &ModelInfo) -> Result<(), String> {
         }
         for word in &c.trained_words {
             bounded_text(word, 200)?;
+        }
+        if c.examples.len() > 6
+            || c.examples.iter().any(|example| {
+                example.image.len() > 1024
+                    || preview::cdn_url(&example.image).is_err()
+                    || !valid_example_text(&example.prompt, 3200)
+                    || example
+                        .negative_prompt
+                        .as_ref()
+                        .is_some_and(|text| !valid_example_text(text, 1600))
+            })
+        {
+            return Err("Invalid cached CivitAI examples".into());
         }
         if let Some(preview) = &c.preview {
             bounded_text(preview, 2048)?;
@@ -895,6 +927,7 @@ fn describe(category: &str, base: &Path, path: &Path) -> Result<LocalModel, Stri
         .map(|_| "Invalid or stale model metadata; repair the sidecar before execution".to_owned());
     let cache = metadata.ok().flatten();
     let info = cache.as_ref().and_then(CachedMetadata::model_info);
+    let trigger_words = cache.as_ref().and_then(|c| c.trigger_words.clone());
     let family_override = cache.as_ref().and_then(|c| c.family_override.clone());
     let (detected_family, family_evidence) = crate::model_families::detect_with_evidence(
         category,
@@ -949,6 +982,7 @@ fn describe(category: &str, base: &Path, path: &Path) -> Result<LocalModel, Stri
             .into_owned(),
         size: meta.len(),
         info,
+        trigger_words,
         component,
         family,
         detected_family,
@@ -1113,6 +1147,52 @@ fn civitai_creator(value: &Value) -> Option<String> {
     crate::token_page::valid_civitai_creator(name).then(|| name.to_owned())
 }
 
+fn example_text(value: Option<&Value>, limit: usize) -> Option<String> {
+    let text = value?.as_str()?.trim();
+    let mut clean = String::new();
+    for c in text
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+    {
+        if clean.len() + c.len_utf8() > limit {
+            break;
+        }
+        clean.push(c);
+    }
+    let clean = clean.trim();
+    (!clean.is_empty()).then(|| clean.to_owned())
+}
+
+fn valid_example_text(text: &str, limit: usize) -> bool {
+    !text.is_empty()
+        && text.len() <= limit
+        && text.trim() == text
+        && !text
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\n' | '\t'))
+}
+
+fn model_examples(version: &Value) -> Vec<ModelExample> {
+    version["images"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|image| {
+            let url = providers::civitai_still_preview(image)?;
+            if url.len() > 1024 || preview::cdn_url(&url).is_err() {
+                return None;
+            }
+            let meta = &image["meta"];
+            Some(ModelExample {
+                image: url,
+                prompt: example_text(meta.get("prompt"), 3200)?,
+                negative_prompt: example_text(meta.get("negativePrompt"), 1600),
+            })
+        })
+        .take(6)
+        .collect()
+}
+
 pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
     let model = v.get("model").ok_or("Missing CivitAI model")?;
     let name = providers::text(model, "name")?;
@@ -1159,6 +1239,7 @@ pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
             .get("images")
             .and_then(Value::as_array)
             .and_then(|images| images.iter().find_map(|i| settings(i.get("meta")?))),
+        examples: model_examples(v),
     })
 }
 
@@ -1229,7 +1310,7 @@ pub async fn fetch(
         return Err("Not an absolute path to a model file".into());
     }
     let model_path = path.clone();
-    let (source, expected, sha256, family_override, cached_creator) =
+    let (source, expected, sha256, family_override, cached_creator, trigger_words) =
         tokio::task::spawn_blocking(move || {
             let mut source = Source::open(&model_path)?;
             let cache = source.dir.cache(&format!("{}{SIDECAR}", source.name))?;
@@ -1256,12 +1337,17 @@ pub async fn fetch(
                 let info = cache.civitai.as_ref()?;
                 Some((info.model_id, info.creator.clone()?))
             });
+            let trigger_words = cache
+                .as_ref()
+                .filter(|(_, cache)| cache.source.as_ref() == Some(&source.stamp))
+                .and_then(|(_, cache)| cache.trigger_words.clone());
             Ok::<_, String>((
                 source,
                 cache.map(|(stamp, _)| stamp),
                 sha256,
                 family_override,
                 cached_creator,
+                trigger_words,
             ))
         })
         .await
@@ -1330,6 +1416,7 @@ pub async fn fetch(
         source.verify()?;
         let mut cache = CachedMetadata::from_info(&info);
         cache.family_override = family_override;
+        cache.trigger_words = trigger_words;
         publish_cache(&source, &expected, &cache, || {})?;
         if let Some(cover) = cover {
             if !index::has_local_preview(&path) && preview::publish(&source, cover).is_err() {
@@ -1401,6 +1488,7 @@ fn write_family(path: &Path, family: Option<&str>) -> Result<LocalModel, String>
             civitai: None,
             source: Some(source.stamp.clone()),
             family_override: None,
+            trigger_words: None,
         });
     cache.family_override = family.map(str::to_owned);
     publish_cache(&source, &old.map(|(stamp, _)| stamp), &cache, || {})?;
@@ -1440,6 +1528,93 @@ async fn update_index(app: &tauri::AppHandle, model: &LocalModel) {
     if !matches!(result, Ok(Ok(()))) {
         crate::logs::push(crate::logs::Source::Deas, "WARN: Library index operation=metadata-update saved metadata is available; browsing cache update failed");
     }
+}
+
+fn validate_trigger_words(words: &[String]) -> Result<(), String> {
+    if words.len() > 50 {
+        return Err("Use at most 50 trigger words".into());
+    }
+    for word in words {
+        bounded_text(word, 200)?;
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LoraEdit {
+    TriggerWords { words: Vec<String> },
+    Preview { png: Vec<u8> },
+}
+
+fn edit_lora(
+    directory: &Path,
+    root: &Path,
+    path: &Path,
+    edit: LoraEdit,
+) -> Result<LocalModel, String> {
+    let (category, base) = model_category(path)?;
+    if category != "loras" || !path.starts_with(root) || !is_model(path) {
+        return Err("Select a LoRA in the Library".into());
+    }
+    let members = index::file_members(directory, root)?;
+    let (indexed_category, stamp) = members
+        .get(path)
+        .ok_or("LoRA is not in the Library index")?;
+    let source = Source::open(path)?;
+    if indexed_category != category || &source.stamp != stamp {
+        return Err("LoRA moved or changed. Refresh models before trying again".into());
+    }
+    match edit {
+        LoraEdit::TriggerWords { words } => {
+            validate_trigger_words(&words)?;
+            let old = source.dir.cache(&format!("{}{SIDECAR}", source.name))?;
+            let expected = old.as_ref().map(|(stamp, _)| stamp.clone());
+            let mut cache = match old {
+                Some((_, cache)) if cache.source.as_ref() == Some(&source.stamp) => cache,
+                Some(_) => return Err("Model metadata changed. Refresh it before editing".into()),
+                None => CachedMetadata {
+                    sha256: None,
+                    size: source.stamp.size,
+                    fetched_at: None,
+                    civitai: None,
+                    source: Some(source.stamp.clone()),
+                    family_override: None,
+                    trigger_words: None,
+                },
+            };
+            cache.trigger_words = Some(words);
+            publish_cache(&source, &expected, &cache, || {})?;
+        }
+        LoraEdit::Preview { png } => preview::replace_custom(&source, &png)?,
+    }
+    source.verify()?;
+    let mut model = describe(category, base, path)?;
+    model.local_preview = index::find_local_preview(path);
+    Ok(model)
+}
+
+#[tauri::command]
+pub async fn native_model_edit_lora(
+    app: tauri::AppHandle,
+    root: String,
+    path: String,
+    edit: LoraEdit,
+) -> Result<LocalModel, String> {
+    let directory = index::directory(&app)?;
+    let result = tokio::task::spawn_blocking(move || {
+        edit_lora(&directory, Path::new(&root), Path::new(&path), edit)
+    })
+    .await;
+    let model = match result {
+        Ok(Ok(model)) => model,
+        failure => {
+            crate::logs::native_logs_library_error("lora-edit".into());
+            return failure.map_err(|_| "LoRA edit task failed")?;
+        }
+    };
+    update_index(&app, &model).await;
+    Ok(model)
 }
 
 #[tauri::command]
@@ -2695,6 +2870,101 @@ mod tests {
     }
 
     #[test]
+    fn lora_edits_persist_and_the_custom_cover_takes_precedence() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("models");
+        let folder = root.join("loras");
+        let directory = fixture.path().join("index");
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("fixture.pt");
+        let legacy_cover = folder.join("fixture.preview.jpg");
+        std::fs::write(&path, b"fixture weights").unwrap();
+        std::fs::write(&legacy_cover, b"fixture cover").unwrap();
+        index::load(&directory, vec![root.clone()], false).unwrap();
+
+        let model = edit_lora(
+            &directory,
+            &root,
+            &path,
+            LoraEdit::TriggerWords {
+                words: vec!["two words".into()],
+            },
+        )
+        .unwrap();
+        assert_eq!(model.trigger_words, Some(vec!["two words".into()]));
+        assert!(model.info.is_none());
+        let mut png = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut png, 1, 1);
+            encoder.set_color(png::ColorType::Rgb);
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&[9, 8, 7])
+                .unwrap();
+        }
+        let cover = edit_lora(
+            &directory,
+            &root,
+            &path,
+            LoraEdit::Preview { png: png.clone() },
+        )
+        .unwrap();
+        let replacement = folder.join("fixture.pt.deas-preview.png");
+        assert_eq!(
+            Path::new(cover.local_preview.as_deref().unwrap()),
+            replacement
+        );
+        assert_eq!(std::fs::read(&legacy_cover).unwrap(), b"fixture cover");
+        assert_eq!(std::fs::read(&replacement).unwrap(), png);
+        assert!(edit_lora(
+            &directory,
+            &root,
+            &path,
+            LoraEdit::Preview {
+                png: b"invalid".to_vec()
+            }
+        )
+        .is_err());
+        assert_eq!(std::fs::read(&replacement).unwrap(), png);
+
+        let cleared = edit_lora(
+            &directory,
+            &root,
+            &path,
+            LoraEdit::TriggerWords { words: vec![] },
+        )
+        .unwrap();
+        assert_eq!(cleared.trigger_words, Some(vec![]));
+        index::update(&directory, &path).unwrap();
+        let saved =
+            serde_json::to_value(index::load(&directory, vec![root], false).unwrap()).unwrap();
+        assert_eq!(saved[0]["triggerWords"], serde_json::json!([]));
+        assert_eq!(saved[0]["localPreview"], replacement.to_str().unwrap());
+    }
+
+    #[test]
+    fn civitai_prompt_examples_keep_only_usable_stills_and_plain_prompt_metadata() {
+        let images = serde_json::json!({
+            "images": [
+                {"url":"https://image.civitai.com/original=true/sample.png","type":"image",
+                 "meta":{"prompt":"  portrait <lora:test:1>\n second line  ","negativePrompt":" blur "}},
+                {"url":"https://image.civitai.com/sample.mp4","type":"video","meta":{"prompt":"moving"}},
+                {"url":"https://image.civitai.com/unknown.png"},
+                {"url":"https://example.invalid/remote.jpg","meta":{"prompt":"external"}}
+            ]
+        });
+        let examples = model_examples(&images);
+        assert_eq!(examples.len(), 1);
+        assert_eq!(
+            examples[0].image,
+            "https://image.civitai.com/width=450/sample.png"
+        );
+        assert_eq!(examples[0].prompt, "portrait <lora:test:1>\n second line");
+        assert_eq!(examples[0].negative_prompt.as_deref(), Some("blur"));
+    }
+
+    #[test]
     fn scan_lists_models_with_sidecars_and_parses_civitai_shape() {
         let root = tempfile::tempdir().unwrap();
         let loras = root.path().join("loras/Anima");
@@ -3232,6 +3502,7 @@ mod tests {
     #[test]
     fn an_oversized_ui_listing_is_cut_honestly() {
         let seed = LocalModel {
+            trigger_words: None,
             local_preview: None,
             check: None,
             category: "loras".into(),

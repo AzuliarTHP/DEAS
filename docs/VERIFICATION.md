@@ -1,5 +1,23 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## LoRA details edits and prompt examples
+
+The Windows Library suite passed 67 native tests with three ignored. Disposable
+fixtures verified an unfetched LoRA’s trigger override, clearing trigger words,
+preview replacement, preservation of existing sibling images, and rejecting an
+invalid image. Example parsing keeps stills with usable prompt metadata.
+Chromium with mocked IPC tested trigger editing, converting a synthetic JPEG to
+a bounded PNG, updating the card preview, and copying both prompt fields.
+The focused UI suite passed 86 tests, and all 467 Chromium layout checks passed.
+
+## Enhanced preview replay during processing
+
+Playback fixtures cover the replay delay, selecting the newest revision at
+clip boundaries, inactive cleanup, and decoder fallback. Chromium played
+synthetic H.264 clips with mocked IPC and verified that replay reuses the
+open video element. Live Windows WebView2, Linux playback, and GPU
+post-processing remain separate verification.
+
 ## Release 0.3.3 (published)
 
 Published [v0.3.3](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.3) from source commit `476d2e9b211d0c423eda03d46a5412b4387ce3e7` (annotated tag object `7910a8c8344144c2f18e7d7190ec632b30913fe1`, pushed to both remotes; the release pins `targetCommitish` to the same commit). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries; the build ran locally with `build-linux.sh --release` on a clean tree whose tip was the release-prep commit, and the release was published draft-first: every server asset `digest` matched the local hash before it was made **Latest** (not a prerelease). The four assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four byte-identical to the staged set.

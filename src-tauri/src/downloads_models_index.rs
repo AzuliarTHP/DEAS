@@ -18,6 +18,8 @@ pub struct SnapshotModel {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     local_preview: Option<String>,
     info: Option<ModelInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    trigger_words: Option<Vec<String>>,
     #[serde(flatten)]
     details: SnapshotDetails,
 }
@@ -129,8 +131,22 @@ pub(super) fn has_local_preview(path: &Path) -> bool {
     selected_preview(path, u64::MAX).is_some()
 }
 
+fn custom_preview(path: &Path, max_bytes: u64) -> Option<String> {
+    let source = Source::open(path).ok()?;
+    let name = format!("{}{}", source.name, preview::CUSTOM_COVER_SUFFIX);
+    let size = source.dir.regular(&name).ok()?.metadata().ok()?.len();
+    if !(1..=max_bytes).contains(&size) {
+        return None;
+    }
+    source.verify().ok()?;
+    path.with_file_name(name).to_str().map(str::to_owned)
+}
+
 #[cfg(windows)]
 fn selected_preview(path: &Path, max_bytes: u64) -> Option<String> {
+    if let Some(preview) = custom_preview(path, max_bytes) {
+        return Some(preview);
+    }
     let source = Source::open(path).ok()?;
     for base in preview_bases(path)? {
         for ext in PREVIEW_EXTENSIONS {
@@ -175,6 +191,16 @@ fn local_preview(path: &Path, folders: &mut PreviewFolders, max_bytes: u64) -> O
         }
         names
     });
+    let custom_name = format!(
+        "{}{}",
+        path.file_name()?.to_str()?,
+        preview::CUSTOM_COVER_SUFFIX
+    );
+    if names.contains_key(&custom_name.to_lowercase()) {
+        if let Some(preview) = custom_preview(path, max_bytes) {
+            return Some(preview);
+        }
+    }
     for base in preview_bases(path)? {
         for ext in PREVIEW_EXTENSIONS {
             if let Some(name) = names.get(&format!("{base}.{ext}").to_lowercase()) {
@@ -241,6 +267,9 @@ fn read_any(path: &Path) -> Option<Index> {
                 && m.local_preview.as_ref().is_none_or(|preview| {
                     preview.len() <= 32768 && preview_path_valid(&m.path, preview)
                 })
+                && m.trigger_words
+                    .as_ref()
+                    .is_none_or(|words| validate_trigger_words(words).is_ok())
                 && !m.name.is_empty()
                 && !m.name.chars().any(char::is_control)
                 && m.name.len() <= 32768

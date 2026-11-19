@@ -3,15 +3,15 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { I18nProvider } from '../../i18n/I18nProvider';
-import type { LocalModel } from '../../lib/models';
+import type { LocalModel, LoraEdit } from '../../lib/models';
 import { InstalledGallery } from './InstalledGallery';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true),convertFileSrc:(path:string)=>`https://asset.localhost${path}`}));
 const model=(name:string,extra:Partial<LocalModel>={}):LocalModel=>({name,category:'loras',path:`/models/loras/${name}`,size:1048576,info:null,...extra});
 const fox=model('characters/fox.safetensors',{family:'sdxl',info:{sha256:'a',size:1,fetchedAt:1,civitai:{name:'Fox portrait',creator:'FixtureCreator',version:'v2',base:'SDXL',trainedWords:['foxface','portrait style'],preview:'https://image.civitai.com/fox.jpg',nsfw:true,category:'loras',modelId:1,versionId:1,modelType:'LORA'}}});
 const lamp=model('lighting/lamp.safetensors',{family:'flux'});
-function Host({models=[fox,lamp],onFetch,locked=false}:{models?:LocalModel[];onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;locked?:boolean}) {
+function Host({models=[fox,lamp],onFetch,locked=false,editLora}:{models?:LocalModel[];onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;locked?:boolean;editLora?:(path:string,edit:LoraEdit)=>Promise<void>}) {
  const [selected,setSelected]=useState('');const [category,setCategory]=useState('loras');
- return <I18nProvider><InstalledGallery models={models} loaded root="/models" category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} actions={null} feedback={null} onFetch={onFetch} renderDetail={()=>'Native model details'}/></I18nProvider>;
+ return <I18nProvider><InstalledGallery models={models} loaded root="/models" category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} actions={null} feedback={null} onFetch={onFetch} editLora={editLora} renderDetail={()=>'Native model details'}/></I18nProvider>;
 }
 beforeEach(()=>{vi.mocked(invoke).mockReset().mockResolvedValue(undefined);localStorage.clear();localStorage.setItem('deas.locale.v1','en');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:vi.fn().mockResolvedValue(undefined)}});});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
@@ -77,6 +77,32 @@ it('copies literal trigger words and filenames and reports clipboard refusal',as
  fireEvent.click(screen.getByRole('button',{name:'foxface'}));expect(await screen.findByRole('alert')).toHaveProperty('textContent','Could not copy. Select and copy the text manually.');
  expect(invoke).toHaveBeenCalledWith('native_logs_library_error',{operation:'clipboard'});
  expect(JSON.stringify(vi.mocked(invoke).mock.calls)).not.toContain('portrait style');
+});
+
+it('edits or clears the local trigger list and copies the version example prompts literally',async()=>{
+ const entry={...fox,info:{...fox.info!,civitai:{...fox.info!.civitai!,
+  examples:[{image:'https://image.civitai.com/fixture.png',prompt:'portrait, <lora:fixture:1>',negativePrompt:'blur'}]}}};
+ const edit=vi.fn().mockResolvedValue(undefined);
+ const view=render(<Host models={[entry]} editLora={edit}/>);
+ fireEvent.click(screen.getByRole('button',{name:entry.name}));
+ fireEvent.click(screen.getByRole('button',{name:'Edit trigger words'}));
+ fireEvent.change(screen.getByRole('textbox',{name:'One trigger word or phrase per line'}),{target:{value:'red eyes\ncharacter style\nred eyes'}});
+ fireEvent.click(screen.getByRole('button',{name:'Save'}));
+ await waitFor(()=>expect(edit).toHaveBeenCalledWith(entry.path,{kind:'triggerWords',words:['red eyes','character style']}));
+ view.rerender(<Host models={[{...entry,triggerWords:['red eyes','character style']}]} editLora={edit}/>);
+ expect(await screen.findByRole('button',{name:'red eyes'})).toBeTruthy();
+ expect(screen.queryByRole('button',{name:'foxface'})).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Edit trigger words'}));
+ fireEvent.change(screen.getByRole('textbox',{name:'One trigger word or phrase per line'}),{target:{value:''}});
+ fireEvent.click(screen.getByRole('button',{name:'Save'}));
+ await waitFor(()=>expect(edit).toHaveBeenLastCalledWith(entry.path,{kind:'triggerWords',words:[]}));
+ const details=screen.getByText('Example 1').closest('details')!;
+ details.open=true;
+ fireEvent.click(within(details).getByRole('button',{name:'Copy prompt'}));
+ await waitFor(()=>expect(navigator.clipboard.writeText).toHaveBeenCalledWith('portrait, <lora:fixture:1>'));
+ fireEvent.click(within(details).getByRole('button',{name:'Copy negative prompt'}));
+ await waitFor(()=>expect(navigator.clipboard.writeText).toHaveBeenCalledWith('blur'));
+ expect(screen.getByRole('button',{name:'Replace preview…'})).toBeTruthy();
 });
 
 it('uses a placeholder for failed previews and reports only the fixed operation',async()=>{

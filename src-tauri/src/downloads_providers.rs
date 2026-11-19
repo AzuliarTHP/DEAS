@@ -219,17 +219,23 @@ pub(super) fn civitai_category(model_type: Option<&str>) -> &'static str {
 /// First still image of a model version as a 450px thumbnail; videos are skipped because
 /// dozens of WebKitGTK media pipelines are unstable. Never fetched natively.
 pub(super) fn civitai_preview(version: &Value) -> Option<String> {
-    version.get("images")?.as_array()?.iter().find_map(|image| {
-        let url = image.get("url")?.as_str()?;
-        let still = image.get("type").and_then(Value::as_str) != Some("video")
-            && !url.ends_with(".mp4")
-            && !url.ends_with(".webm");
-        (still
-            && url.len() <= 2048
-            && url.starts_with("https://")
-            && !url.bytes().any(|b| b.is_ascii_control()))
-        .then(|| url.replacen("/original=true/", "/width=450/", 1))
-    })
+    version
+        .get("images")?
+        .as_array()?
+        .iter()
+        .find_map(civitai_still_preview)
+}
+
+pub(super) fn civitai_still_preview(image: &Value) -> Option<String> {
+    let url = image.get("url")?.as_str()?;
+    let still = image.get("type").and_then(Value::as_str) != Some("video")
+        && !url.ends_with(".mp4")
+        && !url.ends_with(".webm");
+    (still
+        && url.len() <= 2048
+        && url.starts_with("https://")
+        && !url.bytes().any(|b| b.is_ascii_control()))
+    .then(|| url.replacen("/original=true/", "/width=450/", 1))
 }
 /// Non-public availability or paid access means anonymous downloads will be refused.
 fn civitai_restricted(version: &Value) -> bool {
