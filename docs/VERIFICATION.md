@@ -4904,6 +4904,38 @@ close-up). Two shots now agree that the shipped parameters (`denoise 0.35`, `cro
 is a visual call for the owner; if not, the parameter question is crop-factor/denoise scaling with
 face size.
 
+#### P-02 rerun after the NaN fix (2026-11-19 15:03 → 15:20)
+
+`gpu-acceptance-20261119T150323Z`, single gate, repo adapter (`backend b7f95c13… -> repo
+ae46c6c3…`). The candidate storm is gone: **980 s instead of 2371 s**, two products published,
+362 frames at 1440×1824, and the swap check passed on its own terms (7.8 GiB absolute). The RAM
+check still fails: **53.6 GiB absolute peak against the 48.1 GiB incident line**.
+
+The new sampling says where that comes from, which the old measurement could not:
+
+| measurement | value |
+|---|---|
+| backend RSS peak | **44.1 GiB** of the 53.6 GiB system peak — the process itself, not page cache (RSS tracked system RAM nearly 1:1) |
+| RAM growth over the run baseline | +42.9 GiB (baseline 10.7 GiB used) |
+| swap | baseline 4.2 GiB → 7.8 GiB peak (+3.6 GiB); `pswpin` 165 246 pages (~0.63 GiB read back), `pswout` **0** |
+| host context | zswap **disabled**, `AnonHugePages` 23.6 GiB, 61.7 GiB total |
+| growth clusters | RSS 6 → 30 GiB across T+18…50 s (weights loading, VRAM climbing with it); **T+474…480 s: +16 GiB of RAM in six seconds**, RAM 37.9 → 52.3 GiB, backend RSS 29.2 → 43.4 GiB, VRAM 18.5 → 31.9 GiB |
+
+Interpretation, as measurement rather than conclusion: the run is dominated by **host-resident
+model weight copies** (~39 GiB RSS by minute four with the int8 H3 UNet plus the 32B nvfp4 AWQ
+text encoder loaded), and a second ~16 GiB jump right after sampling finishes, at the
+latent-upscale / 2K-regenerate / decode boundary. `pswout = 0` with SwapUsed rising is consistent
+with pages going to swap only through pre-existing allocations rather than new writeback during the
+window, so the incident's *thrash* symptom is mild here; the exposure is plain RAM headroom
+(53.6 of 61.7 GiB).
+
+The cheapest experiment this points at is releasing the text encoder after prompt encoding
+(ComfyUI `--cache-lru 1`) and/or a `--reserve-vram` policy — **which DEAS cannot currently do**:
+`settings.rs::backend_configuration()` builds only folder arguments, so no ComfyUI memory flag is
+reachable from the product. `--backend-args "--cache-lru 1"` on the session tool makes the A/B a
+one-line measurement; whichever wins then becomes a Settings field plus a default. The full 2 s
+series is in `memory-P-02-stream-362f.csv` (487 samples).
+
 ## Closed plan items moved from PLAN.md (2026-11-19)
 
 Moved verbatim during the PLAN restructuring (IDs, types and blockers added to every open item). These texts describe delivered work, closed gates or superseded rows; any remaining gate they mention is tracked under its PLAN ID.
