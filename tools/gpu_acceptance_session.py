@@ -576,6 +576,35 @@ def gpu_state():
     return util, mem, holders
 
 
+def host_memory_state():
+    """Host RAM headroom plus the active OOM guards. The P-02 incident was a KILL (journal:
+    systemd-oomd, 48.1 GB peak, 18.4 GB swap), so the guard line is part of the measurement."""
+    try:
+        info = {}
+        for line in open('/proc/meminfo'):
+            key, _, rest = line.partition(':')
+            info[key.strip()] = int(rest.split()[0])
+    except OSError:
+        return None
+    avail = round(info['MemAvailable'] / 2 ** 20, 1)
+    total = round(info['MemTotal'] / 2 ** 20, 1)
+    swap_used = round((info['SwapTotal'] - info['SwapFree']) / 2 ** 20, 1)
+    guards = []
+    try:
+        out = subprocess.run(['ps', '-eo', 'comm,args'], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            comm = line.strip().split(None, 1)[0] if line.strip() else ''
+            if comm in ('earlyoom', 'systemd-oomd'):   # comm match only: our own command line
+                guards.append(line.strip()[:140])      # contains these words as text
+    except OSError:
+        pass
+    parts = [f'host memory: {avail} GiB available of {total} GiB, {swap_used} GiB swap already used']
+    if guards:
+        parts.append('OOM guards active: ' + ' | '.join(guards))
+    return {'available_gib': avail, 'total_gib': total, 'swap_used_gib': swap_used,
+            'guards': guards, 'summary': '; '.join(parts)}
+
+
 def gpu_blockers(max_util=25, max_app_mib=1024, samples=3):
     """Why the GPU counts as busy: [] means it is free enough to start a throwaway backend.
 
@@ -1397,6 +1426,18 @@ def main():
                                  'backends for you), or re-run when free. Flags: --max-util, '
                                  '--max-app-mib, --force (run anyway).')
         log(logbuf, f'GPU free enough: {detail}')
+        host = host_memory_state()
+        if host:
+            log(logbuf, host['summary'])
+            critical = any(g.get('memory_watch') for g in GATES
+                           if g['name'] in wanted and g['name'] in compiled)
+            if critical and not args.dry_run and not args.force and host['available_gib'] < 45:
+                raise SystemExit(
+                    f"Refusing to start the memory-critical gate: {host['available_gib']} GiB "
+                    'available and the measured P-02 case needs +43 GiB growth, which puts this '
+                    'host inside its own OOM guard - that reproduces the reported incident '
+                    '(process group killed) instead of measuring the pipeline. Close the memory '
+                    'holder and re-run, or pass --force to measure anyway.')
         port = pick_port()
         scratch = outdir / 'scratch'
         for sub in ('input', 'output', 'temp'):
