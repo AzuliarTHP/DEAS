@@ -58,7 +58,13 @@ scan_text() {
   return "$local_found"
 }
 
-mode="${1:-staged}"
+# When installed as .git/hooks/pre-push, git calls: <name> <remote-name> <remote-url>
+# — auto-detect that instead of requiring the "pre-push" word.
+if [[ "$(basename "$0")" == "pre-push" || "${1:-}" =~ ^(https?://|ssh://|git://|/|[a-z]+:[^/]) ]]; then
+  mode=pre-push
+else
+  mode="${1:-staged}"
+fi
 case "$mode" in
   tree)
     allow_filter=()
