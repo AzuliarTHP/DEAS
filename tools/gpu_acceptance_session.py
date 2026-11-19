@@ -576,6 +576,24 @@ def gpu_state():
     return util, mem, holders
 
 
+def headroom_refusal(host, critical, dry_run=False, force=False, floor_gib=45.0):
+    """Why a memory-critical gate must not start on this host right now, or None.
+
+    The 362-frame P-02 case measured +43 GiB of RAM growth, so on a host where the desktop
+    already holds most of 61.7 GiB this is not a slow run but a near-certain OOM kill of the
+    process group (systemd-oomd / earlyoom -m 5 -s 10, which prefers python|ComfyUI|torch).
+    """
+    if force or dry_run or not critical or not host or host.get('available_gib') is None:
+        return None
+    if host['available_gib'] >= floor_gib:
+        return None
+    return (f"Refusing to start the memory-critical gate: {host['available_gib']} GiB available "
+            f"(floor {floor_gib} GiB) and the measured P-02 case needs +43 GiB growth, which "
+            'puts this host inside its own OOM guard - that reproduces the reported incident '
+            '(process group killed) instead of measuring the pipeline. Close the memory holder '
+            'and re-run, or pass --force to measure anyway.')
+
+
 def host_memory_state():
     """Host RAM headroom plus the active OOM guards. The P-02 incident was a KILL (journal:
     systemd-oomd, 48.1 GB peak, 18.4 GB swap), so the guard line is part of the measurement."""
@@ -1429,15 +1447,10 @@ def main():
         host = host_memory_state()
         if host:
             log(logbuf, host['summary'])
-            critical = any(g.get('memory_watch') for g in GATES
-                           if g['name'] in wanted and g['name'] in compiled)
-            if critical and not args.dry_run and not args.force and host['available_gib'] < 45:
-                raise SystemExit(
-                    f"Refusing to start the memory-critical gate: {host['available_gib']} GiB "
-                    'available and the measured P-02 case needs +43 GiB growth, which puts this '
-                    'host inside its own OOM guard - that reproduces the reported incident '
-                    '(process group killed) instead of measuring the pipeline. Close the memory '
-                    'holder and re-run, or pass --force to measure anyway.')
+            critical = any(g.get('memory_watch') for g in GATES if g['name'] in wanted)
+            reason = headroom_refusal(host, critical, dry_run=args.dry_run, force=args.force)
+            if reason:
+                raise SystemExit(reason)
         port = pick_port()
         scratch = outdir / 'scratch'
         for sub in ('input', 'output', 'temp'):
