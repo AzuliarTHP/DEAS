@@ -986,6 +986,13 @@ def render_summary(results, logbuf, notes=()):
         files = r.get('files', [])
         lines.append(f"| {r.get('name')} | {r.get('item','')} | {verdict} | {r.get('seconds','')} "
                      f"| {r.get('vram_peak_mib','')} | {r.get('ram_peak_gib','')} | {len(files)} |")
+    sampled = [r for r in results if r.get('memory_watch')]
+    if sampled:
+        lines += ['', '## Sampled memory (2 s interval)', '']
+        for r in sampled:
+            mw = r['memory_watch']
+            lines.append(f"- {r.get('name')}: VRAM {mw['vram_mib']} MiB, RAM {mw['ram_gib']} GiB, "
+                         f"swap {mw['swap_gib']} GiB")
     measured = [r for r in results if r.get('checks')]
     if measured:
         lines += ['', '## Measured acceptance checks', '']
@@ -994,10 +1001,6 @@ def render_summary(results, logbuf, notes=()):
             for c in r['checks']:
                 lines.append(f"- {'OK' if c['ok'] else '**FAIL**'} {c['label']}: "
                              f"expected {c['expected']}, measured {c['actual']}")
-            if r.get('memory_watch'):
-                mw = r['memory_watch']
-                lines.append(f"- sampled memory during run: VRAM {mw['vram_mib']} MiB, "
-                             f"RAM {mw['ram_gib']} GiB, swap {mw['swap_gib']} GiB (2 s interval)")
             if r.get('websocket'):
                 ws = r['websocket']
                 lines.append(f"- websocket during run: previews={ws.get('previews')} "

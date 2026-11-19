@@ -4760,11 +4760,93 @@ Every verdict below is a measurement from the produced files (ffprobe/ffmpeg PSN
 | MD-01 lying sigma (image) | partial | 1024×1024 in 15 s with `factor 0.5`; no factor-0.0 control existed, so the A/B was impossible. A `MD-01b-sigma-control` gate (same seed, `factor 0.0`) was added |
 | MD-08 GGUF inference | not run | self-skipped: `MiniMaxH3/minimax_h3_ref2va_hyperflow_flash_14b-Q8_0.gguf` is not in the library |
 
+> Superseded in part by [the second batch and the CPU replay](#second-isolated-gpu-batch--16-gates-2026-11-19-1205--1241): the P-02 root cause is Matroska dropping non-uppercase metadata tags, V-03 previews do stream (`kj_preview_override`), and the P-03 row above reflects a **harbor** clip where the "face" was a 48 px stray detection.
+
 **P-02 defect (product, not test).** `Encoded metadata did not survive readback` raised at `src-tauri/src/h3_stream_video.py:86` (`_validate_video`, shipped into the backend as `custom_nodes/deas_h3_stream_video.py`). Ruled out by isolated round-trip tests of the same writer (`helper_pyav_video._metadata`): MP4/libx264 with `+faststart+use_metadata_tags`, MP4/SVT-AV1 with and without faststart, and MKV all round-trip `prompt`/`workflow`; MP4 **without** `use_metadata_tags` loses them. The same session's non-streaming outputs written by Enhanced Video Combine with **av1_nvenc** into MP4 do carry the `prompt` tag. Independently of the root cause there is a clear control-flow defect: the validator raises a bare `ValueError`, while the encoder-candidate loop only catches `CodecFailure`, so the appended H.264/MP4 fallback never runs and a completed 7.4-minute generation produces nothing. Recommended: name the offending key and the read-back value in the message, keep the stage file (e.g. `*.validate-failed.mp4`) for diagnosis, treat validation failure as a candidate failure so the loop continues, and add a cheap CPU test that a stream-saved file's tags round-trip. Memory-wise the goal of P-02 looks met: VRAM 32 078 MiB, RAM 53.6 GiB against a ~52 GiB H3 baseline (streaming added ~1.5 GiB), no OOM and no swap incident; the tool now samples VRAM/RAM/**swap** every 2 s for this gate so the next run measures it explicitly.
 
 **Test-harness bugs found and fixed on the way** (they invalidated the first two attempts, no GPU work happened in them): the driver re-compiled the intent and looked for a stdout line starting with `{` while the temporary Rust marker test prints `COMPILED_INTENT_MARKER {…}` → `StopIteration` with an empty message, so every run died before submitting; probe pictures were staged at the input root while the graphs name `deas-inputs/<file>`; the GPU-idle gate compared total `memory.used` against 1000 MiB although the desktop (compositor/browser/Sunshine/Discord) permanently holds more, so it refused even when free. The tool now auto-detects the environment/resources roots (with a clear preflight error instead of a traceback), has `--dry-run` (CPU-only backend start-up proof), `--precheck`, `--replay <session>` (re-verify existing outputs with current verifiers, prints what a replay cannot re-check), dependency reporting, and graph-level checks for intent flags.
 
 **Not established by this batch:** the LTX v2v/keyframe and H3-image-edit halves of V-12; any Windows runtime for these paths; anything observed through the native UI (the driver submits graphs over HTTP, no Workbench interaction); V-03 preview delivery; the untiled V-16 path; V-07, V-08, V-09, I-02, I-03, M-01, D-12, A-03 (not covered by this tool); MD-08 (missing GGUF); and every subjective quality judgement (V-13/V-14/V-16/P-03/P-04/V-17 appearance, V-11 perceived seam). V-13 additionally still needs its native/UI and Windows halves, and V-16's tiled-vs-untiled A/B rerun.
+
+## Second isolated GPU batch — 16 gates (2026-11-19 12:05 → 12:41)
+
+Owner-run, same isolation rules as the 10:32 batch (throwaway backend on a free port, scratch
+input/output/temp under the session directory, desktop VRAM holders ignored by the idle gate).
+Evidence: `artifacts/verification/gpu-acceptance-20261119T120529Z/` (`session.log`, `backend.log`,
+`results.jsonl`, `summary.md`). 13 accepted, 3 not accepted; wall clock 36 min. VRAM peaks
+21 029–32 121 MiB, RAM 51.6–56.5 GiB, no OOM.
+
+| gate | verdict | what was measured |
+|---|---|---|
+| V-12 / V-02 / V-17 ×2 / V-13 | accepted | reproduced the 10:32 numbers (832×480 or 736×928, 124 f, 24 fps, real AAC audio −17.7/−18.0 dB; dial-vs-control PSNR 17.85) |
+| V-14 | accepted | sharpness 83.2 vs 24.4 LANCZOS control; temporal diff 9.26 vs 8.04 |
+| **V-16b tiled control** | accepted | 2560×1440 in 260 s, sharpness 159.2 vs 5.6 control, `spatial_tiling=True` graph-verified |
+| **V-16 untiled** | accepted | 2560×1440 in 442 s, sharpness **203.2** vs 5.6 control, PSNR 27.7 against the tiled control, untiled ≥ 0.9× tiled, `spatial_tiling=False` graph-verified |
+| V-11 | accepted | 124→109 frames, seam 34.19 dB vs 17.67 dB unlooped |
+| P-05/P-06 ordering | accepted | Original mtime 1795091177.8 → Processed 1795091238.6, processed sharpness 68.5 vs 24.4 |
+| P-04 de-rope | accepted as measurement | PSNR 27.83 vs baseline, temporal diff 8.23 vs 8.04 |
+| MD-01 + MD-01b | accepted (A/B closed) | factor 0.5 vs factor 0.0, same seed: **PSNR 21.0**, both 1024×1024 (5 s for the second, models already loaded) |
+| V-03 enhanced preview | not accepted **by the verifier**, see below | 124 f output correct; websocket observer healthy and heard `kj_preview_override` ×9 |
+| P-03 face refine (portrait) | not accepted | 30.6 % of pixels changed in a 921×735 box; sharpness inside it **fell 45.1 → 40.6** |
+| P-02 362 f streaming | not accepted | 416 s, 0 files, error text identical to the 10:32 batch |
+
+**Why P-02 repeated itself: the batch tested the installed adapter, not the fix.** The env copy
+(`custom_nodes/deas_h3_stream_video.py`, dated 2026-11-16) is what the throwaway backend imports,
+and `backend.log` shows the failure at line 386 of that older file. The tool now copies the repo's
+shipped adapters in **before** startup (same mapping as `backend.rs`: `src/<name>.py` →
+`deas_<name>.py`), writes `adapters/manifest.json` with repo/installed sha256s, keeps
+`*.installed-backup` copies, restores on every exit path (finally + atexit), and prints a loud
+NOTE so nobody reads a verdict as covering the released build. `--no-adapter-sync` opts out.
+
+**P-02 root cause (found on CPU, no GPU).** The Matroska/WebM muxer in the shipped ffmpeg
+**silently drops metadata keys that are not ALL UPPERCASE**. Measured through the pack's own writer
+(`helper_pyav_video._metadata` + `_configure_video_stream` + `_video_frame`):
+
+| write | read back |
+|---|---|
+| MKV ← `prompt`, `workflow` | **no user tags at all** — same for `Prompt`, `prompt_text`, `DEAS_prompt`, `comment`; identical at 1 KB, 4 KB, 8 KB, 16 KB, 24 KB, 32 KB, 48 KB, 64 KB, 256 KB, 884 KB |
+| MKV ← `DEAS`, `PROMPT`, `title` | survive (`DEAS` verified intact at 260 002 bytes) |
+| MP4 ← any key, `+faststart+use_metadata_tags` | survive at every size tested (up to 262 260 B) |
+| WebM ← `prompt` | dropped (matroska family) |
+
+DEAS writes lowercase provenance keys, and the `Auto` codec default puts AV1 in Matroska. So the
+streaming writer encoded all 362 frames, then its own strict readback check demanded tags the
+container had already discarded, raised a `ValueError` the candidate loop did not catch, and
+published nothing — after 7.4 minutes of generation. The fix: Matroska-family containers receive
+the provenance in one uppercase `DEAS` envelope tag and `_validate_video` validates against the tag
+view the container can actually carry, so the **first** candidate succeeds instead of burning the
+encoder chain; MP4 keeps its per-key tags. Diagnostics name the key, distinguish absent / invalid
+JSON / differs, and report the container plus the tags it did report; the candidate loop retries
+validation failures; the last candidate publishes with a warning; `DEAS_H3_KEEP_FAILED=1` keeps the
+rejected stage file. CPU suite: 20 passed, including the MKV envelope round-trip and "a lost
+envelope stays a named, retryable failure". Rust: `h3_stream` 5 passed, `backend_` 30 passed with
+`TMPDIR` on a private directory (the three `settings::` failures under `/tmp` are the
+safe-owned-directory guard rejecting a 1777 temp dir, unrelated to video).
+
+**V-03: previews do stream — the verifier was counting the wrong transport.** The observer recorded
+`{'status': 2, 'executing': 11, 'progress': 14, 'progress_state': 33, 'dasiwa.system_monitor': 41,
+'kj_preview_override': 9, 'executed': 1, 'execution_success': 1}` and 0 `b_preview`. KJNodes'
+`ModelPreviewOverrideKJ` — what DEAS's enhanced preview installs — sends its previews as
+`kj_preview_override` JSON events whose `data.image` is a base64 JPEG
+(`ComfyUI-KJNodes/nodes/preview_override_node.py:713,913,1061`), not ComfyUI's binary `b_preview`.
+Nine events fit an 8-step run (initial noise preview + one per step). The verifier now counts that
+transport and asserts ≥3 preview images, >2 KB average payload, and that the last preview arrived
+before the run finished; **the visual-quality half of V-03 stays an owner judgement.**
+
+**P-03 is a product question now, with numbers.** Prompt-driven portrait at 736×928 made SAM3 crop
+`top=67,left=0,side=736` on a 768 canvas — the "face region" was essentially the whole frame — and
+the measured sharpness inside the changed region went **down** (45.1 → 40.6). So for a large face,
+the current whole-video refine (`denoise 0.35`, `cropFactor 2.5`) softens rather than sharpens.
+The gate was re-aimed at a medium shot (upper-body, hands still, `--face-image` probe crop) so the
+crop is face-sized again; whether refine parameters should scale with face size is the owner's call,
+and the two batches above are the measurement to make it on.
+
+**Reproduced unchanged** (so the first batch's numbers stand): V-12 canvas/timing/audio, V-11 seam,
+P-04 and P-05 measurements, V-14 sharpness ratio. **A third batch owes three reruns** — P-02 (now
+testing the fixed adapter via repo sync), P-03 (medium shot), V-03 (corrected transport verdict) —
+and the standing gaps from the first batch still apply: LTX v2v/keyframe and H3 image-edit halves of
+V-12, V-07/V-08/V-09, I-02/I-03/I-05, M-01, D-12, A-03, V-15, all native-UI observation, all Windows
+runtime halves, and every subjective quality judgement.
 
 ## Closed plan items moved from PLAN.md (2026-11-19)
 
