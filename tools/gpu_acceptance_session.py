@@ -804,7 +804,9 @@ class MemoryWatch:
                      'baseline_ram_gib': 0.0, 'baseline_swap_gib': 0.0,
                      'ram_growth_gib': 0.0, 'swap_growth_gib': 0.0, 'thp_gib': 0.0,
                      'zswap': 'unknown'}
-        self.samples = []            # [t_s, vram_mib, ram_gib, swap_gib, backend_rss_gib]
+        self.samples = []            # [t_s, vram, ram, swap, rss, private_dirty, shared_clean, swap_kib]
+        self.mappings = []           # [t_s, total_rss_gib, top RSS holders by model file]
+        self._last_breakdown = -60
         self.swap_pages = {}         # pswpin/pswout delta across the run (1 KiB pages... in 4 KiB units)
         self._stop = threading.Event()
         self._thread = None
@@ -854,6 +856,50 @@ class MemoryWatch:
         except OSError:
             return info, 'unknown'
 
+    def _smaps_rollup(self):
+        """Rss/Pss/Private_Dirty/Swap of the backend tree's main process: cheap, one file."""
+        if not self.pid:
+            return {}
+        try:
+            out = {}
+            for line in open(f'/proc/{self.pid}/smaps_rollup'):
+                key, _, rest = line.partition(':')
+                if key.strip() in ('Rss', 'Pss', 'Private_Dirty', 'Shared_Clean', 'Swap', 'THPeligible'):
+                    out[key.strip()] = int(rest.split()[0])
+            return out
+        except OSError:
+            return {}
+
+    def _weight_map_breakdown(self):
+        """Where the backend's RSS actually lives: model-file mappings vs private copies.
+
+        This is the question that decides the P-02 fix. File-backed safetensors mappings are
+        mmap'd weights the kernel can reclaim; large private/anonymous residency means the loader
+        materialized dequantized or mixed copies in host memory, which no ComfyUI start-up flag
+        can remove.
+        """
+        if not self.pid:
+            return None
+        try:
+            text = Path(f'/proc/{self.pid}/smaps').read_text()
+        except OSError:
+            return None
+        buckets, current = {}, '[anonymous/private]'
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and '-' in parts[0]:
+                path = parts[5] if len(parts) > 5 else ''
+                suffix = path.rsplit('.', 1)[-1].lower() if '.' in path.rsplit('/', 1)[-1] else ''
+                current = (path if suffix in ('safetensors', 'sft', 'gguf', 'ckpt', 'pt', 'bin', 'onnx')
+                           else '[anonymous/private]' if not path else '[other mapped]')
+            elif line.startswith('Rss:'):
+                kib = int(line.split()[1])
+                buckets[current] = buckets.get(current, 0) + kib
+        # 64 MiB floor: model files below that are noise next to a 40 GiB process.
+        top = sorted(((name, round(kib / 2 ** 20, 2)) for name, kib in buckets.items()
+                      if kib > 2 ** 16), key=lambda kv: -kv[1])[:8]
+        return {'total_rss_gib': round(sum(buckets.values()) / 2 ** 20, 2), 'top': top}
+
     def _pump(self):
         t0 = time.time()
         first = self._vmstat()
@@ -879,8 +925,18 @@ class MemoryWatch:
                                                         ram - self.peak['baseline_ram_gib']), 1)
                 self.peak['swap_growth_gib'] = round(max(self.peak['swap_growth_gib'],
                                                          swap - self.peak['baseline_swap_gib']), 1)
-                self.samples.append([round(time.time() - t0), v, round(ram, 1), round(swap, 1),
-                                     round(rss, 2)])
+                stamp = round(time.time() - t0)
+                rollup = self._smaps_rollup()
+                if stamp - self._last_breakdown >= 60 or not self.mappings:
+                    self._last_breakdown = stamp
+                    breakdown = self._weight_map_breakdown()
+                    if breakdown:
+                        self.mappings.append([stamp, breakdown['total_rss_gib'],
+                                              breakdown['top']])
+                self.samples.append([stamp, v, round(ram, 1), round(swap, 1), round(rss, 2),
+                                     round(rollup.get('Private_Dirty', 0) / 2 ** 20, 2),
+                                     round(rollup.get('Shared_Clean', 0) / 2 ** 20, 2),
+                                     rollup.get('Swap', 0)])
             except Exception:
                 pass
             self._stop.wait(2)
@@ -888,9 +944,15 @@ class MemoryWatch:
         self.swap_pages = {k: last.get(k, 0) - first.get(k, 0) for k in ('pswpin', 'pswout')}
 
     def csv(self, path):
-        """Full 2 s series, so a later analysis can attribute the growth to a stage."""
-        path.write_text('t_s,vram_mib,ram_gib,swap_gib,backend_rss_gib\n' +
+        """Full 2 s series plus the minute-by-minute residency breakdown for later analysis."""
+        path.write_text('t_s,vram_mib,ram_gib,swap_gib,backend_rss_gib,private_dirty_gib,'
+                        'shared_clean_gib,swap_kib\n' +
                         '\n'.join(','.join(str(x) for x in row) for row in self.samples) + '\n')
+        if self.mappings:
+            (path.parent / path.name.replace('memory-', 'residency-')).write_text(
+                '\n'.join(f'T+{t}s total {total} GiB :: ' + ', '.join(f'{name} {gib} GiB'
+                                                                      for name, gib in top)
+                          for t, total, top in self.mappings) + '\n')
 
     def growth_points(self, step_gib=1.0, limit=12):
         """Where system RAM jumped between samples: the stage attribution for P-02."""

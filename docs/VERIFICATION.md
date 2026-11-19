@@ -4936,6 +4936,21 @@ reachable from the product. `--backend-args "--cache-lru 1"` on the session tool
 one-line measurement; whichever wins then becomes a Settings field plus a default. The full 2 s
 series is in `memory-P-02-stream-362f.csv` (487 samples).
 
+**A/B measured: `--cache-lru 1` is a wash** (`gpu-acceptance-20261119T153335Z`, 986 s). Against
+the 15:03 run without the flag: RAM peak 53.3 vs 53.6 GiB, backend RSS 42.9 vs 44.1 GiB, swap
+8.6 vs 7.8 GiB, and the sample-by-sample RSS difference is **−1.7 GiB mean with a −4.1…+4.8 GiB
+spread** — indistinguishable. Both runs release the same ~20 GiB at T+457/458 s (RSS 40 → 20.6
+GiB, VRAM 30.3 → 8.9 GiB) and both re-grow afterwards. So model-cache eviction is not the lever.
+
+To settle what the 43 GiB actually *is*, the sampler now breaks the backend's own RSS down from
+`/proc/<pid>/smaps` once a minute — per model file vs `[anonymous/private]` — plus `Private_Dirty`
+and `Shared_Clean` per 2 s sample (verified against a controlled process: it separated a 0.31 GiB
+mmap'd safetensors mapping from a 0.31 GiB private copy). If the peak is **file-backed mappings**,
+the answer is load policy (mmap/mlock behaviour, sequential release). If it is **anonymous**, the
+runtime-mixed int8 loader is materializing mixed weights in host memory and no start-up flag can
+help — that becomes a loader change in the pack. The breakdown lands in
+`residency-P-02-stream-362f.csv`-adjacent output next to the memory CSV.
+
 ## Closed plan items moved from PLAN.md (2026-11-19)
 
 Moved verbatim during the PLAN restructuring (IDs, types and blockers added to every open item). These texts describe delivered work, closed gates or superseded rows; any remaining gate they mention is tracked under its PLAN ID.
