@@ -39,6 +39,7 @@ import os
 import re
 import importlib.util
 import shutil
+import shlex
 import signal
 import socket
 import subprocess
@@ -344,19 +345,24 @@ def _checks_stream(files, ctx):
     vid = [f for f in files if Path(f).suffix.lower() in ('.mp4', '.webm', '.mkv')]
     info = _probe(files)
     res = ctx['by_name'].get('P-02-stream-362f', {}).get('result', {})
+    mw = res.get('memory_watch') or {}
+    absolute = mw.get('ram_gib', res.get('ram_peak_gib'))
+    # Absolute peak is the safety criterion (the incident was an OOM at 48.1 GiB used, not a
+    # growth of 48.1 GiB). The growth numbers beside it are attribution: they say what THIS run
+    # added, independent of what the desktop had already accumulated.
     return [('both streaming products published', '2 video files', f'{len(vid)}', len(vid) == 2),
             ('362 frames at the target canvas', '(>=1472, >=1856) or 2K target',
              f"{(info.get('width'), info.get('height'))} x {info.get('frames')}",
              bool(info.get('frames') and int(info['frames']) >= 362)),
-            ('RAM peak stayed under the 48.1 GB incident', '< 48.1 GiB',
-             f"{res.get('ram_peak_gib')} GiB",
-             bool(res.get('ram_peak_gib') is not None and res['ram_peak_gib'] < 48.1)),
-            ('swap stayed bounded (the incident symptom)', '< 8 GiB swap used',
-             f"{(res.get('memory_watch') or {}).get('swap_gib')} GiB swap, "
-             f"{(res.get('memory_watch') or {}).get('ram_gib')} GiB RAM, "
-             f"{(res.get('memory_watch') or {}).get('vram_mib')} MiB VRAM peak",
-             bool((res.get('memory_watch') or {}).get('swap_gib') is not None
-                  and res['memory_watch']['swap_gib'] < 8))]
+            ('RAM peak stayed under the 48.1 GB incident', '< 48.1 GiB absolute peak',
+             f"{absolute} GiB absolute (growth +{mw.get('ram_growth_gib')} GiB over a "
+             f"{mw.get('baseline_ram_gib')} GiB baseline, backend RSS "
+             f"{mw.get('backend_rss_gib')} GiB)",
+             bool(absolute is not None and absolute < 48.1)),
+            ('swap stayed bounded (the incident symptom)', '< 8 GiB absolute swap',
+             f"{mw.get('swap_gib')} GiB absolute (growth +{mw.get('swap_growth_gib')} GiB over a "
+             f"{mw.get('baseline_swap_gib')} GiB baseline), VRAM peak {mw.get('vram_mib')} MiB",
+             bool(mw.get('swap_gib') is not None and mw['swap_gib'] < 8))]
 
 
 def _checks_preview(files, ctx):
@@ -794,7 +800,10 @@ class MemoryWatch:
 
     def __init__(self, pid=None):
         self.pid = pid
-        self.peak = {'vram_mib': 0, 'ram_gib': 0.0, 'swap_gib': 0.0, 'backend_rss_gib': 0.0}
+        self.peak = {'vram_mib': 0, 'ram_gib': 0.0, 'swap_gib': 0.0, 'backend_rss_gib': 0.0,
+                     'baseline_ram_gib': 0.0, 'baseline_swap_gib': 0.0,
+                     'ram_growth_gib': 0.0, 'swap_growth_gib': 0.0, 'thp_gib': 0.0,
+                     'zswap': 'unknown'}
         self.samples = []            # [t_s, vram_mib, ram_gib, swap_gib, backend_rss_gib]
         self.swap_pages = {}         # pswpin/pswout delta across the run (1 KiB pages... in 4 KiB units)
         self._stop = threading.Event()
@@ -832,16 +841,33 @@ class MemoryWatch:
                 continue
         return total / 2 ** 20
 
+    def _host_memory(self):
+        info = {}
+        try:
+            for line in open('/proc/meminfo'):
+                key, _, rest = line.partition(':')
+                info[key.strip()] = int(rest.split()[0])
+        except OSError:
+            pass
+        try:
+            return info, Path('/sys/module/zswap/parameters/enabled').read_text().strip()
+        except OSError:
+            return info, 'unknown'
+
     def _pump(self):
         t0 = time.time()
         first = self._vmstat()
+        info, self.peak['zswap'] = self._host_memory()
+        self.peak['baseline_ram_gib'] = round((info['MemTotal'] - info['MemAvailable']) / 2 ** 20, 1)
+        self.peak['baseline_swap_gib'] = round((info['SwapTotal'] - info['SwapFree']) / 2 ** 20, 1)
+        self.peak['thp_gib'] = round(info.get('AnonHugePages', 0) / 2 ** 20, 1)
         while not self._stop.is_set():
             try:
                 v = int(subprocess.run(['nvidia-smi', '--query-gpu=memory.used',
                                         '--format=csv,noheader,nounits'],
                                        capture_output=True, text=True).stdout.split()[0])
-                info = dict(l.split(':', 1) for l in open('/proc/meminfo'))
-                kb = lambda k: int(info[k].split()[0])
+                info, _ = self._host_memory()
+                kb = lambda k: info.get(k, 0)
                 ram = (kb('MemTotal') - kb('MemAvailable')) / 2 ** 20
                 swap = (kb('SwapTotal') - kb('SwapFree')) / 2 ** 20
                 rss = self._backend_rss_gib()
@@ -849,6 +875,10 @@ class MemoryWatch:
                 self.peak['ram_gib'] = round(max(self.peak['ram_gib'], ram), 1)
                 self.peak['swap_gib'] = round(max(self.peak['swap_gib'], swap), 1)
                 self.peak['backend_rss_gib'] = round(max(self.peak['backend_rss_gib'], rss), 2)
+                self.peak['ram_growth_gib'] = round(max(self.peak['ram_growth_gib'],
+                                                        ram - self.peak['baseline_ram_gib']), 1)
+                self.peak['swap_growth_gib'] = round(max(self.peak['swap_growth_gib'],
+                                                         swap - self.peak['baseline_swap_gib']), 1)
                 self.samples.append([round(time.time() - t0), v, round(ram, 1), round(swap, 1),
                                      round(rss, 2)])
             except Exception:
@@ -1052,9 +1082,12 @@ def render_summary(results, logbuf, notes=()):
         lines += ['', '## Sampled memory (2 s interval)', '']
         for r in sampled:
             mw = r['memory_watch']
-            lines.append(f"- {r.get('name')}: VRAM {mw['vram_mib']} MiB, RAM {mw['ram_gib']} GiB, "
-                         f"swap {mw['swap_gib']} GiB, backend RSS {mw.get('backend_rss_gib')} GiB, "
-                         f"swap pages in/out {mw.get('swap_pages')}")
+            lines.append(f"- {r.get('name')}: VRAM {mw['vram_mib']} MiB, RAM {mw['ram_gib']} GiB "
+                         f"(baseline {mw.get('baseline_ram_gib')}, growth +{mw.get('ram_growth_gib')}), "
+                         f"swap {mw['swap_gib']} GiB (baseline {mw.get('baseline_swap_gib')}, growth "
+                         f"+{mw.get('swap_growth_gib')}), backend RSS {mw.get('backend_rss_gib')} GiB, "
+                         f"swap pages in/out {mw.get('swap_pages')}, THP {mw.get('thp_gib')} GiB, "
+                         f"zswap {mw.get('zswap')}")
             for point in mw.get('growth') or ():
                 lines.append(f"  - {point}")
     measured = [r for r in results if r.get('checks')]
@@ -1205,6 +1238,9 @@ def main():
                     help='re-verify an existing artifacts/verification/gpu-acceptance-* session '
                          'with the current verifiers; starts nothing')
     ap.add_argument('--precheck', action='store_true', help='compile-only, does not touch the GPU')
+    ap.add_argument('--backend-args', default='', help='extra ComfyUI start-up flags for a '
+                        'measured A/B, e.g. --backend-args "--cache-lru 1" (session flags are '
+                        'protected)')
     ap.add_argument('--no-adapter-sync', action='store_true',
                         help='run against the installed backend adapter copies instead of the '
                              'repo sources')
@@ -1354,8 +1390,17 @@ def main():
                         'second one — pass --probe-image and use --only without V-02, or add input photos')
 
         adapters_backup = sync_adapters(logbuf, outdir, enabled=not args.no_adapter_sync)
+        extra = shlex.split(args.backend_args)
+        protected = {'--port', '--listen', '--output-directory', '--input-directory',
+                     '--temp-directory', '--extra-model-paths-config', '--cpu'}
+        clashes = [a for a in extra if a in protected]
+        if clashes:
+            raise SystemExit(f'--backend-args may not override session flags: {clashes}')
+        if extra:
+            log(logbuf, f'backend extra args: {extra} (A/B experiment; the verdicts below apply '
+                        'to that configuration)')
         backend = subprocess.Popen(
-            [str(VENV_PY), '-u', 'main.py'] + (['--cpu'] if args.dry_run else []) +
+            [str(VENV_PY), '-u', 'main.py'] + (['--cpu'] if args.dry_run else []) + extra +
             ['--port', str(port), '--listen', '127.0.0.1',
              '--extra-model-paths-config', str(MODELS_YAML),
              '--input-directory', str(scratch / 'input'),
