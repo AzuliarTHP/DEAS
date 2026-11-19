@@ -8,12 +8,12 @@ import { filesPresent } from '../../lib/settings';
 import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloads, cancelDownloads, pickDownloadParent, planDownloads, readAuthStatus, readDownloadCatalog, readDownloadStatus, removeAuthToken, setAuthToken, startDownloads, comfyFolder, openTokenPage } from '../../lib/downloads';
 import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
 import { isString, oneOf, usePref } from '../../lib/preferences';
-import { changeModelFiles, fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
+import { changeModelFiles, editLibraryLora, fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
 import { loadInstalledListing, rememberInstalledListing } from './installedListing';
 import { InstalledGallery } from './InstalledGallery';
 import { CatalogGallery,type CatalogCard } from './CatalogGallery';
 import { LibraryGlyph } from './LibraryGlyph';
-import type { LocalModel, ModelScanScope, ModelScanStatus } from '../../lib/models';
+import type { LocalModel, LoraEdit, ModelScanScope, ModelScanStatus } from '../../lib/models';
 import './downloads.css';
 import {ModelAdvice} from '../../components/ModelAdvice';
 import {checkModel} from '../../lib/modelCheck';
@@ -109,8 +109,21 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
  const [scanStatus,setScanStatus]=useState<ModelScanStatus|null>(null);const [statusError,setStatusError]=useState(false);const scanEpoch=useRef(0);
  const scanning=scanStatus?.state==='running';
  const [fileBusy,setFileBusy]=useState(false);
+ const fileOperation=useRef(false);
+ const editLora=async(path:string,edit:LoraEdit)=>{
+  if(fileOperation.current||locked||scanning||listingBusy||io.busy)throw new Error(t('library.fileBusy'));
+  fileOperation.current=true;
+  setFileBusy(true);
+  try{
+   const model=await editLibraryLora(root,path,edit);
+   const updates=edit.kind==='preview'?refreshModelPreviews([model]):[model];
+   setModels(old=>old?patchModels(old,updates):old);
+   publishModelLibrary({root,updates});
+  }finally{fileOperation.current=false;setFileBusy(false);}
+ };
  const runFiles=async(paths:string[],destination?:string)=>{
-  if(fileBusy||locked||scanning||listingBusy||io.busy)throw new Error(t('library.fileBusy'));
+  if(fileOperation.current||locked||scanning||listingBusy||io.busy)throw new Error(t('library.fileBusy'));
+  fileOperation.current=true;
   setFileBusy(true);
   try{
    const result=await changeModelFiles(root,paths,destination);
@@ -126,7 +139,7 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
     publishModelLibrary({root,models:next});
    }
    return result;
-  }finally{setFileBusy(false);}
+  }finally{fileOperation.current=false;setFileBusy(false);}
  };
 
  useEffect(()=>{if(!io.native)return;let alive=true;let timer:ReturnType<typeof setTimeout>;let seenJob='';setScanStatus(null);
@@ -148,7 +161,7 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
   </dl><p className="field-help">{t('downloads.installed.hashHelp')}</p>
   <button className="action-button" disabled={io.busy||locked||scanning||fileBusy||!scanStatus||statusError} onClick={()=>fetch(m)}>{t(m.info?'downloads.installed.refresh':'downloads.installed.fetch')}</button>
   {io.busy&&<p role="status"><span className="aio-spinner" aria-hidden="true"/> {t('downloads.pending')}</p>}{io.error&&<p role="alert">{t('downloads.installed.fetchError')}</p>}</div>;};
- return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||fileBusy||io.busy||listingBusy||!scanStatus||statusError} fileActions={io.native?{run:runFiles,disabled:locked||scanning||listingBusy||io.busy||fileBusy}:undefined} previewPreference={{save:savePreview,set:setSavePreview}}
+ return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||fileBusy||io.busy||listingBusy||!scanStatus||statusError} fileActions={io.native?{run:runFiles,disabled:locked||scanning||listingBusy||io.busy||fileBusy}:undefined} previewPreference={{save:savePreview,set:setSavePreview}} editLora={io.native?editLora:undefined}
   actions={<>
    {io.native&&<button className="action-button library-refresh" type="button" disabled={locked||listingBusy||scanning||fileBusy||io.busy} onClick={refreshListing}><span aria-hidden="true">↻</span> {t('downloads.installed.refreshListing')}</button>}
    {io.native&&!!models&&models.length>0&&<div className="library-scan-tools">

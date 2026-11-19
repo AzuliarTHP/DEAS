@@ -114,9 +114,10 @@ pub fn native_logs_library_error(operation: String) {
         "preview-fetch" => (6, "WARN: Library could not save a local CivitAI preview; metadata remains available"),
         "open-link" => (7, "ERROR: Library could not open the requested folder or CivitAI page"),
         "files" => (8, "WARN: Library model file operation did not fully complete"),
+        "lora-edit" => (9, "ERROR: Library could not save a LoRA edit"),
         _ => return,
     };
-    static LAST: Mutex<[Option<std::time::Instant>; 9]> = Mutex::new([None; 9]);
+    static LAST: Mutex<[Option<std::time::Instant>; 10]> = Mutex::new([None; 10]);
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     if last[slot].is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60)) {
         return;

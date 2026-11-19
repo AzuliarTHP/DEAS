@@ -19,7 +19,10 @@ pub struct ModelFileReport {
 }
 
 fn companions(source: &Source, path: &Path) -> Result<Vec<(String, SourceFingerprint)>, String> {
-    let mut names = vec![format!("{}{SIDECAR}", source.name)];
+    let mut names = vec![
+        format!("{}{SIDECAR}", source.name),
+        format!("{}{}", source.name, preview::CUSTOM_COVER_SUFFIX),
+    ];
     let stem = path
         .file_stem()
         .and_then(|name| name.to_str())

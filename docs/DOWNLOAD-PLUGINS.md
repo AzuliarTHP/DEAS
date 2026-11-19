@@ -174,6 +174,18 @@ visible cards from that saved index. No recursive model-folder listing is trigge
 by Fetch or by returning to Library. **Scan Files** retains its older explicit
 whole-folder discovery workflow; **Refresh models** discovers local file changes.
 
+In a LoRA’s **Model details**, choose **Edit trigger words** and enter one word
+or phrase per line. Save an empty list to clear the words. The local list is used
+in Library search and Studio details and survives metadata refreshes.
+**Replace preview…** imports one image from your device as a separate local
+cover. The cover takes precedence over the provider thumbnail and existing
+sibling previews. The original image file stays where it is.
+
+**Prompt examples** at the bottom shows version images and copyable prompts
+when Civitai includes prompt metadata. Use **Refresh metadata** on an older
+cached entry to look for examples. Fetch stores the prompts and image URLs.
+Example thumbnails load from Civitai when viewed.
+
 In **Model details**, click the file path to open its containing folder. **View on
 Civitai** opens the matched version and the creator name opens their profile when
 that information is available. Models flagged mature open on civitai.red, because

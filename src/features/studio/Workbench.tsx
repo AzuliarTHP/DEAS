@@ -352,10 +352,14 @@ function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage
  const closeVisionDownload=()=>{setVisionDownload(false);void refreshChoices();};
  useEffect(()=>{if(!visionDownload)return;const dialog=visionDialog.current!;dialog.showModal();return()=>{if(dialog.open)dialog.close();};},[visionDownload]);
  const capabilityEpoch=useRef(0);
- const refreshChoices=useCallback(async(report=true)=>{const revision=++capabilityEpoch.current;try{const value=await checkRecipePrerequisites(endpoint);if(live.current&&revision===capabilityEpoch.current)setChoices(value.allowlist);}catch(e){
+ // Revision of the object_info read still in flight. The waiting poll joins it instead of superseding it (#39): on a backend
+ // slower than the poll, superseding discarded every answer while ComfyUI queued the abandoned requests until all timed out.
+ // One-shot reads (mount, dock switch, Dials, downloads) still fetch fresh capabilities.
+ const capabilityPending=useRef<number|null>(null);
+ const refreshChoices=useCallback(async(report=true,poll=false)=>{if(poll&&capabilityPending.current===capabilityEpoch.current)return;const revision=++capabilityEpoch.current;capabilityPending.current=revision;try{const value=await checkRecipePrerequisites(endpoint);if(live.current&&revision===capabilityEpoch.current)setChoices(value.allowlist);}catch(e){
   // A reachable backend whose object_info is rejected is not "pending": show the rejection even from the silent re-read.
   const rejected=!/^BACKEND_(UNAVAILABLE|TIMEOUT|REQUEST_FAILED):/.test(String(e instanceof Error?e.message:e));
-  if((report||rejected)&&live.current&&revision===capabilityEpoch.current)setError(backendErrorText(e,t));}},[endpoint,t]);
+  if((report||rejected)&&live.current&&revision===capabilityEpoch.current)setError(backendErrorText(e,t));}finally{if(capabilityPending.current===revision)capabilityPending.current=null;}},[endpoint,t]);
  const latentDownloadStatus=useCallback((status:DownloadStatus)=>{if(status.state==='succeeded')void refreshChoices();},[refreshChoices]);
  const closeLatentDownload=()=>{setLatentDownload(null);void refreshChoices();};
  useEffect(()=>{if(!latentDownload)return;const dialog=latentDialog.current!;dialog.showModal();return()=>{if(dialog.open)dialog.close();};},[latentDownload]);
@@ -453,7 +457,7 @@ const referencesButton=useRef<HTMLButtonElement>(null);
 // shortcut: webkit-injected File.path only exists in Tauri; upgrade when Tauri's onDragDropEvent lands.
 const droppedImage=(dt:DataTransfer):MediaItem|null=>{const f=dt.files?.[0] as (File&{path?:string})|undefined;return f?.path&&MEDIA_IMAGE_RE.test(f.name)?{name:f.name,path:f.path,media:'image',src:convertFileSrc(f.path)}:null;};
 // A backend that was still warming up when first read is re-read until its capabilities arrive.
- useEffect(()=>{if(!native||!endpoint.trim()||choices)return;const timer=window.setInterval(()=>void refreshChoices(false),3000);return()=>window.clearInterval(timer);},[native,endpoint,choices,refreshChoices]);
+ useEffect(()=>{if(!native||!endpoint.trim()||choices)return;const timer=window.setInterval(()=>void refreshChoices(false,true),3000);return()=>window.clearInterval(timer);},[native,endpoint,choices,refreshChoices]);
 const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(false);};
  useEffect(()=>{live.current=true;return()=>{live.current=false;preparationGeneration.current++;};},[]);
  // A native <select> opens synchronously on the first click; a list fetched on that click only shows on the second one.

@@ -295,6 +295,7 @@
   "search.reason.references": "Braucht eine Bildreferenz",
   "search.reason.plan": "Der Ablaufplan zeigt nur die Stufen dieses Entwurfs",
   "search.reason.installed": "Braucht eine installierte Umgebung",
+  "search.reason.loraDetails": "Zuerst in der Bibliothek die Modelldetails einer LoRA öffnen",
   "search.section.prompts": "Prompts",
   "search.section.run": "Ausführen",
   "search.section.filters": "Filter",

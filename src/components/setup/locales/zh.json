@@ -295,6 +295,7 @@
   "search.reason.references": "需要一张图像参考",
   "search.reason.plan": "运行计划只显示此草稿用到的阶段",
   "search.reason.installed": "需要已安装的环境",
+  "search.reason.loraDetails": "请先在模型库中打开某个 LoRA 的模型详情",
   "search.section.prompts": "提示词",
   "search.section.run": "运行",
   "search.section.filters": "筛选",

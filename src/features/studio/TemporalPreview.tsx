@@ -4,6 +4,8 @@ import type { TemporalPreviewData } from '../../lib/jobs';
 import { NativeVideo, nativeVideo } from './NativeVideo';
 
 type Props={preview:TemporalPreviewData;active:boolean;label:string;fallback?:string};
+type PlaybackEnd='ended'|'failed';
+const replayDelayMs=1000;
 export function TemporalPreview(props:Props) {
  if(!props.active)return props.fallback?<img src={props.fallback} alt={props.label}/>:null;
  return <TemporalPreviewPlayback {...props}/>;
@@ -11,20 +13,30 @@ export function TemporalPreview(props:Props) {
 
 function TemporalPreviewPlayback({preview,label,fallback}:Props) {
  const [playing,setPlaying]=useState(preview);
- const [finished,setFinished]=useState(false);
+ const [finished,setFinished]=useState<PlaybackEnd|null>(null);
+ const [replay,setReplay]=useState(0);
  if(finished&&playing.revision!==preview.revision){
   setPlaying(preview);
-  setFinished(false);
+  setFinished(null);
+  setReplay(0);
  }
- return <TemporalPreviewRevision key={playing.revision} preview={playing} label={label} fallback={fallback} onFinished={()=>setFinished(true)}/>;
+ useEffect(()=>{
+  if(finished!=='ended'||playing.revision!==preview.revision)return;
+  // Post-processing can keep the job running without sending another sampling preview.
+  const timer=window.setTimeout(()=>{setFinished(null);setReplay(count=>count+1);},replayDelayMs);
+  return()=>window.clearTimeout(timer);
+ },[finished,playing.revision,preview.revision]);
+ return <TemporalPreviewRevision key={playing.revision} preview={playing} label={label} fallback={fallback} replay={replay} onFinished={setFinished}/>;
 }
 
-function TemporalPreviewRevision({preview,label,fallback,onFinished}:Omit<Props,'active'>&{onFinished:()=>void}) {
+function TemporalPreviewRevision({preview,label,fallback,replay,onFinished}:Omit<Props,'active'>&{replay:number;onFinished:(end:PlaybackEnd)=>void}) {
  const canvas=useRef<HTMLCanvasElement>(null);
+ const replayCanvas=useRef<(()=>void)|null>(null);
+ const player=useRef<HTMLVideoElement>(null);
  const [video,setVideo]=useState<string>();
  const [failed,setFailed]=useState(false);
  const owner=useRef('');
- const fail=()=>{setFailed(true);onFinished();if(isTauri())void invoke('native_video_update',{id:owner.current,action:{kind:'previewError'}}).catch(()=>{});};
+ const fail=()=>{setFailed(true);onFinished('failed');if(isTauri())void invoke('native_video_update',{id:owner.current,action:{kind:'previewError'}}).catch(()=>{});};
  useEffect(()=>{
   let disposed=false,frame=0;
   owner.current=crypto.randomUUID();
@@ -39,28 +51,42 @@ function TemporalPreviewRevision({preview,label,fallback,onFinished}:Omit<Props,
    const loads=images.map(image=>new Promise<void>((resolve,reject)=>{if(image.complete&&image.naturalWidth)resolve();else{image.onload=()=>resolve();image.onerror=reject;}}));
    void Promise.all(loads).then(()=>{
     if(disposed||!context)return;
-    let start:number|undefined;
     const total=frames.reduce((sum,f)=>sum+f.durationMs,0);
-    const paint=(now:number)=>{
-     if(disposed)return;
-     start??=now;
-     const finished=now-start>=total;
-     let elapsed=now-start,index=0;
-     while(index<frames.length-1&&elapsed>=frames[index].durationMs){elapsed-=frames[index].durationMs;index++;}
-     context.drawImage(images[index],0,0,preview.width,preview.height);
-     if(finished)onFinished();
-     else frame=requestAnimationFrame(paint);
+    const play=()=>{
+     let start:number|undefined;
+     const paint=(now:number)=>{
+      if(disposed)return;
+      start??=now;
+      const finished=now-start>=total;
+      let elapsed=now-start,index=0;
+      while(index<frames.length-1&&elapsed>=frames[index].durationMs){elapsed-=frames[index].durationMs;index++;}
+      context.drawImage(images[index],0,0,preview.width,preview.height);
+      if(finished)onFinished('ended');
+      else frame=requestAnimationFrame(paint);
+     };
+     frame=requestAnimationFrame(paint);
     };
-    frame=requestAnimationFrame(paint);
+    replayCanvas.current=play;
+    play();
    },()=>{if(!disposed)fail();});
-   return()=>{disposed=true;cancelAnimationFrame(frame);images.forEach(image=>{image.onload=null;image.onerror=null;image.src='';});};
+   return()=>{disposed=true;replayCanvas.current=null;cancelAnimationFrame(frame);images.forEach(image=>{image.onload=null;image.onerror=null;image.src='';});};
   }
   return()=>{disposed=true;cancelAnimationFrame(frame);};
  },[preview.revision]);
+ useEffect(()=>{
+  if(!replay)return;
+  replayCanvas.current?.();
+  const element=player.current;
+  if(!element)return;
+  let disposed=false;
+  element.currentTime=0;
+  void element.play().catch(()=>{if(!disposed)fail();});
+  return()=>{disposed=true;};
+ },[replay]);
  if(failed)return fallback?<img src={fallback} alt={label}/>:null;
  if(preview.video){
-  if(nativeVideo())return <NativeVideo source={preview.video} label={label} autoPlay muted onStatus={status=>{if(status.error)fail();else if(status.ended)onFinished();}}/>;
-  return video?<video src={video} aria-label={label} autoPlay muted playsInline onEnded={onFinished} onError={fail}/>:fallback?<img src={fallback} alt={label}/>:null;
+  if(nativeVideo())return <NativeVideo key={replay} source={preview.video} label={label} autoPlay muted onStatus={status=>{if(status.error)fail();else if(status.ended)onFinished('ended');}}/>;
+  return video?<video ref={player} src={video} aria-label={label} autoPlay muted playsInline onEnded={()=>onFinished('ended')} onError={fail}/>:fallback?<img src={fallback} alt={label}/>:null;
  }
  return <canvas ref={canvas} width={preview.width} height={preview.height} role="img" aria-label={label}/>;
 }

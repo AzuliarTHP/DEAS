@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ModelPreview } from '../../components/models/ModelPreview';
 import { useDialogBackdropClose } from '../../components/useDialogBackdropClose';
 import { useI18n } from '../../i18n/I18nProvider';
-import type { LocalModel } from '../../lib/models';
+import { modelTriggerWords, type LocalModel } from '../../lib/models';
 import { reportLibraryError } from '../downloads/libraryDiagnostics';
 
 /** A second native modal above the LoRA picker; reads only its existing model snapshot. */
@@ -11,7 +11,7 @@ export function LoraDetailsDialog({model,onClose}:{model:LocalModel;onClose:()=>
  const {t,locale}=useI18n(),dialog=useRef<HTMLDialogElement>(null);
  const [copied,setCopied]=useState<'all'|'selected'|null>(null),[copyError,setCopyError]=useState(false);
  const [selectedWords,setSelectedWords]=useState<string[]>([]);
- const info=model.info?.civitai,words=info?.trainedWords??[];
+ const info=model.info?.civitai,words=modelTriggerWords(model);
  const chips=[...new Set(words.flatMap(word=>word.split(/[,\n]/)).map(word=>word.trim()).filter(Boolean))];
  const chosen=chips.filter(word=>selectedWords.includes(word));
  useEffect(()=>{setSelectedWords([]);setCopied(null);setCopyError(false);},[model.path]);

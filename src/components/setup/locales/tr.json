@@ -295,6 +295,7 @@
   "search.reason.references": "Bir görsel referansı gerekir",
   "search.reason.plan": "Çalıştırma planı yalnızca bu taslağın kullandığı aşamaları gösterir",
   "search.reason.installed": "Kurulu bir ortam gerekir",
+  "search.reason.loraDetails": "Önce Kütüphane'de bir LoRA'nın model ayrıntılarını açın",
   "search.section.prompts": "Promptlar",
   "search.section.run": "Çalıştır",
   "search.section.filters": "Filtreler",

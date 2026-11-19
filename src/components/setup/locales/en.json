@@ -295,6 +295,7 @@
   "search.reason.references": "Requires an image reference",
   "search.reason.plan": "The Run Plan shows only the stages this draft uses",
   "search.reason.installed": "Requires an installed environment",
+  "search.reason.loraDetails": "Open a LoRA's Model details in Library first",
   "search.section.prompts": "Prompts",
   "search.section.run": "Run",
   "search.section.filters": "Filters",

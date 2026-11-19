@@ -1,5 +1,67 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Issue #39 — Studio capability poll livelock on slow `object_info` (0.3.4)
+
+Diagnosis from the reporters' own 0.3.3 logs (three files: two machines, one of them also a fresh install with default
+settings), not from a reproduction on Windows. In all three, owned readiness **succeeded** (`operation=readiness …
+attempts=1: Owned ComfyUI API responded` after 22–50 s, `listener_ready_ms` 17.9–42.7 s). From then on one
+`object_info … (slow response)` line follows about every 3.8 s (fast machine) or 7 s (slow machine), and `elapsed_ms` grows
+by a constant step per request: 3,760 → 4,494 → 5,218 → … → 44,889 ms (+0.75 s each, ≈3.75 s service time vs a 3 s
+request interval), and 7,055 → 10,946 → 14,894 → … → 42,021 ms (+3.9 s each). Then `BACKEND_TIMEOUT elapsed_ms=45000`
+for every later request. That is an arrival-faster-than-service queue, and the source is
+`Workbench.tsx::refreshChoices` + the 3 s `setInterval` that runs while `choices` is null: every tick incremented
+`capabilityEpoch`, so the reply of the previous request was discarded as stale whenever it took longer than 3 s, `choices`
+never became set, the interval never stopped, and ComfyUI kept serving the abandoned requests serially. This also explains
+the reporters' other symptoms: a browser `/object_info` taking ~15 minutes and the Comfy tab stuck on its logo were queued
+behind the same backlog, while **Backend → Test** (its own single read) was green. The 0.3.1 (45 s probe budget) and 0.3.3
+(partner nodes off, 2.8 → 1.5 MB) fixes were real but could not help: with any service time above 3 s the poll livelocks.
+
+Fix: `capabilityPending` holds the revision of the read in flight; the 3 s poll (`refreshChoices(false,true)`) joins it
+instead of superseding it, so its answer is accepted when it arrives and ends the poll. One-shot reads (mount, Options/Post
+dock switch, Dials, after a download or Reload) still supersede and fetch fresh capabilities; they are bounded by user
+actions and cannot pile up. A first draft also joined those and broke six existing Workbench fixtures that encode the
+"dock switch re-reads capabilities" contract (e.g. Enhanced preview appearing after an Upgrade); the poll-only join keeps them green. An endpoint/models-folder change still discards the old read (its effect
+cleanup bumps the epoch, so the pending revision no longer matches). `TveBackendEnhance` and `RecipePrerequisitesPanel`
+already had in-flight guards; `App.inspect` returns while inspecting.
+
+Evidence: `src/features/studio/Workbench.slowCapabilities.test.tsx` (fake timers, a read pending for 10 s, then a timed-out
+read). **RED on the 0.3.3 source:** 4 requests in 10 s, and 3 instead of 1 for the failure case; GREEN with the fix (1 request
+while pending, none after the late answer is accepted; failures retried one at a time). Not evidence: no Windows run and no
+reporter confirmation yet; the reporters' per-request service time (3.8–7 s for `object_info` on Windows) remains slower than
+on this Linux host and is not changed by this fix.
+
+## LoRA details edits and prompt examples
+
+The Windows Library suite passed 67 native tests with three ignored. Disposable
+fixtures verified an unfetched LoRA’s trigger override, clearing trigger words,
+preview replacement, preservation of existing sibling images, and rejecting an
+invalid image. Example parsing keeps stills with usable prompt metadata.
+Chromium with mocked IPC tested trigger editing, converting a synthetic JPEG to
+a bounded PNG, updating the card preview, and copying both prompt fields.
+The focused UI suite passed 86 tests, and all 467 Chromium layout checks passed.
+
+Integration on main (0.3.4, PR #42 merged with `--no-ff`; the only conflict was the CHANGELOG bullet list). The two
+sections above are the contributor's evidence from Windows; re-run on this Linux host after the merge, together with the
+issue #39 fix: `npm run typecheck` clean, `npm run test:core` 167/167, full Vitest **2,361 of 2,362** in 136 files — the
+one failure (`Workbench.part2` *file settings resolve LoRAs against the restored model family*) passed alone and in a rerun
+of its file while no cargo build competed for the CPU; `cargo test --lib -- --test-threads=1` with an owned `TMPDIR`
+**1,117 passed, 2 failed, 80 ignored** — the two failures are the known backend shutdown-deadline fixtures that also fail on
+the baseline (see 0.3.1 below); the PR's `lora_edits_persist_and_the_custom_cover_takes_precedence` and
+`civitai_prompt_examples_keep_only_usable_stills_and_plain_prompt_metadata` pass; `cargo clippy --all-targets -- -D warnings`
+clean. (With the default `/tmp` as `TMPDIR`, 18 settings/install/job-output fixtures refuse the world-writable directory —
+a host condition, not a regression.) Fresh release gate chain on the final 0.3.4 tree (`release-gates.sh`, private `TMPDIR`): typecheck, core, 17 Python tool tests, Vitest **2,362/2,362**, `cargo fmt --check`, strict release and all-targets clippy, `cargo xwin check` and `cargo xwin clippy -D warnings` for `x86_64-pc-windows-msvc` all clean; serial native suite 1,117 passed / 2 failed (the same two shutdown fixtures) / 80 ignored. Integration additions: Ctrl+K entries for **Edit trigger words**, **Replace preview…**
+and **Prompt examples** (`data-library-lora-*` targets, reason *Open a LoRA's Model details in Library first* in six
+locales). Review notes kept open in PLAN V-03/L-05: on Linux the libmpv path remounts `NativeVideo` for every replay, and no
+native WebKitGTK/WebView2 or real-GPU check has been made of either feature.
+
+## Enhanced preview replay during processing
+
+Playback fixtures cover the replay delay, selecting the newest revision at
+clip boundaries, inactive cleanup, and decoder fallback. Chromium played
+synthetic H.264 clips with mocked IPC and verified that replay reuses the
+open video element. Live Windows WebView2, Linux playback, and GPU
+post-processing remain separate verification.
+
 ## Release 0.3.3 (published)
 
 Published [v0.3.3](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.3) from source commit `476d2e9b211d0c423eda03d46a5412b4387ce3e7` (annotated tag object `7910a8c8344144c2f18e7d7190ec632b30913fe1`, pushed to both remotes; the release pins `targetCommitish` to the same commit). `Verify DEAS` and `Release DEAS` remain `disabled_manually`, so no CI runner built or tested these binaries; the build ran locally with `build-linux.sh --release` on a clean tree whose tip was the release-prep commit, and the release was published draft-first: every server asset `digest` matched the local hash before it was made **Latest** (not a prerelease). The four assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four byte-identical to the staged set.

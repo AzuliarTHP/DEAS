@@ -295,6 +295,7 @@
   "search.reason.references": "Nécessite une référence image",
   "search.reason.plan": "Le plan d'exécution montre seulement les étapes de ce brouillon",
   "search.reason.installed": "Nécessite une installation",
+  "search.reason.loraDetails": "Ouvrez d'abord les détails du modèle d'une LoRA dans la bibliothèque",
   "search.section.prompts": "Prompts",
   "search.section.run": "Exécuter",
   "search.section.filters": "Filtres",

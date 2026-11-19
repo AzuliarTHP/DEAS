@@ -1,6 +1,25 @@
 # News
 
-## 0.3.4 (unreleased)
+## 0.3.4
+
+### Studio waits for a slow backend instead of flooding it
+
+On computers where ComfyUI needs more than a few seconds to list its nodes and models, Studio could stay on
+*Backend not ready* for good while **Backend → Test** was green, and the Comfy tab never finished loading
+([#39](https://github.com/darksidewalker/DEAS/issues/39)). Studio kept asking again before the previous answer arrived,
+and the backend queued up the questions until every request timed out. Studio now waits for the answer it already asked
+for.
+
+### LoRA details you can make your own
+
+In Library → **Model details** of a LoRA you can now edit or clear its trigger words, replace its card image with one from
+your computer, and browse prompt examples from its Civitai page with copy buttons for the prompt and negative prompt.
+Your trigger words survive metadata refreshes and are what Library search and Studio show. (Thanks to @AzuliarTHP, PR #42.)
+
+### Enhanced preview keeps moving
+
+While a video job upscales or exports and no new sampling preview arrives, the enhanced preview now replays the latest
+clip after a short pause instead of freezing on its last frame.
 
 ### Older environments update instead of failing
 

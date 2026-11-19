@@ -295,6 +295,7 @@
   "search.reason.references": "画像参照が必要",
   "search.reason.plan": "実行プランはこのドラフトが使うステージのみ表示します",
   "search.reason.installed": "インストール済み環境が必要",
+  "search.reason.loraDetails": "先にライブラリでLoRAのモデル詳細を開いてください",
   "search.section.prompts": "プロンプト",
   "search.section.run": "実行",
   "search.section.filters": "フィルター",

@@ -13,7 +13,8 @@ import { isModelSort, sortModels, useModelUsage } from '../../lib/modelBrowsing'
 import { useI18n } from '../../i18n/I18nProvider';
 import { isString, oneOf, usePref } from '../../lib/preferences';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import type { LocalModel, ModelFileReport } from '../../lib/models';
+import { modelTriggerWords, type LocalModel, type LoraEdit, type ModelFileReport } from '../../lib/models';
+import { LibraryCoverEditor, LibraryPromptExamples, LibraryTriggerWords } from './LibraryLoraDetails';
 import { checkModel, modelCheckText } from '../../lib/modelCheck';
 import { ModelDeclaredBadge, ModelMetadataTarget, ModelMetadataEditor } from '../../components/models/ModelMetadataEditor';
 import './installedGallery.css';
@@ -35,7 +36,7 @@ function Cover({model}:{model:LocalModel}) {
  return <ModelPreview model={model} className="download-preview" fallback={<div className="download-preview library-placeholder"><LibraryGlyph name="model"/><span>{model.name.split('.').at(-1)?.toUpperCase()}</span></div>}/>;
 }
 
-export function InstalledGallery({models,loaded,root,category,setCategory,selected,setSelected,locked,actions,feedback,renderDetail,onFetch,fetchBusy,previewPreference,fileActions}:{models:LocalModel[];loaded:boolean;root:string;category:string;setCategory:(value:string)=>void;selected:string;setSelected:(value:string)=>void;locked:boolean;actions:ReactNode;feedback:ReactNode;renderDetail:(model:LocalModel)=>ReactNode;onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;fetchBusy?:boolean;previewPreference?:{save:boolean;set:(value:boolean)=>void};fileActions?:{run:(paths:string[],destination?:string)=>Promise<ModelFileReport>;disabled:boolean}}) {
+export function InstalledGallery({models,loaded,root,category,setCategory,selected,setSelected,locked,actions,feedback,renderDetail,onFetch,fetchBusy,previewPreference,fileActions,editLora}:{models:LocalModel[];loaded:boolean;root:string;category:string;setCategory:(value:string)=>void;selected:string;setSelected:(value:string)=>void;locked:boolean;actions:ReactNode;feedback:ReactNode;renderDetail:(model:LocalModel)=>ReactNode;onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;fetchBusy?:boolean;previewPreference?:{save:boolean;set:(value:boolean)=>void};fileActions?:{run:(paths:string[],destination?:string)=>Promise<ModelFileReport>;disabled:boolean};editLora?:(path:string,edit:LoraEdit)=>Promise<void>}) {
  const {t}=useI18n();
  const [loraNotice,setLoraNotice]=useState<{error:boolean}|null>(null);
  useEffect(()=>{if(!loraNotice)return;const timer=setTimeout(()=>setLoraNotice(null),3000);return()=>clearTimeout(timer);},[loraNotice]);
@@ -62,7 +63,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
   const terms=query.toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
   return sortModels(collection.filter(m=>{
    const personal=annotation(m.path);const info=m.info?.civitai;
-   const haystack=[m.name,info?.name,info?.version,familyOf(m),...info?.trainedWords??[],personal?.notes,...personal?.tags??[]].filter(Boolean).join(' ').toLocaleLowerCase();
+   const haystack=[m.name,info?.name,info?.version,familyOf(m),...modelTriggerWords(m),personal?.notes,...personal?.tags??[]].filter(Boolean).join(' ').toLocaleLowerCase();
    return (favoritesOnly||!isHidden(m))&&terms.every(term=>haystack.includes(term))&&(!favoritesOnly||isFavorite(m.path))&&(!folder||folderOf(m)===folder||folderOf(m).startsWith(`${folder}/`))&&(!family||familyOf(m)===family)&&(!tag||personal?.tags?.includes(tag))&&(metadata==='all'||(metadata==='known'?!!info:!info));
   }),sort,usage,shuffleSeed);
  },[collection,query,favoritesOnly,folder,family,tag,metadata,sort,organization,usage,shuffleSeed,hiddenByCollection,root]);
@@ -111,7 +112,9 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
   }catch(error){setFileResult({count:0,errors:[String(error)]});}
   finally{setEditingFiles(false);}
  };
- const words=picked?.info?.civitai?.trainedWords??[];
+ const pickedEdit=picked?.category==='loras'&&editLora?(edit:LoraEdit)=>editLora(picked.path,edit):undefined;
+ const editDisabled=locked||!!fileActions?.disabled;
+ const blurPicked=blur&&!!civitai?.nsfw;
  const clearSelection=()=>{const button=document.querySelector<HTMLButtonElement>('.library-card-main[aria-pressed="true"]');setSelected('');requestAnimationFrame(()=>button?.focus());};
  const backdrop=useDialogBackdropClose(()=>{(document.activeElement as HTMLElement)?.blur();clearSelection();});
  return <section className="installed-library" aria-label={t('library.collection')} data-installed-gallery>
@@ -181,7 +184,8 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
       </div>
       {linkError===picked.path&&<p role="alert">{t('library.openLinkError')}</p>}
       {picked.info?.civitai&&models.filter(m=>m.info?.civitai?.modelId===picked.info?.civitai?.modelId).length>1&&<section className="library-detail-section"><h4>{t('downloads.version')}</h4><div className="library-trigger-words">{models.filter(m=>m.info?.civitai?.modelId===picked.info?.civitai?.modelId).map(m=><button key={m.path} type="button" aria-pressed={m.path===picked.path} onClick={()=>setSelected(m.path)}>{m.info?.civitai?.version??filename(m)}</button>)}</div></section>}
-      {words.length>0&&<section className="library-detail-section"><div className="library-section-heading"><h4>{t('downloads.installed.words')}</h4><button type="button" onClick={()=>void copy(words.join(', '),'words')}>{copied==='words'?t('library.copied'):t('library.copyAll')}</button></div><div className="library-trigger-words">{words.map((word,i)=><button type="button" key={`${word}-${i}`} onClick={()=>void copy(word,`word-${i}`)}>{copied===`word-${i}`?'✓ ':''}{word}</button>)}</div></section>}
+      <LibraryTriggerWords key={picked.path} model={picked} copy={copy} copied={copied} onEdit={pickedEdit} disabled={editDisabled}/>
+      {pickedEdit&&<LibraryCoverEditor key={picked.path+'-cover'} model={picked} onEdit={pickedEdit} disabled={editDisabled} blur={blurPicked}/>}
       <section className="library-detail-section"><h4>{t('library.organize')}</h4><label className="library-checkbox"><input type="checkbox" checked={isFavorite(picked.path)} onChange={()=>favorite(picked)}/>{t('library.favorites')}</label><label>{t('library.tags')}<input aria-label={t('library.editTags')} maxLength={500} placeholder={t('library.tagsHint')} key={picked.path} defaultValue={(annotation(picked.path)?.tags??[]).join(', ')} onBlur={e=>annotate(picked.path,{tags:[...new Set(e.currentTarget.value.split(',').map(tag=>tag.trim().slice(0,50)).filter(Boolean))].slice(0,20)})} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label><label>{t('library.notes')}<textarea data-library-notes maxLength={4000} rows={4} placeholder={t('library.notesHint')} value={annotation(picked.path)?.notes??''} onChange={e=>annotate(picked.path,{notes:e.target.value})}/></label><small>{t('library.savedLocally')}</small></section>
       <section className="library-popup-facts"><div><small>{t('downloads.version')}</small><p>{picked.info?.civitai?.version??'—'}</p></div><div><small>{t('modelMeta.filename')}</small><p>{filename(picked)}</p></div><div><small>{t('downloads.installed.path')}</small><p>{isTauri()?<button type="button" className="library-file-link" title={t('library.openFileFolder')} onClick={()=>openLink('native_media_reveal',{path:picked.path})}>{picked.path}</button>:picked.path}</p></div><div><small>{t('library.base')}</small><p>{familyOf(picked)||t('library.unclassified')}</p></div><div><small>{t('downloads.size')}</small><p>{sizeOf(picked.size)}</p></div><div><small>{t('library.modelId')}</small><p>{picked.info?.civitai?.modelId??'—'}</p></div><div><small>{t('library.versionId')}</small><p>{picked.info?.civitai?.versionId??'—'}</p></div><div><small>{t('downloads.digest')}</small><p>{picked.info?.sha256??t('downloads.installed.unhashed')}</p></div></section>
       {picked.info?.civitai?.description&&<section className="library-detail-section"><h4>{t('library.aboutVersion')}</h4><p className="library-version-description">{picked.info.civitai.description.replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')}</p></section>}
@@ -190,6 +194,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
       {editing&&<ModelMetadataEditor key={picked.path} model={picked} onClose={()=>setEditing(false)}/>}
       <div className="library-detail-section library-native-details">{renderDetail(picked)}</div>
       <button type="button" className="library-text-button" onClick={()=>void copy(picked.name,'filename')}>{copied==='filename'?t('library.copied'):t('library.copyFilename')}</button>
+      {picked.category==='loras'&&<LibraryPromptExamples key={picked.path+'-examples'} model={picked} copy={copy} copied={copied} blur={blurPicked}/>}
       {copied==='error'&&<p role="alert">{t('library.copyError')}</p>}
      </aside></dialog>,document.body)}
     </div>

@@ -161,6 +161,7 @@ mod tests {
     fn model(name: &str) -> LocalModel {
         LocalModel {
             local_preview: None,
+            trigger_words: None,
             check: None,
             category: "loras".into(),
             name: name.into(),

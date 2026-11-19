@@ -21,7 +21,7 @@ beforeEach(()=>{
  vi.stubGlobal('cancelAnimationFrame',vi.fn());
  vi.stubGlobal('Image',class {src='';complete=true;naturalWidth=32;onload=null;onerror=null;});
 });
-afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
+afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();vi.restoreAllMocks();});
 describe('TemporalPreview',()=>{
  it('paints changing decoded frames with their duration and cancels inactive playback',async()=>{
   const {rerender}=render(<TemporalPreview preview={frames} active label="preview"/>);
@@ -68,6 +68,19 @@ describe('TemporalPreview',()=>{
   act(()=>emitStatus!({...nativeStatus,ended:true}));
   expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(videoRevision(3).video));
  });
+ it('restarts the native player after a preview gap and keeps a failed preview on its fallback',()=>{
+  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
+  vi.mocked(nativeVideo).mockReturnValue(true);
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  render(<TemporalPreview preview={video} active label="preview" fallback="data:image/jpeg;base64,fallback"/>);
+  const first=screen.getByLabelText('preview');
+  act(()=>emitStatus!({...nativeStatus,ended:true}));
+  act(()=>vi.advanceTimersByTime(1000));
+  expect(screen.getByLabelText('preview')).not.toBe(first);
+  act(()=>emitStatus!({...nativeStatus,error:'decoder error'}));
+  act(()=>vi.advanceTimersByTime(1000));
+  expect(screen.getByRole('img',{name:'preview'}).tagName).toBe('IMG');
+ });
  it('holds the Windows clip through EOF, then opens only the newest buffered clip',async()=>{
   vi.mocked(invoke).mockResolvedValueOnce('data:video/mp4;base64,first').mockResolvedValueOnce('data:video/mp4;base64,latest');
   const {container,rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
@@ -80,19 +93,48 @@ describe('TemporalPreview',()=>{
   await waitFor(()=>expect(container.querySelector('video')?.getAttribute('src')).toContain('latest'));
   expect(invoke).toHaveBeenLastCalledWith('native_video_open',expect.objectContaining({source:videoRevision(3).video}));
  });
- it('holds the last canvas frame after a full cycle until a new preview arrives',async()=>{
+ it('briefly holds the last canvas frame, then replays while the running job has no newer preview',async()=>{
+  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
   const {rerender}=render(<TemporalPreview preview={frames} active label="preview"/>);
-  await waitFor(()=>expect(callbacks).toHaveLength(1));
+  await act(async()=>{});
+  expect(callbacks).toHaveLength(1);
   act(()=>callbacks.shift()!(0));
   act(()=>callbacks.shift()!(245));
   expect(callbacks).toHaveLength(1);
   act(()=>callbacks.shift()!(250));
   expect(callbacks).toHaveLength(0);
   expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![1].src);
-  rerender(<TemporalPreview preview={{...frames,revision:2}} active label="preview"/>);
-  await waitFor(()=>expect(callbacks).toHaveLength(1));
-  act(()=>callbacks.shift()!(270));
+  act(()=>vi.advanceTimersByTime(999));
+  expect(callbacks).toHaveLength(0);
+  act(()=>vi.advanceTimersByTime(1));
+  expect(callbacks).toHaveLength(1);
+  act(()=>callbacks.shift()!(1250));
   expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![0].src);
+  rerender(<TemporalPreview preview={{...frames,revision:2}} active label="preview"/>);
+  expect(callbacks).toHaveLength(1);
+  await act(async()=>callbacks.shift()!(1500));
+  expect(callbacks).toHaveLength(1);
+  act(()=>callbacks.shift()!(1516));
+  expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![0].src);
+ });
+ it('reuses the open Windows clip during a preview gap and cancels replay when playback becomes inactive',async()=>{
+  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
+  vi.mocked(invoke).mockResolvedValue('data:video/mp4;base64,fixture');
+  const play=vi.spyOn(HTMLMediaElement.prototype,'play').mockResolvedValue();
+  const {container,rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
+  await act(async()=>{});
+  const element=container.querySelector('video')!;
+  element.currentTime=10;
+  fireEvent.ended(element);
+  act(()=>vi.advanceTimersByTime(1000));
+  expect(container.querySelector('video')).toBe(element);
+  expect(element.currentTime).toBe(0);
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  fireEvent.ended(element);
+  rerender(<TemporalPreview preview={video} active={false} label="preview"/>);
+  act(()=>vi.advanceTimersByTime(1000));
+  expect(play).toHaveBeenCalledTimes(1);
  });
  it('ignores an outstanding open after playback is deactivated',async()=>{
   let settle!:(value:string)=>void;
