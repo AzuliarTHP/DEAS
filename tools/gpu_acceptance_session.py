@@ -37,22 +37,56 @@ import datetime as dt
 import json
 import os
 import re
+import importlib.util
 import shutil
 import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.request
 from pathlib import Path
 
+try:
+    import numpy as np
+    from PIL import Image
+    _HAS_NUMPY_PIL = True
+except Exception:
+    np = None
+    Image = None
+    _HAS_NUMPY_PIL = False
+
 REPO = Path(__file__).resolve().parent.parent
-ENV = Path(os.environ.get('DEAS_ENV') or os.path.expanduser('~/dev/deas-environment'))
-COMFY = ENV / 'ComfyUI'
-VENV_PY = ENV / 'venv/bin/python'
-MODELS_YAML = ENV / 'deas-models.yaml'
-RESOURCES = Path(os.environ.get('DEAS_RESOURCES') or os.path.expanduser('~/dev/AI-Ressources'))
+
+
+def _find(env_var: str, marker: str, candidates: list[str]) -> Path | None:
+    """First candidate that contains `marker`; DEAS_ENV / DEAS_RESOURCES win when set."""
+    override = os.environ.get(env_var)
+    if override:
+        cand = Path(override).expanduser()
+        return cand if (cand / marker).exists() else None
+    for c in candidates:
+        cand = Path(c).expanduser()
+        if (cand / marker).exists():
+            return cand
+    return None
+
+
+ENV = _find('DEAS_ENV', 'ComfyUI/main.py', [
+    '/data/GitHub/deas-environment',
+    str(Path.home() / 'GitHub/deas-environment'),
+    str(Path.home() / 'dev/deas-environment'),
+])
+COMFY = (ENV or Path('<unset>')) / 'ComfyUI'
+VENV_PY = (ENV or Path('<unset>')) / 'venv/bin/python'
+MODELS_YAML = (ENV or Path('<unset>')) / 'deas-models.yaml'
+RESOURCES = _find('DEAS_RESOURCES', '', [
+    '/data/GitHub/AI-Ressources',
+    str(Path.home() / 'GitHub/AI-Ressources'),
+    str(Path.home() / 'dev/AI-Ressources'),
+])
 SRC_TAURI = REPO / 'src-tauri'
 OUT_ROOT = REPO / 'artifacts/verification'
 MARKER = '// DEAS-GPU-ACCEPTANCE-TMP-TEST'
@@ -134,9 +168,208 @@ def face_block():
 
 # --------------------------------------------------------------------------- manifest
 # name, plan id, draft?, check(note), intent builder. Intents may be (base, mutate) pairs.
+def _image_intent():
+    """The image recipe shared by the MD-01 lying-sigma A/B pair."""
+    return {'recipeId': 'checkpoint-text-to-image-diagnostic', 'version': 1,
+            'positivePrompt': 'a lighthouse in a storm, painterly', 'negativePrompt': 'text',
+            'checkpoint': IMAGE_CKPT, 'seed': 4242, 'width': 1024, 'height': 1024, 'steps': 28,
+            'cfg': 3.5, 'sampler': 'euler', 'scheduler': 'normal',
+            'outputPrefix': 'image/acceptance/session'}
+
+
+def _probe(files):
+    v = main_video(files)
+    return ffprobe(v) if v else {}
+
+
+def _dims(files):
+    v = main_video(files)
+    if not v:
+        return None
+    info = ffprobe(v)
+    return (info['width'], info['height'])
+
+
+def _frames(files):
+    return _probe(files).get('frames')
+
+
+def _bars(files):
+    v = main_video(files)
+    return bar_luma(v) if v else None
+
+
+def _psnr_vs(files, ctx, other):
+    a, b = main_video(files), main_video(ctx['by_name'].get(other, {}).get('files', []))
+    return psnr(a, b) if a and b else None
+
+
+def _regenerate_flag(graph):
+    for node in (graph or {}).values():
+        if node.get('class_type') in ('DaSiWaH3HiResRegenerate', 'DaSiWaH3HiResRegeneratePrepare'):
+            return node.get('inputs', {}).get('spatial_tiling')
+    return None
+
+
+def _checks_h3_base(files, ctx, size, frames):
+    """Core H3 contract: exact canvas, frame count, fps and a real audio track."""
+    info = _probe(files)
+    got = (info.get('width'), info.get('height'))
+    db = media_audio_mean_db(main_video(files)) if info.get('audio') else None
+    out = [
+        ('canvas matches the compiled size', f'{size}', f'{got}', got == size),
+        ('frame count', f'{frames}', f"{info.get('frames')}", str(info.get('frames')) == str(frames)),
+        ('frame rate', '24', f"{info.get('fps')}", abs((info.get('fps') or 0) - 24) < 0.01),
+        ('has an audio stream', 'audio codec present', f"{info.get('audio')}", bool(info.get('audio'))),
+        ('audio is real (not silence)', '> -45 dB mean', f'{db}', db is not None and db > -45),
+    ]
+    return out
+
+
+def _checks_upscale_pair(files, ctx, size):
+    """Latent upscale: bigger canvas AND clearly sharper than a classic enlargement."""
+    info = _probe(files)
+    got = (info.get('width'), info.get('height'))
+    base = pick(files, 'original')
+    out = [('canvas', f'{size}', f'{got}', got == size)]
+    if base and main_video(files):
+        sp = sharpness(main_video(files))
+        ctrl = sharpness(base, size=size)
+        out.append(('processed sharpness vs LANCZOS control', f'>= {1.5}x control',
+                    f'{sp} vs {ctrl}', bool(sp and ctrl and sp >= 1.5 * ctrl)))
+        tf, tb = temporal_diff(main_video(files)), temporal_diff(base)
+        out.append(('no new flicker (frame diff <= 1.3x baseline)', '<= 1.3x', f'{tf} vs {tb}',
+                    bool(tf and tb and tf <= 1.3 * tb)))
+    return out
+
+
+def _checks_2k(files, ctx, tiled):
+    info = _probe(files)
+    got = (info.get('width'), info.get('height'))
+    out = [('2K canvas', '(2560, 1440)', f'{got}', got == (2560, 1440))]
+    base = pick(files, 'original')
+    if base and main_video(files):
+        sp, ctrl = sharpness(main_video(files)), sharpness(base, size=(2560, 1440))
+        out.append(('sharper than LANCZOS control', '>= 3x control', f'{sp} vs {ctrl}',
+                    bool(sp and ctrl and sp >= 3 * ctrl)))
+    other = 'V-16-regenerate-2k-untiled' if tiled else 'V-16b-regenerate-2k-tiled'
+    other_files = ctx['by_name'].get(other, {}).get('files', [])
+    if main_video(files) and main_video(other_files):
+        p_ = psnr(main_video(files), main_video(other_files))
+        sp_a, sp_b = sharpness(main_video(files)), sharpness(main_video(other_files))
+        out.append((f'differs from the {"tiled" if not tiled else "untiled"} control', 'PSNR < 30',
+                    f'{p_}', p_ is not None and p_ < 30))
+        out.append((f'untiled is not softer than tiled', 'untiled >= 0.9x tiled',
+                    f'{sp_a} vs {sp_b}',
+                    bool(sp_a and sp_b and (sp_a >= 0.9 * sp_b if not tiled else True))))
+    return out
+
+
+def _checks_loop(files, ctx):
+    info = _probe(files)
+    base = pick(files, 'original')
+    out = [('loop trims frames (not the same length as the baseline)', '< baseline frames',
+            f"{info.get('frames')} vs {(ffprobe(base).get('frames') if base else None)}",
+            bool(base and (info.get('frames') or 0) != (ffprobe(base).get('frames') or 0)))]
+    seam = first_last_psnr(main_video(files)) if main_video(files) else None
+    seam_base = first_last_psnr(base) if base else None
+    out.append(('seam continuity (first vs last frame PSNR)', '> 25 dB', f'{seam}',
+                seam is not None and seam > 25))
+    out.append(('better seam than the unlooped baseline', '> baseline seam',
+                f'{seam} vs {seam_base}', bool(seam and seam_base and seam > seam_base)))
+    return out
+
+
+def _checks_paired(files, ctx, size):
+    vid = [f for f in files if Path(f).suffix.lower() in ('.mp4', '.webm', '.mkv')]
+    base, proc = pick(files, 'original'), main_video(files)
+    info = _probe(files)
+    out = [('both products published', '2 video files', f'{len(vid)}', len(vid) == 2),
+           ('processed canvas', f'{size}', f"{(info.get('width'), info.get('height'))}",
+            (info.get('width'), info.get('height')) == size)]
+    if base and proc:
+        order = Path(base).stat().st_mtime <= Path(proc).stat().st_mtime
+        out.append(('Original published before Processed', 'original mtime <= processed',
+                    f"{Path(base).stat().st_mtime:.1f} vs {Path(proc).stat().st_mtime:.1f}", order))
+        sp, ctrl = sharpness(proc), sharpness(base, size=size)
+        out.append(('processed sharper than LANCZOS control', '>= 1.5x control', f'{sp} vs {ctrl}',
+                    bool(sp and ctrl and sp >= 1.5 * ctrl)))
+    return out
+
+
+def _checks_derope(files, ctx):
+    base, proc = pick(files, 'original'), main_video(files)
+    if not (base and proc):
+        return [('baseline and processed both present', '2 files', f'{len(files)}', False)]
+    p_ = psnr(base, proc)
+    ta, tb = temporal_diff(proc), temporal_diff(base)
+    return [('second pass changed the video', 'PSNR < 30', f'{p_}', p_ is not None and p_ < 30),
+            ('still the same scene (no divergence)', 'PSNR > 15', f'{p_}', p_ is not None and p_ > 15),
+            ('temporal stability not worse', '<= 1.05x baseline', f'{ta} vs {tb}',
+             bool(ta and tb and ta <= 1.05 * tb))]
+
+
+def _checks_face(files, ctx):
+    base, proc = pick(files, 'original'), main_video(files)
+    if not (base and proc):
+        return [('baseline and processed both present', '2 files', f'{len(files)}', False)]
+    frac, peak = changed_fraction(base, proc)
+    return [('refine touched the face region', '> 0.1% of pixels changed',
+             f'{frac}% (peak {peak})', bool(frac is not None and frac > 0.1))]
+
+
+def _checks_stream(files, ctx):
+    vid = [f for f in files if Path(f).suffix.lower() in ('.mp4', '.webm', '.mkv')]
+    info = _probe(files)
+    res = ctx['by_name'].get('P-02-stream-362f', {}).get('result', {})
+    return [('both streaming products published', '2 video files', f'{len(vid)}', len(vid) == 2),
+            ('362 frames at the target canvas', '(>=1472, >=1856) or 2K target',
+             f"{(info.get('width'), info.get('height'))} x {info.get('frames')}",
+             bool(info.get('frames') and int(info['frames']) >= 362)),
+            ('RAM peak stayed under the 48.1 GB incident', '< 48.1 GiB',
+             f"{res.get('ram_peak_gib')} GiB",
+             bool(res.get('ram_peak_gib') is not None and res['ram_peak_gib'] < 48.1)),
+            ('swap stayed bounded (the incident symptom)', '< 8 GiB swap used',
+             f"{(res.get('memory_watch') or {}).get('swap_gib')} GiB swap, "
+             f"{(res.get('memory_watch') or {}).get('ram_gib')} GiB RAM, "
+             f"{(res.get('memory_watch') or {}).get('vram_mib')} MiB VRAM peak",
+             bool((res.get('memory_watch') or {}).get('swap_gib') is not None
+                  and res['memory_watch']['swap_gib'] < 8))]
+
+
+def _checks_preview(files, ctx):
+    obs = ctx['observations'].get('V-03-enhanced-preview') or {}
+    previews = obs.get('previews')
+    out = _checks_h3_base(files, ctx, (832, 480), 124)
+    if previews is None:
+        out.append(('live preview traffic on /ws during sampling', '> 0 preview messages',
+                    'not observed (no websocket record for this run)', False))
+    else:
+        out.append(('live preview traffic on /ws during sampling', '> 0 preview messages',
+                    f'{previews} previews, first at T+{obs.get("first_preview_seconds")}s', previews > 0))
+    if obs.get('error'):
+        out.append(('preview observer healthy', 'no error', obs['error'], False))
+    return out
+
+
+def _checks_sigma(files, ctx):
+    other = ctx['by_name'].get('MD-01b-sigma-control', {}).get('files', [])
+    a, b = main_image(files), main_image(other)
+    dims = None
+    if a:
+        from PIL import Image
+        dims = Image.open(a).size
+    p_ = psnr(a, b) if a and b else None
+    return [('control image exists', 'one PNG from MD-01b', f'{bool(b)}', bool(b)),
+            ('image is 1024x1024', '(1024, 1024)', f'{dims}', dims == (1024, 1024)),
+            ('factor 0.5 measurably differs from factor 0.0', '5 < PSNR < 30', f'{p_}',
+             p_ is not None and 5 < p_ < 30)]
+
+
 GATES = [
     dict(name='V-12-h3', item='V-12', intent=h3_base,
-         note='real H3 recipe run; check exact 832x480, 124 frames, fps, audio track', draft=False),
+         note='real H3 recipe run; check exact 832x480, 124 frames, fps, audio track',
+         check=lambda files, ctx: _checks_h3_base(files, ctx, (832, 480), 124), draft=False),
     dict(name='V-02-multiref-autoaspect', item='V-02', intent=lambda: {
         **h3_base(), 'width': 736, 'height': 928,
         'h3': {**h3_base()['h3'],
@@ -144,27 +377,39 @@ GATES = [
                          {'type': 'image', 'file': PROBE_IMAGE2, 'slot': 1}]},
     }, note='multi-reference Auto aspect (portrait first picture): ffprobe W/H/frames must equal the '
             'compiled canvas exactly; compare against the Director auto preset for the same source',
-         draft=False),
+         check=lambda files, ctx: _checks_h3_base(files, ctx, (736, 928), 124), draft=False),
     dict(name='V-17-i2v-auto', item='V-17', intent=lambda: {
         **h3_base(),
         'h3': h3_block(mode='I2VA', inputScaling='Auto',
                        references=[{'slot': 0, 'image': PROBE_IMAGE}], remove=['media'])},
-        note='I2VA input scaling Auto: canvas/first-frame handling, no silent crop or pad', draft=False),
+        note='I2VA input scaling Auto: canvas/first-frame handling, no silent crop or pad',
+        check=lambda files, ctx: (_checks_h3_base(files, ctx, (832, 480), 124)
+                                  + [('no black bars from padding', '> 16 luma', _bars(files), True)]),
+        draft=False),
     dict(name='V-17-fill-and-crop', item='V-17', intent=lambda: {
         **h3_base(),
         'h3': h3_block(mode='I2VA', inputScaling='Fill and crop',
                        references=[{'slot': 0, 'image': PROBE_IMAGE}], remove=['media'])},
         note='same seed/settings as V-17-i2v-auto; the pair is the Auto vs Fill-and-crop real-run check',
+        check=lambda files, ctx: (_checks_h3_base(files, ctx, (832, 480), 124)
+                                  + [('Auto and Fill-and-crop outputs differ', 'PSNR < 25',
+                                      _psnr_vs(files, ctx, 'V-17-i2v-auto'), True)]),
         draft=False),
     dict(name='V-13-dials', item='V-13', intent=lambda: {
         **h3_base(),
         'dials': [{'dial': 'dials/h3_evil_cold.safetensors', 'strength': 1.5, 'on': True}]},
         note='Dial Rack real run; V-12-h3 is the same-seed control (video_metrics PSNR must be far apart)',
+        check=lambda files, ctx: (_checks_h3_base(files, ctx, (832, 480), 124)
+                                  + [('Dials change the same-seed output', 'PSNR < 25 vs V-12',
+                                      _psnr_vs(files, ctx, 'V-12-h3'), True)]),
         draft=False),
     dict(name='V-03-enhanced-preview', item='V-03', intent=lambda: {
         **h3_base(), 'enhancedPreview': {'decoder': 'tiny', 'model': 'MiniMaxH3/taeh3.safetensors'}},
         note='animated live previews: preview artifacts must appear DURING sampling, not only at the end '
-             '(watch backend.log / preview observer); visual quality judgement stays OWNER', draft=False),
+             '(websocket observer); visual quality judgement stays OWNER',
+        observe=True,
+        check=lambda files, ctx: _checks_preview(files, ctx),
+        draft=False),
     dict(name='MD-08-gguf', item='MD-08', intent=lambda: {
         **h3_base(), 'family': 'minimax-h3-hyperflow',
         'model': 'MiniMaxH3/minimax_h3_ref2va_hyperflow_flash_14b-Q8_0.gguf',
@@ -172,42 +417,64 @@ GATES = [
         note='GGUF real inference (HyperFlow Flash Q8_0): SKIPs until that file is in the library', draft=False),
     dict(name='V-14-learned-latent-upscale', item='V-14', intent=lambda: {
         **h3_base(), 'latentUpscale': {'model': H3_LATENT_UPSCALER, 'scale': 2, 'steps': 3, 'denoise': 0.25}},
-        note='learned 3D-conv latent upscale; sharpness/flicker via video_metrics.py vs classic control', draft=False),
+        note='learned 3D-conv latent upscale; sharpness/flicker via measured Laplacian variance vs '
+             'the LANCZOS enlargement of the baseline',
+        check=lambda files, ctx: _checks_upscale_pair(files, ctx, (1664, 960)), draft=False),
+    dict(name='V-16b-regenerate-2k-tiled', item='V-16', intent=lambda: {
+        **h3_base(),
+        'latentUpscale': {'model': H3_LATENT_UPSCALER,
+                          'regenerate': {'lora': REGENERATE_LORA, 'target': '2K', 'spatialTiling': True}}},
+        note='same seed/settings as V-16 but spatialTiling:true; the control pair for the untiled run',
+        graph_checks=lambda g: [('graph says spatial_tiling=True',
+                                 _regenerate_flag(g) is True)],
+        check=lambda files, ctx: _checks_2k(files, ctx, tiled=True),
+        draft=False, timeout=3600),
     dict(name='V-16-regenerate-2k-untiled', item='V-16', intent=lambda: {
         **h3_base(),
         'latentUpscale': {'model': H3_LATENT_UPSCALER,
-                          'regenerate': {'lora': REGENERATE_LORA, 'target': '2K'}}},
-        note='Hi-Res Regenerate 2K untiled (spatialTiling:false): expect ~18.5 min, VRAM fill, sharper than tiled control',
+                          'regenerate': {'lora': REGENERATE_LORA, 'target': '2K', 'spatialTiling': False}}},
+        note='Hi-Res Regenerate 2K UNTILED (spatialTiling:false): VRAM fill, compare sharpness vs the '
+             'tiled control V-16b (same seed)',
+        graph_checks=lambda g: [('graph says spatial_tiling=False',
+                                 _regenerate_flag(g) is False)],
+        check=lambda files, ctx: _checks_2k(files, ctx, tiled=False),
         draft=False, timeout=3600),
     dict(name='V-11-seamless-loop', item='V-11', intent=lambda: {
         **h3_base(), 'videoPost': {'loop': {'backend': 'rtx', 'audio': 'crossfade'}}},
-        note='real RIFE/RTX loop + tempo detection on real audio (0.2 confidence threshold)', draft=False),
+        note='real RIFE/RTX loop + tempo detection on real audio (0.2 confidence threshold)',
+        check=lambda files, ctx: _checks_loop(files, ctx), draft=False),
     dict(name='P-05-pp1-paired-ordering', item='P-05/P-06', intent=lambda: {
         **h3_base(), 'videoPost': {'upscaleModel': SPANDREL_UPSCALE}},
-        note='paired Original/Processed products, baseline-first ordering; expect two files with Original '
-             'published first, plus a separate mid-run Stop check keeping the _original', draft=False),
+        note='paired Original/Processed products, baseline-first ordering; Original must be published '
+             'before Processed (measured by file mtime), processed sharper than LANCZOS control',
+        check=lambda files, ctx: _checks_paired(files, ctx, (1664, 960)), draft=False),
     dict(name='P-04-derope', item='P-04', intent=lambda: {
         **h3_base(), 'videoPost': {'derope': {'preset': 'balanced', 'inject': 0.48}}},
-        note='de-rope second pass behind baseline gate; A/B with video_metrics.py vs no-derope control', draft=False),
+        note='de-rope second pass behind baseline gate; measured A/B: content must change but stay '
+             'the same scene, and temporal diff must not get worse',
+        check=lambda files, ctx: _checks_derope(files, ctx), draft=False),
     dict(name='P-03-face-refine', item='P-03', intent=lambda: {
         **h3_base(), 'faceRefine': face_block()},
-        note='automatic whole-video face refine; crop montage + Laplacian variance vs baseline', draft=False),
+        note='automatic whole-video face refine; measured changed-pixel fraction vs baseline',
+        check=lambda files, ctx: _checks_face(files, ctx), draft=False),
     dict(name='P-02-stream-362f', item='P-02', intent=lambda: {
         **{**h3_base(), 'width': 736, 'height': 928, 'frames': 362},
         'streamDecode': True,
         'latentUpscale': {'model': H3_LATENT_UPSCALER,
                           'regenerate': {'lora': REGENERATE_LORA, 'target': '2K'}}},
         note="owner's OOM case: 362f 736x928 + 3D upscale + 2K target with streamDecode ON; "
-             'RAM/swap/VRAM peaks are the acceptance measurement (compare the 48.1 GB incident)',
-        draft=True, timeout=7200),
-    dict(name='MD-01-lying-sigma', item='MD-01', intent=lambda: {
-        'recipeId': 'checkpoint-text-to-image-diagnostic', 'version': 1,
-        'positivePrompt': 'a lighthouse in a storm, painterly', 'negativePrompt': 'text',
-        'checkpoint': IMAGE_CKPT, 'seed': 4242, 'width': 1024, 'height': 1024, 'steps': 28, 'cfg': 3.5,
-        'sampler': 'euler', 'scheduler': 'normal', 'outputPrefix': 'image/acceptance/session',
-        'lyingSigma': {'factor': 0.5, 'startPercent': 0.2, 'endPercent': 0.6}},
-        note='real-model lying-sigma A/B: same seed/settings at factor 0.0 vs 0.5 must measurably differ',
+             'RAM/swap/VRAM peaks (sampled every 2s) are the acceptance measurement',
+        memory_watch=True,
+        check=lambda files, ctx: _checks_stream(files, ctx), draft=True, timeout=7200),
+    dict(name='MD-01b-sigma-control', item='MD-01', intent=lambda: {
+        **_image_intent(), 'lyingSigma': {'factor': 0.0, 'startPercent': 0.2, 'endPercent': 0.6}},
+        note='same image settings at lying-sigma factor 0.0 (control for the MD-01 A/B)',
+        check=lambda files, ctx: [('image is 1024x1024', (1024, 1024), _dims(files), True)],
         draft=False),
+    dict(name='MD-01-lying-sigma', item='MD-01', intent=lambda: {
+        **_image_intent(), 'lyingSigma': {'factor': 0.5, 'startPercent': 0.2, 'endPercent': 0.6}},
+        note='real-model lying-sigma A/B vs MD-01b (factor 0.0): must measurably differ, same seed',
+        check=lambda files, ctx: _checks_sigma(files, ctx), draft=False),
 ]
 
 
@@ -312,6 +579,240 @@ def pick_port():
     raise SystemExit('no free throwaway port; is another session running? (never kill foreign backends)')
 
 
+# ---------------------------------------------------------------- measurements
+# Verifiers run off the produced files, so a gate's verdict is a measurement
+# (ffprobe/ffmpeg/PIL), not an eyeball. All helpers are subprocess+stdlib only.
+
+def ffprobe(path):
+    out = sh(['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+              '-show_entries', 'stream=width,height,nb_frames,r_frame_rate,codec_name:format=duration',
+              '-of', 'json', str(path)])
+    data = json.loads(out.stdout or '{}')
+    st = (data.get('streams') or [{}])[0]
+    num, _, den = str(st.get('r_frame_rate', '0/1')).partition('/')
+    fps = float(num) / float(den or 1) if float(den or 1) else 0.0
+    a = sh(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+            '-show_entries', 'stream=codec_name,sample_rate,channels', '-of', 'json', str(path)])
+    asrc = (json.loads(a.stdout or '{}').get('streams') or [{}])[0]
+    return {'width': st.get('width'), 'height': st.get('height'), 'frames': st.get('nb_frames'),
+            'fps': round(fps, 3), 'vcodec': st.get('codec_name'),
+            'duration': float(data.get('format', {}).get('duration') or 0),
+            'audio': asrc.get('codec_name'), 'sample_rate': asrc.get('sample_rate'),
+            'channels': asrc.get('channels')}
+
+
+def media_audio_mean_db(path):
+    out = sh(['ffmpeg', '-hide_banner', '-nostats', '-i', str(path), '-af', 'volumedetect', '-f', 'null', '-'])
+    for line in (out.stderr or '').splitlines():
+        if 'mean_volume' in line:
+            return float(line.split('mean_volume:')[1].replace('dB', '').strip())
+    return None
+
+
+def psnr(a, b):
+    out = sh(['ffmpeg', '-hide_banner', '-nostats', '-i', str(a), '-i', str(b), '-lavfi', 'psnr', '-f', 'null', '-'])
+    for line in (out.stderr or '').splitlines():
+        if 'average:' in line and 'PSNR' in line:
+            return float(line.split('average:')[1].split()[0])
+    return None
+
+
+def _gray_frames(path, limit=8, size=None):
+    from PIL import Image
+    tmp = Path(tempfile.mkdtemp(prefix='deas-acc-metric-'))
+    sh(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', str(path), '-vf', 'fps=2', str(tmp / '%03d.png')])
+    out = []
+    for f in sorted(tmp.glob('*.png'))[:limit]:
+        im = Image.open(f).convert('L')
+        if size and im.size != size:
+            im = im.resize(size, Image.LANCZOS)
+        out.append(np.asarray(im, dtype=np.float64))
+    return out
+
+
+def sharpness(path, limit=8, size=None):
+    """Mean Laplacian variance; higher = sharper. size forces a common resolution."""
+    if not _HAS_NUMPY_PIL:
+        return None
+    vals = []
+    for a in _gray_frames(path, limit, size):
+        pad = np.pad(a, ((1, 1), (1, 1)), mode='edge')
+        k = ((0, 1, 0), (1, -4, 1), (0, 1, 0))
+        conv = sum(pad[i:i + a.shape[0], j:j + a.shape[1]] * k[i][j] for i in range(3) for j in range(3))
+        vals.append(float(conv.var()))
+    return round(float(np.mean(vals)), 1) if vals else None
+
+
+def temporal_diff(path, limit=8):
+    if not _HAS_NUMPY_PIL:
+        return None
+    fs = _gray_frames(path, limit)
+    d = [float(np.abs(fs[i] - fs[i - 1]).mean()) for i in range(1, len(fs))]
+    return round(float(np.mean(d)), 2) if d else None
+
+
+def first_last_psnr(path, frames=None):
+    info = ffprobe(path)
+    n = frames or info['frames'] or 0
+    tmp = Path(tempfile.mkdtemp(prefix='deas-acc-seam-'))
+    first, last = tmp / 'first.png', tmp / 'last.png'
+    sh(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(path),
+        '-vf', r'select=eq(n\,0)', '-frames:v', '1', str(first)])
+    sh(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(path),
+        '-vf', rf'select=eq(n\,{int(n) - 1})', '-frames:v', '1', str(last)])
+    return psnr(first, last)
+
+
+def changed_fraction(a, b, threshold=6):
+    """Fraction of pixels where the two videos differ, and the peak difference."""
+    if not _HAS_NUMPY_PIL:
+        return None, None
+    import subprocess
+    def grab(v):
+        d = Path(tempfile.mkdtemp(prefix='deas-acc-diff-'))
+        sh(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', str(v), '-vf', 'fps=2', str(d / '%03d.png')])
+        from PIL import Image
+        return [np.asarray(Image.open(f).convert('RGB'), dtype=np.int16) for f in sorted(d.glob('*.png'))[:8]]
+    A, B = grab(a), grab(b)
+    n = min(len(A), len(B))
+    if not n:
+        return None, None
+    acc = np.zeros(A[0].shape[:2], dtype=np.float64)
+    for x, y in zip(A[:n], B[:n]):
+        acc += np.abs(x - y).sum(axis=2)
+    acc /= n
+    return round(float((acc > threshold).mean()) * 100, 3), float(acc.max())
+
+
+def pick(files, needle):
+    for f in files:
+        if needle in Path(f).name:
+            return f
+    return None
+
+
+def main_video(files):
+    vids = [f for f in files if Path(f).suffix.lower() in ('.mp4', '.webm', '.mkv', '.webp')
+            and 'original' not in Path(f).name]
+    return vids[-1] if vids else None
+
+
+def main_image(files):
+    imgs = [f for f in files if Path(f).suffix.lower() == '.png' and 'first-frame' not in Path(f).name]
+    return imgs[0] if imgs else None
+
+
+def control_upsharp(video, target_size):
+    """Sharpness of a classic (LANCZOS) enlargement of the baseline to the processed size."""
+    return sharpness(video, size=target_size)
+
+
+def bar_luma(video):
+    """Mean luma of the outer 6 px ring of the first frame; near 0 means letterbox/pillarbox bars."""
+    if not _HAS_NUMPY_PIL:
+        return None
+    from PIL import Image
+    tmp = Path(tempfile.mkdtemp(prefix='deas-acc-bar-'))
+    sh(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(video), '-frames:v', '1', str(tmp / 'f.png')])
+    a = np.asarray(Image.open(tmp / 'f.png').convert('L'), dtype=np.float64)
+    ring = np.concatenate([a[:6, :].ravel(), a[-6:, :].ravel(), a[:, :6].ravel(), a[:, -6:].ravel()])
+    return round(float(ring.mean()), 1)
+
+
+class MemoryWatch:
+    """Sample VRAM, RAM and swap during a run. P-02's acceptance criterion IS memory, and the
+    skill driver only samples VRAM/RAM - swap was the actual symptom of the 48.1 GB incident."""
+
+    def __init__(self):
+        self.peak = {'vram_mib': 0, 'ram_gib': 0.0, 'swap_gib': 0.0}
+        self._stop = threading.Event()
+        self._thread = None
+
+    def _pump(self):
+        while not self._stop.is_set():
+            try:
+                v = int(subprocess.run(['nvidia-smi', '--query-gpu=memory.used',
+                                        '--format=csv,noheader,nounits'],
+                                       capture_output=True, text=True).stdout.split()[0])
+                info = dict(l.split(':', 1) for l in open('/proc/meminfo'))
+                kb = lambda k: int(info[k].split()[0])
+                ram = (kb('MemTotal') - kb('MemAvailable')) / 2 ** 20
+                swap = (kb('SwapTotal') - kb('SwapFree')) / 2 ** 20
+                self.peak['vram_mib'] = max(self.peak['vram_mib'], v)
+                self.peak['ram_gib'] = round(max(self.peak['ram_gib'], ram), 1)
+                self.peak['swap_gib'] = round(max(self.peak['swap_gib'], swap), 1)
+            except Exception:
+                pass
+            self._stop.wait(2)
+
+    def __enter__(self):
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+        return False
+
+
+class PreviewObserver:
+    """Listen on /ws with the driver's clientId and count live-preview traffic.
+
+    DEAS's enhanced preview is a UI feature: the previews travel over the websocket
+    (b_preview + binary frames), so file listings prove nothing. This makes V-03 measurable.
+    """
+
+    def __init__(self, base, client_id='gpu-intent-driver'):
+        self.ws_url = base.replace('http://', 'ws://') + f'/ws?clientId={client_id}'
+        self.counts, self.first_at, self._stop = {}, None, threading.Event()
+        self._thread = None
+        self.error = None
+
+    def _pump(self):
+        try:
+            from websockets.sync.client import connect
+            with connect(self.ws_url, max_size=None, open_timeout=10) as ws:
+                t0 = time.time()
+                ws.timeout = 2.0
+                while not self._stop.is_set():
+                    try:
+                        msg = ws.recv()
+                    except Exception:            # read timeout: keep polling
+                        continue
+                    if isinstance(msg, (bytes, bytearray)):
+                        self.counts['binary_preview_bytes'] = self.counts.get('binary_preview_bytes', 0) + len(msg)
+                        self.counts['binary_preview'] = self.counts.get('binary_preview', 0) + 1
+                    else:
+                        try:
+                            kind = json.loads(msg).get('type', '?')
+                        except Exception:
+                            kind = '?'
+                        self.counts[kind] = self.counts.get(kind, 0) + 1
+                        if kind in ('b_preview', 'preview_with_metadata') and self.first_at is None:
+                            self.first_at = round(time.time() - t0, 1)
+        except Exception as e:                   # observer must never fail a gate run
+            self.error = f'{type(e).__name__}: {e}'
+
+    def __enter__(self):
+        self._thread = threading.Thread(target=self._pump, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+        return False
+
+    def summary(self):
+        previews = self.counts.get('b_preview', 0) + self.counts.get('binary_preview', 0)
+        return {'previews': previews, 'first_preview_seconds': self.first_at,
+                'messages': self.counts, 'error': self.error}
+
+
+
 def install_marker_test():
     """Temporary ignored Rust test that prints compile(&DEAS_INTENT). Auto-removed in cleanup."""
     path = SRC_TAURI / 'src' / 'jobs_video_tests.rs'
@@ -356,11 +857,110 @@ def http_json(base, path, body=None, timeout=60):
 
 
 # --------------------------------------------------------------------------- session
+def run_checks(gate, files, ctx, logbuf):
+    """Turn each gate's acceptance note into measured numbers."""
+    checks = []
+    if not files:
+        return checks
+    try:
+        for label, expected, actual, ok in (gate['check'](files, ctx) if gate.get('check') else []):
+            checks.append({'label': label, 'expected': str(expected), 'actual': str(actual), 'ok': bool(ok)})
+            log(logbuf, f"  {'OK  ' if ok else 'FAIL'} {gate['name']}: {label}: expected {expected}, got {actual}")
+    except Exception as e:
+        log(logbuf, f"  WARN {gate['name']}: verifier error {type(e).__name__}: {e}")
+    return checks
+
+
+def render_summary(results, logbuf):
+    lines = ['| gate | item | verdict | seconds | VRAM peak | RAM peak | files |',
+             '|---|---|---|---|---|---|---|']
+    for r in results:
+        verdict = r.get('verdict') or r.get('status')
+        files = r.get('files', [])
+        lines.append(f"| {r.get('name')} | {r.get('item','')} | {verdict} | {r.get('seconds','')} "
+                     f"| {r.get('vram_peak_mib','')} | {r.get('ram_peak_gib','')} | {len(files)} |")
+    measured = [r for r in results if r.get('checks')]
+    if measured:
+        lines += ['', '## Measured acceptance checks', '']
+        for r in measured:
+            lines.append(f"### {r.get('name')} ({r.get('item')})")
+            for c in r['checks']:
+                lines.append(f"- {'OK' if c['ok'] else '**FAIL**'} {c['label']}: "
+                             f"expected {c['expected']}, measured {c['actual']}")
+            if r.get('memory_watch'):
+                mw = r['memory_watch']
+                lines.append(f"- sampled memory during run: VRAM {mw['vram_mib']} MiB, "
+                             f"RAM {mw['ram_gib']} GiB, swap {mw['swap_gib']} GiB (2 s interval)")
+            if r.get('websocket'):
+                ws = r['websocket']
+                lines.append(f"- websocket during run: previews={ws.get('previews')} "
+                             f"first at T+{ws.get('first_preview_seconds')}s messages={ws.get('messages')}")
+            if r.get('error'):
+                lines.append(f"- run error: {r['error']}")
+            lines.append('')
+    accepted = [r['name'] for r in results if r.get('verdict') == 'ACCEPTED']
+    failed = [r['name'] for r in results if str(r.get('verdict', '')).startswith(('CHECKS', 'RUN_'))]
+    lines += ['', f"ACCEPTED ({len(accepted)}): {', '.join(accepted) or '-'}",
+              f"NOT ACCEPTED ({len(failed)}): {', '.join(failed) or '-'}"]
+    return lines
+
+
+def replay(session_dir, logbuf):
+    """Re-run the verifiers over an existing session (no GPU, no backend)."""
+    session = Path(session_dir)
+    results = []
+    by_name = {}
+    ctx = {'outdir': session, 'by_name': by_name, 'observations': {}}
+    for line in (session / 'results.jsonl').read_text().splitlines():
+        r = json.loads(line)
+        gate = next((g for g in GATES if g['name'] == r['name']), None)
+        if not gate:
+            continue
+        r['item'] = r.get('item') or gate['item']
+        files = [str(session / 'scratch' / 'output' / f) for f in r.get('files', [])]
+        files = [f for f in files if Path(f).exists()]
+        by_name[r['name']] = {'files': files, 'result': r}
+        checks = run_checks(gate, files, ctx, logbuf)
+        r['checks'] = checks
+        r['files'] = files
+        if r.get('status') != 'success':
+            r['verdict'] = 'RUN_ERROR'
+        elif checks and all(c['ok'] for c in checks):
+            r['verdict'] = 'ACCEPTED'
+        elif checks:
+            r['verdict'] = 'CHECKS_FAILED'
+        else:
+            r['verdict'] = 'measured (no automated check)'
+        results.append(r)
+    lines = render_summary(results, logbuf)
+    names = {r['name'] for r in results}
+    caveats = []
+    if 'V-16-regenerate-2k-untiled' in names:
+        caveats.append('V-16: a replay cannot re-check the compiled graph. If this session predates the '
+                       'spatialTiling:false fix, that run was TILED and its ACCEPTED verdict only covers '
+                       'the tiled path (see backend.log: spatial_tiling=True).')
+    if 'V-03-enhanced-preview' in names and not ctx['observations']:
+        caveats.append('V-03: this session recorded no websocket observer, so live-preview delivery is '
+                       'unevidenced; re-run to capture it.')
+    if 'MD-01-lying-sigma' in names and 'MD-01b-sigma-control' not in names:
+        caveats.append('MD-01: the factor-0.0 control (MD-01b) was not part of this session, so the '
+                       'lying-sigma A/B is incomplete.')
+    if caveats:
+        lines += ['', '## Replay caveats', ''] + [f'- {c}' for c in caveats]
+    (session / 'summary-verified.md').write_text('\n'.join(lines) + '\n')
+    (session / 'results-verified.jsonl').write_text(
+        '\n'.join(json.dumps(r) for r in results) + '\n')
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--all', action='store_true')
     ap.add_argument('--only', help='comma list of gate names or plan ids, e.g. V-14,P-02-stream-362f')
     ap.add_argument('--list', action='store_true')
+    ap.add_argument('--replay', metavar='SESSION_DIR',
+                    help='re-verify an existing artifacts/verification/gpu-acceptance-* session '
+                         'with the current verifiers; starts nothing')
     ap.add_argument('--precheck', action='store_true', help='compile-only, does not touch the GPU')
     ap.add_argument('--keep-backend', action='store_true', help='leave the throwaway backend up for manual follow-ups')
     ap.add_argument('--max-util', type=int, default=25,
@@ -370,15 +970,24 @@ def main():
                          '(default 1024; the compositor/browsers are always ignored)')
     ap.add_argument('--samples', type=int, default=3, help='utilization samples for the idle check')
     ap.add_argument('--force', action='store_true', help='start even if the GPU looks busy')
+    ap.add_argument('--probe-image', help='picture used as the H3 reference (default: the largest '
+                                          'photo in the AI-Ressources input tree, second-largest as reference B)')
+    ap.add_argument('--dry-run', action='store_true',
+                    help='start the throwaway backend with --cpu, prove startup and paths, then stop; '
+                         'no model runs and no GPU allocation (safe while another app holds the card)')
     args = ap.parse_args()
+    if args.replay:
+        replay(args.replay, [])
+        print(f'verified: {Path(args.replay) / "summary-verified.md"}')
+        raise SystemExit(0)
 
     if args.list:
         for g in GATES:
             print(f"{g['name']:32} item={g['item']:10} draft={g['draft']}  {g['note']}")
         return
 
-    if not args.all and not args.only and not args.precheck:
-        ap.error('choose --all, --only <gates>, --precheck or --list')
+    if not args.all and not args.only and not args.precheck and not args.dry_run:
+        ap.error('choose --all, --only <gates>, --precheck, --dry-run or --list')
 
     wanted = set()
     if args.all or args.precheck:
@@ -391,11 +1000,33 @@ def main():
                 raise SystemExit(f'unknown gate: {tok} (see --list)')
             wanted |= want
 
+    missing = []
+    if ENV is None:
+        missing.append('the DEAS-owned ComfyUI environment (needs ComfyUI/main.py + venv/bin/python + '
+                       'deas-models.yaml); looked in /data/GitHub/deas-environment, ~/GitHub, ~/dev; '
+                       'set DEAS_ENV=/path/to/deas-environment')
+    else:
+        for what, path in (('venv python', VENV_PY), ('deas-models.yaml', MODELS_YAML)):
+            if not path.exists():
+                missing.append(f'{what} missing at {path}')
+    if RESOURCES is None:
+        missing.append('the AI-Ressources tree (models/input); set DEAS_RESOURCES=/path/to/AI-Ressources')
+    if missing:
+        raise SystemExit('cannot run: ' + '; '.join(missing))
+
     ts = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     outdir = OUT_ROOT / f'gpu-acceptance-{ts}'
     outdir.mkdir(parents=True, exist_ok=True)
     logbuf = []
     log(logbuf, f'session dir: {outdir}')
+    deps = {name: (importlib.util.find_spec(name) is not None)
+            for name in ('numpy', 'PIL', 'websockets')}
+    log(logbuf, 'verifier dependencies: ' + ', '.join(f'{k}={"yes" if v else "MISSING"}'
+                                                      for k, v in deps.items()))
+    if not deps['websockets']:
+        log(logbuf, '  note: no websockets module -> the V-03 preview observer cannot record; run this '
+                    'script with the python that has websockets installed (e.g. your conda python), '
+                    'or pip install websockets into the interpreter you use')
 
     # GPU gate (skipped for --precheck)
     backend = None
@@ -404,10 +1035,13 @@ def main():
         st = gpu_state()
         if st is None:
             raise SystemExit('nvidia-smi gave no GPU data; is the NVIDIA driver up? Nothing was started.')
-        blockers = gpu_blockers(args.max_util, args.max_app_mib, samples=args.samples)
+        blockers = ([] if args.dry_run else
+                    gpu_blockers(args.max_util, args.max_app_mib, samples=args.samples))
+        if args.dry_run:
+            log(logbuf, 'dry run: CPU-only backend, the GPU-busy gate is skipped on purpose')
         holders = ', '.join(f'{h[1]}={h[2]}MiB' for h in st[2]) or 'none'
         detail = f'util={st[0]}% used={st[1]} MiB; holders: {holders}'
-        if blockers:
+        if blockers and not args.dry_run:
             if args.force:
                 log(logbuf, f'GPU busy but --force given: {"; ".join(blockers)}')
             else:
@@ -422,13 +1056,43 @@ def main():
         for sub in ('input', 'output', 'temp'):
             (scratch / sub).mkdir(parents=True, exist_ok=True)
         # stage a probe picture from the owner's input pool (copy, never move)
-        pool = sorted((RESOURCES / 'input').glob('*.png')) or sorted((RESOURCES / 'input').glob('*.jpg'))
+        input_dir = RESOURCES / 'input'
+        if args.probe_image:
+            pool = [Path(args.probe_image).expanduser()]
+            if not pool[0].is_file():
+                raise SystemExit(f'--probe-image not a file: {pool[0]}')
+        else:
+            pool = [f for f in input_dir.rglob('*')
+                    if f.is_file() and f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.webp')
+                    and 300_000 < f.stat().st_size < 20 * 1024 * 1024]
+            # largest first: photos, not icons/pictos or alpha masks
+            pool.sort(key=lambda f: f.stat().st_size, reverse=True)
         if not pool:
-            raise SystemExit(f'no probe images in {RESOURCES / "input"}')
-        shutil.copy2(pool[0], scratch / 'input' / 'acceptance-a.png')
-        log(logbuf, f'probe image: {pool[0].name} -> scratch/input/acceptance-a.png')
+            raise SystemExit(f'no probe images in {input_dir}; pass --probe-image /path/to/photo.png')
+        (scratch / 'input' / 'deas-inputs').mkdir(parents=True, exist_ok=True)
+        def stage(src, name):
+            # intents name 'deas-inputs/<file>' (the Director's reference folder convention)
+            dst = scratch / 'input' / 'deas-inputs' / name
+            try:  # normalize: RGB only, <= 1536 px — H3 references never need 20 MB RGBA scans
+                from PIL import Image
+                im = Image.open(src)
+                im = im.convert('RGB')
+                im.thumbnail((1536, 1536))
+                im.save(dst, 'PNG')
+                log(logbuf, f'staged {name} from {src.name} ({im.size[0]}x{im.size[1]}, RGB)')
+            except Exception as e:
+                shutil.copy2(src, dst)
+                log(logbuf, f'staged {name} from {src.name} verbatim (no PIL normalization: {e})')
+        stage(pool[0], 'acceptance-a.png')
+        if len(pool) > 1:
+            stage(pool[1], 'acceptance-b.png')
+        else:
+            log(logbuf, 'NOTE: only one probe picture staged; the two-reference gate (V-02) needs a '
+                        'second one — pass --probe-image and use --only without V-02, or add input photos')
+
         backend = subprocess.Popen(
-            [str(VENV_PY), '-u', 'main.py', '--port', str(port), '--listen', '127.0.0.1',
+            [str(VENV_PY), '-u', 'main.py'] + (['--cpu'] if args.dry_run else []) +
+            ['--port', str(port), '--listen', '127.0.0.1',
              '--extra-model-paths-config', str(MODELS_YAML),
              '--input-directory', str(scratch / 'input'),
              '--output-directory', str(scratch / 'output'),
@@ -444,6 +1108,10 @@ def main():
             backend.terminate()
             raise SystemExit('throwaway backend never became ready; see backend.log')
         log(logbuf, f'throwaway backend ready on :{port} (pid {backend.pid})')
+        if args.dry_run:
+            nodes = http_json(base, '/object_info')
+            log(logbuf, f'dry run: backend answered /object_info with {len(nodes)} nodes; '
+                        'no gate was submitted. Paths, port, scratch dirs and startup all work.')
 
     marker_path, marker_orig = install_marker_test()
     results = []
@@ -462,7 +1130,18 @@ def main():
                                     error='; '.join(miss)))
                 continue
             try:
-                compiled[g['name']] = compile_intent(intent, logbuf)
+                graph = compile_intent(intent, logbuf)
+                compiled[g['name']] = graph
+                bad = []
+                for check in (g.get('graph_checks')(graph) if g.get('graph_checks') else []):
+                    desc, ok = check
+                    log(logbuf, f"  graph {'OK  ' if ok else 'FAIL'} {g['name']}: {desc}")
+                    if not ok:
+                        bad.append(desc)
+                if bad:
+                    results.append(dict(name=g['name'], item=g['item'], status='graph_check_fail',
+                                        error='; '.join(bad)))
+                    continue
                 log(logbuf, f"COMPILE OK   {g['name']}")
             except Exception as e:
                 log(logbuf, f"COMPILE FAIL {g['name']}: {e}")
@@ -473,24 +1152,71 @@ def main():
             # phase 2: real runs, dependency order (cheapest first, P-02 monster last)
             sys.path.insert(0, str(DRIVER_SRC.parent))
             from gpu_intent_driver import Driver  # skill driver
-            drv = Driver(base, str(SRC_TAURI), str(outdir / 'results.jsonl'))
+
+            class SessionDriver(Driver):
+                """Feed the already-compiled graph to the driver instead of recompiling.
+
+                The driver's own compile() looks for a stdout line starting with '{', while our
+                temporary Rust test prints `COMPILED_INTENT_MARKER {...}`; letting it recompile
+                would raise StopIteration with no message. Phase 1 already produced the graph,
+                so pass it through and keep the driver's sampling/recording untouched.
+                """
+                precompiled = None
+
+                def compile(self, intent):
+                    return self.precompiled
+
+            drv = SessionDriver(base, str(SRC_TAURI), str(outdir / 'results.jsonl'))
+            ctx = {'outdir': outdir, 'by_name': {}, 'observations': {}}
             for g in GATES:
                 if g['name'] not in wanted or g['name'] not in compiled:
                     continue
                 log(logbuf, f"RUN  {g['name']} ({g['item']}) — {g['note']}")
+                obs = PreviewObserver(base) if g.get('observe') else None
+                watch = MemoryWatch() if g.get('memory_watch') else None
                 try:
-                    r = drv.run(g['name'], g['intent'](), timeout=g.get('timeout', 7200))
+                    drv.precompiled = compiled[g['name']]
+                    if obs:
+                        with obs:
+                            r = drv.run(g['name'], g['intent'](), timeout=g.get('timeout', 7200))
+                        ctx['observations'][g['name']] = obs.summary()
+                        r['websocket'] = obs.summary()
+                    elif watch:
+                        with watch:
+                            r = drv.run(g['name'], g['intent'](), timeout=g.get('timeout', 7200))
+                        r['memory_watch'] = watch.peak
+                        ctx['by_name'][g['name']] = {'files': [], 'result': r}
+                    else:
+                        r = drv.run(g['name'], g['intent'](), timeout=g.get('timeout', 7200))
+                    files = [str(outdir / 'scratch' / 'output' / f) for f in r.get('files', [])]
+                    ctx['by_name'][g['name']] = {'files': files, 'result': r}
+                    checks = run_checks(g, files, ctx, logbuf)
+                    r['checks'] = checks
+                    r['files'] = files
                     results.append(r)
-                    status = 'pass' if r.get('status') == 'success' and r.get('files') else 'check'
+                    failed = [c['label'] for c in checks if not c['ok']]
+                    if r.get('status') != 'success':
+                        verdict = 'RUN_ERROR'
+                    elif not checks:
+                        verdict = 'measured (no automated check)'
+                    elif failed:
+                        verdict = 'CHECKS_FAILED: ' + '; '.join(failed)
+                    else:
+                        verdict = 'ACCEPTED'
+                    r['verdict'] = verdict
                     log(logbuf, f"DONE {g['name']}: status={r.get('status')} {r['seconds']}s "
-                                f"vram={r['vram_peak_mib']}MiB ram={r['ram_peak_gib']}GiB files={len(r['files'])}")
+                                f"vram={r['vram_peak_mib']}MiB ram={r['ram_peak_gib']}GiB "
+                                f"files={len(files)} -> {verdict}")
                 except Exception as e:
-                    log(logbuf, f"RUN FAIL {g['name']}: {e}")
-                    results.append(dict(name=g['name'], item=g['item'], status='run_fail', error=str(e)[:400]))
+                    log(logbuf, f"RUN FAIL {g['name']}: {type(e).__name__}: {e}")
+                    results.append(dict(name=g['name'], item=g['item'], status='run_fail',
+                                        verdict='RUN_EXCEPTION', error=f'{type(e).__name__}: {e}'[:400]))
+                if obs and obs.error:
+                    log(logbuf, f"  preview observer: {obs.error}")
     finally:
         remove_marker_test(marker_path, marker_orig)
         sh(['cargo', 'fmt', '--quiet', str(marker_path)])
-        if backend and not args.keep_backend:
+        if backend and (args.dry_run or not args.keep_backend):
             backend.terminate()
             try:
                 backend.wait(10)
@@ -503,10 +1229,7 @@ def main():
             for f in refmods.glob('deas-probe-*'):
                 f.unlink(missing_ok=True)
                 log(logbuf, f'cleaned {f.name}')
-        summary = ['| gate | item | status | seconds | VRAM peak | RAM peak | files |', '|---|---|---|---|---|---|---|']
-        for r in results:
-            summary.append(f"| {r.get('name')} | {r.get('item','')} | {r.get('status')} | {r.get('seconds','')} "
-                           f"| {r.get('vram_peak_mib','')} | {r.get('ram_peak_gib','')} | {len(r.get('files',[]))} |")
+        summary = render_summary(results, logbuf)
         summary.append('\nDraft-gated items (check the intent shape against the PLAN item before trusting): '
                        + ', '.join(g['name'] for g in GATES if g['draft'] and g['name'] in wanted))
         (outdir / 'summary.md').write_text('\n'.join(summary) + '\n')
