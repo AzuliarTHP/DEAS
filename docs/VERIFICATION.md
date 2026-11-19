@@ -1,5 +1,18 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.5 (published)
+
+Published [v0.3.5](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.5) from source commit `c8f29f5134ec2c353ef8603d335bd529813227aa` (tree `148bc66e206af89a85f83ad2046ac42b5d09c5ba`; lightweight tag on both remotes). Change: host memory admission defaults to `off` (`DEAS_HOST_MEMORY_ADMISSION=warn|block` opts in). Local unsigned build (rustc 1.97.0, node v22.23.5), Linux glibc floor 2.39, `ldd` clean, current `dist/assets/index-G7LwnMnC.js` embedded in both binaries; assets re-downloaded from the release pass `sha256sum -c` and byte-match the staged set.
+
+| Asset | SHA-256 |
+| --- | --- |
+| `deas-linux-amd64` | `a4b1352004d3422a4a36ff7d79794fe85cbd5e42c80dbb69a47f8c469d61883b` |
+| `deas.exe` | `968f8de6a28404398354451745fd6ec552929b7fad8cd58b070c004af3221e2b` |
+| `BUILD-MANIFEST.json` | `4de44c2a087fc4d2b140863c54746d9658a934d9de0b852f7d6fc71a5c08e864` |
+| `SHA256SUMS` | `d45015147386ac77d4b773e3066dc2467c57006a4cb6b9a6951d4d9e58cca425` |
+
+Gates on the source tree (private `TMPDIR`): typecheck, `test:core`, `cargo fmt --check`, release clippy `-D warnings`, xwin check and xwin clippy `--all-targets -D warnings` green. `test:ui` 2361/2362 and `cargo test --test-threads=1` 1118/1120 in the full run; the three failures (`Workbench.part4` H3 REF2VA fixture, `backend::tests::no_console_python_shutdown_pipe_wakes_asyncio_and_runs_finally`, `backend::tests::stop_allows_python_finally_and_drains_shutdown_output_before_restarting`) touch code this change does not and pass in isolation (88/88, 2/2) — load/timing flakes. New test `admission_is_off_unless_explicitly_enabled`; the submit-path refusal test now opts in with `block`. The Windows `deas.exe` is a cargo-xwin cross-build, not run on Windows before publication.
+
 ## Release 0.3.4 (published)
 
 Published [v0.3.4](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.4) from source commit `b8da6dcce2dd8c44358eb0efa2ca41afb51a94eb` (tree `68f76977d7f2c84048d06ea7c09946af99571928`; annotated tag object `19b497af0553428e3d2099c46cc738958f7f2a9d`, pushed to both remotes, both peeling to the source commit). `Verify DEAS` and `Release DEAS` remain `disabled_manually`; the build ran locally with `build-linux.sh --release` on the clean tree at that commit (rustc 1.97.0, Linux binary host-linked with a direct glibc floor of 2.39 like 0.3.3, `ldd` reports nothing missing, both binaries embed `index-BYTInzQk.js`; the loose `artifacts/deas-linux-amd64` is byte-identical to the staged asset). Gates: the fresh chain recorded above under *LoRA details edits and prompt examples*. Published draft-first: every server asset `digest` and size matched the local file before the release was made **Latest** (not a prerelease); the four assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four byte-identical to the staged set.
