@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5
+
+- **The host memory check no longer blocks jobs by default.** 0.3.4 refused a job when the model files it names plus its decode buffers exceeded free RAM (for example *estimated need 40.1 GiB … 43.1 GiB available*). That estimate counts every model as resident at the same time, which ComfyUI's memory management (offloading, smart memory, unloading one model before the next) does not do, so jobs that run fine were refused. The check is now off unless you opt in: `DEAS_HOST_MEMORY_ADMISSION=warn` writes the estimate to **Logs** and starts the job, `=block` restores the refusal.
+
 ## 0.3.4
 
 - **Studio no longer floods a slow backend until it stops answering (#39).** While Studio waited for its first model/node list it re-asked the backend every 3 seconds and threw away every answer that arrived after the next question had been sent. On machines where ComfyUI needs more than 3 seconds for `object_info` (all three reporter logs: 3.8–7 s for a 1.5 MB answer on Windows) no answer was ever accepted, the questions queued up inside ComfyUI faster than it could serve them (each reply took 0.75–3.9 s longer than the one before), and after about two minutes every request — Studio's, the Comfy tab's and a browser's — timed out: *Backend not ready – backend features unavailable* while Backend → Test was green, `/object_info` taking minutes in a browser and the Comfy tab stuck on its logo. Studio's waiting poll now joins the request already in flight instead of replacing it, accepts the answer whenever it arrives, and asks again only after a failure. Opening Options/Post/Dials, Reload and finished downloads still fetch fresh lists.

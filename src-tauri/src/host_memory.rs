@@ -9,8 +9,9 @@
 //!
 //! So the estimate is: distinct model files named by the compiled graph, plus the pixel batches
 //! the selected path will materialize. `DEAS_HOST_MEMORY_ADMISSION=off|warn|block` (default
-//! `block`) is the operator override; there is deliberately no Studio control for it, because a
-//! refusal that the user can silently disable is not an admission check.
+//! `off`, owner decision 0.3.5): the estimate counts every model file as resident at once, which
+//! ComfyUI's own memory management (offload, smart memory, per-model unload) does not do, so a
+//! default refusal blocked jobs that run fine. `warn` logs the estimate; `block` refuses.
 
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -271,13 +272,15 @@ pub(crate) enum Mode {
 }
 
 fn mode() -> Mode {
-    match std::env::var("DEAS_HOST_MEMORY_ADMISSION")
-        .unwrap_or_default()
-        .as_str()
-    {
-        "off" => Mode::Off,
+    mode_from(&std::env::var("DEAS_HOST_MEMORY_ADMISSION").unwrap_or_default())
+}
+
+/// Unset or unknown values mean `off`: only an explicit `warn`/`block` turns the check on.
+pub(crate) fn mode_from(value: &str) -> Mode {
+    match value.trim().to_ascii_lowercase().as_str() {
         "warn" => Mode::Warn,
-        _ => Mode::Block,
+        "block" => Mode::Block,
+        _ => Mode::Off,
     }
 }
 
@@ -355,7 +358,7 @@ pub(crate) fn admission_with(
         "{message}. DEAS did not start this job: at this level the operating system's memory guard kills the backend \
          mid-run, which is how the reported failure looked. Close memory-heavy programs (other GPU apps, browsers, \
          local models), turn on Streaming decode where it is offered, or lower the canvas/duration. \
-         DEAS_HOST_MEMORY_ADMISSION=warn starts anyway."
+         DEAS_HOST_MEMORY_ADMISSION=warn or =off (the default) starts anyway."
     ))
 }
 

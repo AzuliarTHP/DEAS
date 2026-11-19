@@ -445,6 +445,8 @@ async fn host_memory_admission_refuses_before_the_backend_and_stays_retryable() 
     // The graph names this file; its apparent size is what the estimator adds. A host with 2.2 TiB
     // of free RAM is not a real CI machine, so the refusal is deterministic everywhere.
     huge_declaration(root.path(), "checkpoints", "sd/model.safetensors", 2048).await;
+    // The check is opt-in (default off since 0.3.5); this test exercises the opted-in path.
+    std::env::set_var("DEAS_HOST_MEMORY_ADMISSION", "block");
     let jobs = Jobs::default();
     let plan = jobs
         .prepare_with_models(base.clone(), intent(), vec![root.path().into()])
@@ -476,6 +478,7 @@ async fn host_memory_admission_refuses_before_the_backend_and_stays_retryable() 
         .unwrap();
     assert_eq!(job["state"], "queued");
     assert_eq!(posts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    std::env::remove_var("DEAS_HOST_MEMORY_ADMISSION");
     task.abort();
 }
 

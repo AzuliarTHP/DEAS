@@ -1,5 +1,14 @@
 # News
 
+## 0.3.5
+
+### The memory check no longer stops jobs on its own
+
+0.3.4 refused heavy jobs when the model files they use added up to more than the free system memory. ComfyUI
+does not keep all of those models in memory at once — it offloads and unloads them as the job moves on — so jobs
+that would have run fine were stopped. The check is now off by default. Set `DEAS_HOST_MEMORY_ADMISSION=warn`
+to see the estimate in **Logs**, or `=block` to bring the refusal back.
+
 ## 0.3.4
 
 ### Studio waits for a slow backend instead of flooding it

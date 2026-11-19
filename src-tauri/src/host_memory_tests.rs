@@ -287,6 +287,18 @@ fn small_jobs_still_start_on_a_pressured_desktop() {
 }
 
 #[test]
+fn admission_is_off_unless_explicitly_enabled() {
+    for value in ["", "off", "OFF", "yes", "on", "1"] {
+        assert!(
+            mode_from(value) == Mode::Off,
+            "{value:?} must leave the check off"
+        );
+    }
+    assert!(mode_from("warn") == Mode::Warn);
+    assert!(mode_from(" Block ") == Mode::Block);
+}
+
+#[test]
 fn off_mode_and_unknown_inputs_never_block() {
     let root = tempfile::tempdir().unwrap();
     for &(_, path, size) in &INCIDENT_MODELS {
