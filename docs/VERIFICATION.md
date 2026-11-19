@@ -4951,6 +4951,61 @@ runtime-mixed int8 loader is materializing mixed weights in host memory and no s
 help — that becomes a loader change in the pack. The breakdown lands in
 `residency-P-02-stream-362f.csv`-adjacent output next to the memory CSV.
 
+#### P-02 residency verdict — the failed stage is now identified (2026-11-19 17:00 → 17:19)
+
+`gpu-acceptance-20261119T170001Z`, plain configuration (no extra ComfyUI flags), host started with
+**52.9 GiB available**. Run: 1136 s, two products published, 362 f at 1440×1824; RAM peak
+53.6 GiB (+43.6 GiB growth over a 10.0 GiB baseline), swap 8.4 GiB (+4.0), VRAM 32 119 MiB,
+backend RSS 43.04 GiB. Still `CHECKS_FAILED` on the 48.1 GiB line — but now with the cause.
+
+The per-minute `/proc/<pid>/smaps` breakdown of the backend itself:
+
+| time | backend RSS | anonymous/private | model-file mappings |
+|---|---|---|---|
+| T+0 s | 1.11 GiB | 0.36 | 0.75 (other) |
+| T+60 s | 33.6 GiB | **31.65** | 0.89 (text encoder) |
+| T+121…423 s (sampling) | 36.3–37.7 GiB | 36.1–37.4 | ≤ 0.5 |
+| T+484…545 s (upscale/regenerate/encode) | 41.1 → 42.9 GiB | 40.6 → 42.5 | ≤ 0.5 |
+| peak | 43.04 GiB | ~42.7 | ~0.3 |
+
+And the model files this job loads:
+
+| file | on disk |
+|---|---|
+| `dasiwa_minimax_h3_ref2va_v5xs_pruned_graviton_turbo_int8_row-wise_convrot_runtime_mixed.safetensors` | 20 GiB |
+| `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors` | 15 GiB |
+| `minimax_h3_video_vae_fp16.safetensors` | 4.9 GiB |
+| `open_h3_regenerate_2k_native_svd_e0999_comfyui.safetensors` | 2.4 GiB |
+| `minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors` + audio VAE fp32 | 1.2 GiB |
+| **total** | **42.54 GiB** |
+
+**Conclusion (measurement, not inference):** backend RSS is ~99 % **anonymous/private** — weights are
+materialized as private allocations, not as reclaimable file mappings (max 1.06 GiB mapped, briefly,
+while the text encoder loaded). The model files total 42.54 GiB and the run grew +43.6 GiB. So the
+demand *is* the model footprint plus roughly 1 GiB, and the streaming/bounded pixel path did its
+job: there is no full-RGB-batch spike (PLAN records those batches at 2.763 GiB baseline and
+10.626 GiB processed), and the post-sampling rise was only ~+6 GiB.
+
+That also reconstructs the incident quantitatively. With `streamDecode` **off** (the shipped
+default), the same job adds the full float32 RGB results on top of the weights:
+42.5 + 2.76 + 10.6 ≈ **56 GiB of process demand**, on a 61.7 GiB host whose `earlyoom
+-m 5 -s 10` prefers `python|ComfyUI|torch` — which is exactly the journal record of a killed
+process group at a 48.1 GB peak. With streaming **on**, the measured peak stayed inside the weight
+footprint. The remaining exposure is therefore (a) model residency versus available RAM at start
+time, and (b) the pixel batches in the non-streaming path.
+
+**What this decides:**
+1. The RAM-admission bullet is no longer speculative — a pre-start estimate is accurate to about
+1 GiB when it sums the distinct model files named by the compiled graph and adds the pixel-batch
+estimate when the bounded path is not selected. Failing there with actionable Logs beats letting
+`earlyoom` choose the victim.
+2. The streaming-path activation policy (its bullet asks for it before implementation) now has
+numbers behind it: on this host it is the difference between ~43 GiB and ~56 GiB for the reported
+case. Changing the default is an owner decision (the item was approved as opt-in, default OFF).
+3. Model loading itself stays out of scope for the bounded-buffer work, exactly as the item says —
+but it is the number that admission must check, and a text-encoder release policy is the only
+lever that would reduce it.
+
 ## Closed plan items moved from PLAN.md (2026-11-19)
 
 Moved verbatim during the PLAN restructuring (IDs, types and blockers added to every open item). These texts describe delivered work, closed gates or superseded rows; any remaining gate they mention is tracked under its PLAN ID.
