@@ -301,5 +301,14 @@
   "search.section.panes": "后端面板",
   "search.reason.lines": "没有匹配当前筛选的日志行",
   "search.reason.backendRunning": "仅在后端已停止时",
-  "search.reason.startupCacheLru": "仅当节点结果缓存设置为固定大小 LRU 时才会出现。"
+  "search.reason.startupCacheLru": "仅当节点结果缓存设置为固定大小 LRU 时才会出现。",
+  "setup.overview.repair": "需要更新",
+  "setup.repair.title": "环境需要更新",
+  "setup.repair.help": "此环境由较旧的 DEAS 版本安装：部分节点包的版本与当前版本要求的不同，因此无法直接打开。“更新环境”会获取所需的节点包版本及其依赖。模型、输入、输出和设置保持不变。",
+  "setup.repair.details": "技术详情",
+  "setup.repair.action": "更新环境",
+  "setup.repair.actionHint": "获取当前 DEAS 版本所需的节点包版本；会先请求确认。模型、输入和输出会保留。",
+  "setup.repair.confirmTitle": "更新此环境？",
+  "setup.repair.confirmText": "DEAS 将获取所需的节点包版本，并在此环境自带的 Python 中安装其依赖。不会改动模型、输入、输出和设置。之后后端会照常启动。",
+  "setup.repair.confirm": "更新"
 }

@@ -1468,5 +1468,7 @@
   "tagCompletion.aliases": "Rechercher les alias des CSV",
   "tagCompletion.contains": "Rechercher dans les noms de tags",
   "tagCompletion.minimum": "Nombre minimal de publications",
-  "tagCompletion.shared": "Ces options s’appliquent aux prompts positifs et négatifs. Aucun tag n’est envoyé en ligne."
+  "tagCompletion.shared": "Ces options s’appliquent aux prompts positifs et négatifs. Aucun tag n’est envoyé en ligne.",
+  "studio.run.indexGap": "Le backend liste {count} fichier(s) de modèle que cette liste n’affiche pas encore, par exemple des fichiers copiés à la main. « Recharger » les ajoute.",
+  "studio.run.opt.compile.noTriton": "Cet environnement n’a pas de Triton pour son GPU ; le backend inductor ne peut donc pas s’exécuter. Backend → Mettre à jour l’installe ; les autres backends de compilation restent disponibles."
 }

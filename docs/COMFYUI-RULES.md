@@ -63,6 +63,27 @@ For video, retain validated media descriptors (`filename`, `subfolder`, `type`),
 
 Use an isolated loopback instance with unique pack names and correct model paths. Never restart the live user service. Stop only the recorded owned process/group; no `pkill -f` patterns. Confirm the checkout actually served by the runtime before diagnosing stale assets. Label each evidence level honestly and retain unresolved gates in the consolidated plan.
 
+## 9. H3 Director and video reference facts
+
+Moved from the plan (2026-11-19); these are standing integration facts and decisions, not open work. Re-check after node-pack updates.
+
+- **Recipe reference:** the owner's DaSiWa workflows (LTX *OmniForge*, Wan 2.2 *FastFidelity*, MiniMax H3 *MythicAlchemy*; not in this repository) define the wiring. ComfyUI templates and `comfy_extras/nodes_*.py` are only for node signatures. Read subgraph-promoted widget values (e.g. H3 steps 4, shift 10/3, `euler`).
+- **MiniMax H3 Director** (DaSiWa node pack: `nodes/nodes_minimax_h3_director*.py`, `js/minimax_h3_director.js`):
+  - Modes `T2VA, I2VA, FL2VA, L2VA, REF2VA, Image Inpaint`. `ref2va_model` serves REF2VA and `fl2va_model` the rest. There is **no video-to-video mode**.
+  - `timeline_data` items: `{id, type, value, slot, order, enabled, trim_start?, trim_end?, media_mode?}`.
+  - Lanes: images 0–8, video 0–2, audio 0–2. Limits: ≤9 images, ≤3 videos, ≤3 audio, ≤12 files. Audio needs an image or video (RefMods count as visual). Clips are 2–15 s; video and audio totals ≤15 s each.
+  - Image Inpaint: one image in slot 0, no mask input, a 5-frame pass; frame 0 is the result.
+  - All Forge routes return 409 while a workflow is queued.
+  - HTTP routes used by the Director: `/upload/image`, `/view?type=input`, `/dasiwa/refmods*`, `/df_h3_continuity/*`, `/dasiwa/h3/forge*`, `/dasiwa/llm/write`, `/dasiwa/input-images`.
+- **WhatDreamsCost LTX Director** (GPL-3.0): its guide step equals core `LTXVAddGuide` per segment. Do **not** emit its nodes: they are GPL, its timeline strings come from a 469 KB JS UI, and `/video_ui_custom_view` (arbitrary file read) and `/video_ui_upload_chunk` (path traversal) are unsafe.
+
+Decisions (keep unless the owner changes them):
+1. H3 Video → Video and Multi-reference → Video both run **REF2VA**; label it honestly. A REF2VA checkpoint is recommended (a hint, not a block).
+2. LTX uses core nodes only (`LoadVideo`, `GetVideoComponents`, `ImageFromBatch`, `LTXVAddGuide`); Wan gets no v2v/ref2v.
+3. H3 image edit uses the native node the Director calls, so DEAS masks, crops and layers keep working; frame 0 is the result.
+4. DEAS drives node-pack features over their existing HTTP routes. New routes are node-pack work first (route + test + version bump there), never patched from DEAS.
+5. Director prompt tokens (`<Picture N>`, `<Video N>`, `<Audio N>`, `<RefMod N>`) stay English in every locale, because they are model input.
+
 ## Public references
 
 - [ComfyUI developer documentation](https://docs.comfy.org/development/overview)

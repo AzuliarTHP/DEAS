@@ -41,6 +41,7 @@ pub(crate) fn fixture(script: &str) -> (tempfile::TempDir, Approved) {
         gguf_ref: None,
         preview_ref: None,
         reopen_id: None,
+        repair: None,
         id: uuid::Uuid::new_v4().to_string(),
         request: Request {
             storage_path: root.to_str().unwrap().into(),
@@ -102,7 +103,11 @@ fn running_interrupt_adapter_auth_and_mutex_race_fixture() {
 #[test]
 fn running_interrupt_protocol_accepts_current_core_and_rejects_moved_lock() {
     // Statement checks, not hashes: the live `master` checkout (when present) must pass.
-    let live = PathBuf::from("~/dev/deas-environment/ComfyUI");
+    let live = {
+        let configured = std::env::var("DEAS_TEST_COMFY_ROOT")
+            .unwrap_or_else(|_| "~/dev/deas-environment/ComfyUI".to_string());
+        PathBuf::from(configured.replacen('~', &std::env::var("HOME").unwrap_or_default(), 1))
+    };
     if live.is_dir() {
         for name in INTERRUPT_FILES {
             let text = fs::read_to_string(live.join(name)).unwrap();
@@ -959,4 +964,55 @@ fn native_backend_test_lists_dependencies_of_the_approved_environment() {
     assert!(ok("environment") && ok("python") && ok("comfyui"));
     assert!(!ok("nodes")); // The fixture environment has no DaSiWa node checkout.
     assert!(!ok("api"));
+}
+
+#[test]
+fn kjnodes_missing_triton_traceback_is_condensed_and_other_output_is_untouched() {
+    let traceback = [
+        "[WARNING] KJNodes: PatchTritonVAE node could not be imported. PatchTritonVAE will be unavailable.",
+        "Traceback (most recent call last):",
+        r#"  File "C:\env\ComfyUI\custom_nodes\ComfyUI-KJNodes\nodes\triton_vae.py", line 10, in <module>"#,
+        "    import triton",
+        "ModuleNotFoundError: No module named 'triton'",
+        "The above exception was the direct cause of the following exception:",
+        "Traceback (most recent call last):",
+        r#"  File "C:\env\ComfyUI\custom_nodes\ComfyUI-KJNodes\__init__.py", line 386, in <module>"#,
+        "    from .nodes.triton_vae import PatchTritonVAE",
+        "    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^",
+        "ImportError: PatchTritonVAE requires triton (pip install triton, or triton-windows)",
+    ];
+    let mut condenser = super::LogCondenser::default();
+    let mut out = vec![];
+    for line in ["Import times for custom nodes:"]
+        .iter()
+        .chain(traceback.iter())
+        .chain(["Starting server"].iter())
+    {
+        out.extend(condenser.feed((*line).into()));
+    }
+    out.extend(condenser.finish());
+    assert_eq!(
+        out,
+        vec![
+            "Import times for custom nodes:".to_string(),
+            super::KJNODES_TRITON_SUMMARY.into(),
+            "Starting server".into()
+        ]
+    );
+    // A different failure inside the same block is never hidden.
+    let mut condenser = super::LogCondenser::default();
+    let mut out = vec![];
+    for line in &traceback[..3] {
+        out.extend(condenser.feed((*line).into()));
+    }
+    out.extend(condenser.feed("RuntimeError: CUDA driver mismatch".into()));
+    out.extend(condenser.feed("next".into()));
+    assert_eq!(out.len(), 5);
+    assert_eq!(out[3], "RuntimeError: CUDA driver mismatch");
+    // A block cut off by process exit is flushed verbatim.
+    let mut condenser = super::LogCondenser::default();
+    for line in &traceback[..4] {
+        assert!(condenser.feed((*line).into()).is_empty());
+    }
+    assert_eq!(condenser.finish().len(), 4);
 }

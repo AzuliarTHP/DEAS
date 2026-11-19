@@ -128,6 +128,8 @@ export interface RecipeAllowlist {
   readonly attention?: readonly string[];
   readonly sage?: readonly string[];
   readonly compile?: readonly string[];
+  /** Owned GPU environment only: whether Triton (needed by Torch Compile's `inductor` backend) is installed. Absent = not judged (external or CPU backend). */
+  readonly triton?: boolean;
   readonly upscaleModels?: readonly string[];
   readonly latentUpscaleModels?: readonly string[];
   /** Core `FrameInterpolationModelLoader` files (RIFE) and the installed RTX node's upscale modes, for TVE post-processing. */

@@ -68,6 +68,19 @@ impl Session {
     }
 }
 
+/// Torch Compile's default `inductor` backend generates Triton kernels on the GPU. Refuse it before any
+/// upload when the job targets the owned GPU backend and that environment has no usable Triton;
+/// external and CPU backends (`owned_triton = None`) are not judged here.
+pub(crate) fn validate_compile_triton(
+    intent: &Value,
+    owned_triton: Option<bool>,
+) -> Result<(), String> {
+    if intent["options"]["compile"].as_str() == Some("inductor") && owned_triton == Some(false) {
+        return Err("Torch Compile (inductor) needs Triton, which this owned environment does not have for its GPU; run Backend → Upgrade to install it, or choose another compile backend or Off".into());
+    }
+    Ok(())
+}
+
 impl Jobs {
     /// True while a held Workbench job is not terminal or a Stop is settling; updates must wait.
     pub(crate) fn workbench_busy(&self) -> Result<bool, String> {
@@ -222,6 +235,7 @@ impl Jobs {
             .and_then(|e| e.approved_plan())
             .map(|p| p.request.backend);
         crate::jobs_video_post::validate_rtx_hardware(&intent, plan_backend.as_ref())?;
+        validate_compile_triton(&intent, engine.and_then(|e| e.owned_triton(&base_url)))?;
         let held = Arc::new(Jobs(
             Arc::new(Mutex::new(Session {
                 studio: true,

@@ -301,5 +301,14 @@
   "search.section.panes": "Backend-Panels",
   "search.reason.lines": "Keine Logzeilen passen zum aktuellen Filter",
   "search.reason.backendRunning": "Nur solange das Backend gestoppt ist",
-  "search.reason.startupCacheLru": "Erscheint nur, wenn der Node-Ergebnis-Cache auf LRU mit fester Größe gestellt ist."
+  "search.reason.startupCacheLru": "Erscheint nur, wenn der Node-Ergebnis-Cache auf LRU mit fester Größe gestellt ist.",
+  "setup.overview.repair": "Aktualisierung nötig",
+  "setup.repair.title": "Umgebung muss aktualisiert werden",
+  "setup.repair.help": "Diese Umgebung wurde von einer älteren DEAS-Version installiert: Einige Node-Packs liegen in anderen Revisionen vor, als diese Version benötigt, daher kann sie so nicht geöffnet werden. „Umgebung aktualisieren“ holt die benötigten Pack-Revisionen und ihre Abhängigkeiten. Modelle, Eingaben, Ausgaben und Einstellungen bleiben unverändert.",
+  "setup.repair.details": "Technische Details",
+  "setup.repair.action": "Umgebung aktualisieren",
+  "setup.repair.actionHint": "Holt die Node-Pack-Revisionen, die diese DEAS-Version benötigt; fragt vorher nach. Modelle, Eingaben und Ausgaben bleiben erhalten.",
+  "setup.repair.confirmTitle": "Diese Umgebung aktualisieren?",
+  "setup.repair.confirmText": "DEAS holt die benötigten Node-Pack-Revisionen und installiert ihre Abhängigkeiten im eigenen Python dieser Umgebung. Modelle, Eingaben, Ausgaben und Einstellungen werden nicht angetastet. Danach startet das Backend wie gewohnt.",
+  "setup.repair.confirm": "Aktualisieren"
 }

@@ -44,6 +44,7 @@ fn amd_torch_target_never_swaps_the_rocm_profile_for_cpu() {
         gguf_ref: None,
         preview_ref: None,
         reopen_id: None,
+        repair: None,
         request: Request {
             storage_path: "/nonexistent-deas-amd-plan".into(),
             backend: Backend::Amd,

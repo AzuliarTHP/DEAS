@@ -32,6 +32,7 @@ const updateScopes=['all','app','comfy','torch'] as const;
 type UpdateScope=typeof updateScopes[number];
 /** `native_torch_update_check`: exact from → to Torch packages, or why the PyTorch-only update is unavailable. */
 type TorchUpdate={from:string[];to:string[]|null;blocked:string|null};
+type SavedEnvironment={plan:NativeInstallPlan;status:NativeInstallStatus;folders:Folders}|{repair:NativeInstallPlan};
 /** Keeps the studio/backend alive while top-level views change. */
 export interface AiOSetupProps { experience?:Experience; onExperience?:(value:Experience)=>void; beginnerPage?:BeginnerPage; onBeginnerPage?:(value:BeginnerPage)=>void; /** `inspect` is true for the explicit Connect button, false for the owned backend's automatic handoff. */ onConnectExisting: (baseUrl: string, inspect?: boolean) => void; onInstalled?: (features: readonly FeatureId[]) => void; /** Installed environment root plus its saved folder settings, for the Studio media roots. */ onEnvironment?: (environment: { root: string; folders: Folders } | null) => void; studio?: ReactNode; footer?: ReactNode; studioTab?: 'generate'|'forge'|'chat'|'analysis'|'tve'|'monitor'|'map'; onStudioTab?: (tab:'generate'|'forge'|'chat'|'analysis'|'tve'|'monitor'|'map')=>void; onStudioActiveChange?: (active:boolean)=>void }
 /** Automatic-only setup: folder + Director, the rest recommended; Start install is the single authorization. */
@@ -54,6 +55,10 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  const [existingUrl,setExistingUrl]=useState('');
  const [nativePlan,setNativePlan]=useState<NativeInstallPlan|null>(null);
  const reopening=!!nativePlan?.reopenId;
+ // A saved or chosen environment whose pinned node packs are outdated: offered an explicit update, never opened as-is.
+ const [savedRepair,setSavedRepair]=useState<NativeInstallPlan|null>(null);const [confirmRepair,setConfirmRepair]=useState(false);
+ const repairTarget=savedRepair??(nativePlan?.repair?nativePlan:null);
+ const repairing=useRef<NativeInstallPlan|null>(null);
  const startedPlan=useRef<NativeInstallPlan|null>(null);
  const notifiedPlans=useRef(new Set<string>());
  const [defaults,setDefaults]=useState<NativeInstallDefaults|null>(null);
@@ -194,20 +199,53 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  },[native,onInstalled,status,planMatches,nativePlan]);
  useEffect(()=>()=>{generation.current++;},[]);
  // Reuse one native validation/open operation across StrictMode effect replay; never reinstall on restore.
- const restoreRequest=useRef<Promise<{plan:NativeInstallPlan;status:NativeInstallStatus;folders:Folders}|null>|null>(null);
+ const restoreRequest=useRef<Promise<SavedEnvironment|null>|null>(null);
+ // Read-only preview, then the checked open; outdated pack pins come back as a repair offer instead of an error.
+ const openSaved=async(root:string):Promise<SavedEnvironment>=>{
+  const plan=await invoke<NativeInstallPlan>('native_install_plan',{request:{storagePath:root,backend:'cpu',features:[],options:{sage:false,radial:false,flash:false,ffmpeg:false},comfyRef:'master'}});
+  if(plan.repair)return {repair:plan};
+  if(!plan.reopenId)throw new Error('Saved environment is not a complete DEAS installation; no installation or backend was started');
+  const folders=await readFolders(plan.request.storagePath);
+  const status=await invoke<NativeInstallStatus>('native_install_open',{planId:plan.id,confirmed:true});
+  return {plan,status,folders};
+ };
+ const repair=async()=>{
+  const target=repairTarget;setConfirmRepair(false);
+  if(!native||!target?.repair||operationLock.current||busy||running)return;
+  operationLock.current=true;setBusy(true);setTechnicalError('');
+  try{repairing.current=target;setStatus(await invoke<NativeInstallStatus>('native_install_repair',{planId:target.repair.id,confirmed:true}));}
+  catch(e){repairing.current=null;setTechnicalError(String(e));}
+  finally{operationLock.current=false;setBusy(false);}
+ };
+ // A successful repair leaves the environment checked natively, like a finished installation.
+ useEffect(()=>{
+  const target=repairing.current;
+  if(!native||!target||!status||status.state==='running')return;
+  repairing.current=null;
+  const root=target.request.storagePath;
+  if(status.state==='succeeded'){
+   setSavedRepair(null);setNativePlan(null);
+   void readFolders(root).then(setFolders,()=>{});
+   setInstalledRoot(root);writePref(installedKey,root);
+   onInstalled?.(target.request.features);
+   return;
+  }
+  // The preview was consumed: offer a fresh one (or open it if the failed run already fixed the pins).
+  void openSaved(root).then(result=>{
+   if('repair' in result){setSavedRepair(result.repair);return;}
+   setSavedRepair(null);setInstalledRoot(result.plan.request.storagePath);writePref(installedKey,result.plan.request.storagePath);setFolders(result.folders);
+  },e=>setTechnicalError(String(e)));
+ },[native,status]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{
   // The splash hands off once this restore settles (or right away when nothing is remembered).
   const root=readPref(installedKey,'',isString);if(!native)return;if(!root){startupReady();return;}let alive=true;operationLock.current=true;setBusy(true);startupPhase('restore');
   restoreRequest.current??=(async()=>{
    const [found]=await filesPresent([`${root}/deas-install.json`]);if(!found){forgetPref(installedKey);return null;}
-   const plan=await invoke<NativeInstallPlan>('native_install_plan',{request:{storagePath:root,backend:'cpu',features:[],options:{sage:false,radial:false,flash:false,ffmpeg:false},comfyRef:'master'}});
-   if(!plan.reopenId)throw new Error('Saved environment is not a complete DEAS installation; no installation or backend was started');
-   const folders=await readFolders(plan.request.storagePath);
-   const status=await invoke<NativeInstallStatus>('native_install_open',{planId:plan.id,confirmed:true});
-   return {plan,status,folders};
+   return openSaved(root);
   })();
   restoreRequest.current.then(result=>{
    if(!alive||!result)return;
+   if('repair' in result){setSavedRepair(result.repair);return;}
    touched.current.add('storage');touched.current.add('acceleration');
    setState(s=>{const next=transitionSetup(s,{type:'automatic'});return {...next,opened:s.opened,values:{...next.values,storage:result.plan.request.storagePath,acceleration:result.plan.request.backend},features:result.plan.request.features,options:result.plan.request.options,comfyRef:result.plan.request.comfyRef};});
    setInstalledRoot(result.plan.request.storagePath);setStatus(result.status);setFolders(result.folders);setView(v=>v==='backend'?'studio':v);
@@ -232,7 +270,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   pickerLock.current=true;setPickerBusy(true);setTechnicalError('');
   try {
    const parent=await invoke<string|null>('native_pick_directory',{title:t('setup.pickTitle')});
-   if(parent!==null){touched.current.add('storage');const flags=await filesPresent([`${parent}/deas-plan.json`,`${parent}/deas-install.json`]);const target=Array.isArray(flags)&&flags.some(Boolean)?parent:storageTarget(parent,'deas-environment');setStorageParent(parent);if(target){setState(s=>transitionSetup(s,{type:'select',step:'storage',value:target}));setError('');}else setError('setup.error.child');}
+   if(parent!==null){setSavedRepair(null);touched.current.add('storage');const flags=await filesPresent([`${parent}/deas-plan.json`,`${parent}/deas-install.json`]);const target=Array.isArray(flags)&&flags.some(Boolean)?parent:storageTarget(parent,'deas-environment');setStorageParent(parent);if(target){setState(s=>transitionSetup(s,{type:'select',step:'storage',value:target}));setError('');}else setError('setup.error.child');}
   }catch(e){setTechnicalError(String(e));}
   finally{pickerLock.current=false;setPickerBusy(false);}
  };
@@ -279,7 +317,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  };
  // Plans without a separate click; Start stays the only authorization.
  useEffect(()=>{
-  if(!native||installed||running||busy||folderPickerBusy||nativePlan||technicalError||error||plan?.route!=='managed')return;
+  if(!native||installed||running||busy||folderPickerBusy||nativePlan||technicalError||error||savedRepair||plan?.route!=='managed')return;
   const timer=window.setTimeout(()=>void prepare(),250);
   return ()=>window.clearTimeout(timer);
  });
@@ -352,7 +390,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
 {beginner&&<div className="aio-tabs beginner-backend-tabs" role="tablist" aria-label={t('settings.button')}><button type="button" role="tab" data-node="settings" className="aio-tab beginner-backend" disabled={folderPickerBusy} aria-selected={inBackend} onClick={()=>setView('backend')}>{t('settings.button')}</button></div>}
 <QuickSettings root={installedRoot||undefined} experience={experience} onExperience={onExperience}/><GlobalSearch onNavigate={searchNavigate}/><RepoLinks canStar={verified.includes('github')}/></div>
   {inBackend&&<div className="backend-overview" aria-label={t('setup.overview')}>
-   <span data-backend-installed className={installed?'is-set':undefined}>{installed&&<span aria-hidden="true">✓ </span>}{t('setup.backendLifecycle.title')} · <span>{t(installed?'setup.tab.installed':'setup.overview.missing')}</span>{(backendStatus?.state==='starting'||backendStatus?.state==='running')&&<small data-backend-state> · {t(backendStatus.state==='running'?'setup.backendStarted':'setup.backendStarting')}</small>}</span>
+   <span data-backend-installed className={installed?'is-set':undefined}>{installed&&<span aria-hidden="true">✓ </span>}{t('setup.backendLifecycle.title')} · <span>{t(installed?'setup.tab.installed':repairTarget?'setup.overview.repair':'setup.overview.missing')}</span>{(backendStatus?.state==='starting'||backendStatus?.state==='running')&&<small data-backend-state> · {t(backendStatus.state==='running'?'setup.backendStarted':'setup.backendStarting')}</small>}</span>
    {authProviders.filter(p=>configured.includes(p.id)).map(p=><span key={p.id} className="is-set" title={t('downloads.auth.set')} data-provider-configured={p.id}><span aria-hidden="true">✓ </span>{p.label} · {t('downloads.auth.set')}</span>)}
   </div>}
   {view!=='comfy'&&detectionError&&<p className="aio-error" role="alert">{t('setup.detectionError')}: {detectionError}</p>}
@@ -367,6 +405,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   {inBackend&&review&&defaults&&!status&&<div className="aio-help aio-detection" role="status"><p>{t(defaults.backend==='nvidia'?'setup.detectedNvidia':'setup.cpuRecommendation')}</p><p>{t('setup.autoFindings')}</p>{typeof defaults.hardware?.name==='string'&&<p>{String(defaults.hardware.name)}</p>}{defaults.warnings.length>0&&<ul>{defaults.warnings.map((w,i)=><li key={i}>{w}</li>)}</ul>}</div>}
   {view==='logs'&&<LogsPanel/>}
   {inBackend&&<LanguageSetting/>}
+  {inBackend&&!installed&&repairTarget?.repair&&<section className="aio-detail aio-repair" aria-labelledby="env-repair-title" data-env-repair><h3 id="env-repair-title">{t('setup.repair.title')}</h3><p>{t('setup.repair.help')}</p><p className="aio-help" style={{overflowWrap:'anywhere'}}><code>{repairTarget.request.storagePath}</code></p><details><summary>{t('setup.repair.details')}</summary><p className="aio-help">{repairTarget.repair.reason}</p></details><button type="button" className="aio-confirm-button" data-env-repair-start title={t('setup.repair.actionHint')} disabled={!native||running||busy} onClick={()=>setConfirmRepair(true)}>{t('setup.repair.action')}</button></section>}
   {inBackend&&!installed&&<button type="button" data-upgrade disabled={!native||running||busy} onClick={()=>setConfirmUpgrade(true)}>{t('setup.upgrade')}</button>}
   {appReplaced&&<p role="status">{t('setup.updateRestart')}</p>}
   {inBackend&&<>{!installed&&<section className="aio-detail"><button type="button" className="download-switch backend-autostart" role="switch" aria-label={t('setup.backendAutostart')} aria-checked={autoStart} onClick={()=>{setResumeAfterUpdate('');setAutoStart(v=>!v);}}><span>{t('setup.backendAutostart')}</span><span className="download-switch-knob" aria-hidden="true"/><span>{t(autoStart?'setup.autostartOn':'setup.autostartOff')}</span></button></section>}{installedRoot&&<FoldersPanel root={installedRoot} disabled={running||busy||folderPickerBusy} onChange={setFolders} onRestart={()=>setRestartSignal(n=>n+1)}/>}</>}
@@ -378,7 +417,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   {(side||installed)&&<aside className="aio-right" hidden={!side}>
   {inBackend&&review&&<section className="aio-detail aio-auto-review" aria-label={t('setup.autoReview')}><h3>{t('setup.autoReview')}</h3><p className="aio-help">{t(reopening?'setup.reuseHelp':native?'setup.autoHelp':'setup.autoBrowser')}</p>
    <fieldset className="aio-auto-fields" disabled={running||busy||pickerBusy||folderPickerBusy}>
-    {!takeoverOn&&<><label htmlFor="auto-storage">{t('setup.storageDirectory')}</label><input id="auto-storage" value={state.values.storage??''} onChange={e=>{setStorageParent('');setError('');setStorageRenamed(false);edit({type:'select',step:'storage',value:e.target.value},'storage');}}/>{storageRenamed&&<p className="aio-help" role="status">{t('setup.storageRenamed')}</p>}</>}
+    {!takeoverOn&&<><label htmlFor="auto-storage">{t('setup.storageDirectory')}</label><input id="auto-storage" value={state.values.storage??''} onChange={e=>{setSavedRepair(null);setStorageParent('');setError('');setStorageRenamed(false);edit({type:'select',step:'storage',value:e.target.value},'storage');}}/>{storageRenamed&&<p className="aio-help" role="status">{t('setup.storageRenamed')}</p>}</>}
     <div className="aio-row">
      <button type="button" data-setup-action="pick" disabled={!native||takeoverOn} onClick={()=>void pickDirectory()}>{t('setup.pickParent')}</button>
      {!reopening&&<button type="button" className="action-button" aria-pressed={takeoverOn} title={t('setup.takeover.help')} onClick={()=>{setTakeoverOn(v=>!v);setNativePlan(null);setTechnicalError('');setTakeoverPath('');}}>{t('setup.takeover.label')}</button>}
@@ -388,7 +427,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
     {!reopening&&<><details><summary>{t('settings.optional')}</summary><p className="field-help">{t('settings.draftHelp')}</p><FolderFields folders={folderDraft} onChange={setFolderDraft} disabled={running||busy||pickerBusy||folderPickerBusy} onBusyChange={setFolderPickerBusy}/></details>
     <label title={t('setup.capabilityHelp')}><input type="checkbox" checked={state.features.includes('director')} onChange={()=>edit({type:'feature',id:'director'},'features')}/>{t('setup.feature.director.label')}</label><span className="aio-fact-sub">{t('setup.feature.director.short')}</span></>}
    </fieldset>
-   {nativePlan&&<div className="aio-start">
+   {nativePlan&&!nativePlan.repair&&<div className="aio-start">
     <dl className="aio-facts">
      <div><dt>{t('setup.request.backend')}</dt><dd>{t(`setup.backend.${nativePlan.request.backend}.label`)}{typeof nativePlan.hardware?.name==='string'&&<span className="aio-fact-sub">{nativePlan.hardware.name}</span>}</dd></div>
      <div><dt>{t('setup.summary.selected')}</dt><dd>{nativePlan.request.features.includes('director')?t('setup.summary.director'):t('setup.summary.core')}</dd></div>
@@ -421,6 +460,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   {confirmTakeover&&<div className="download-dialog" role="alertdialog" aria-modal="true" aria-labelledby="takeover-title"><div className="download-dialog-card"><h3 id="takeover-title">{t('setup.takeover.title')}</h3><p>{t('setup.takeover.warning')}</p><p><code>{takeoverPath}</code></p><div className="aio-actions"><button type="button" autoFocus onClick={()=>setConfirmTakeover(false)}>{t('setup.takeover.cancel')}</button><button type="button" className="aio-danger" onClick={()=>{setConfirmTakeover(false);void start();}}>{t('setup.takeover.confirm')}</button></div></div></div>}
   </aside>}
   </div>
+  {confirmRepair&&repairTarget?.repair&&<div className="download-dialog" role="alertdialog" aria-modal="true" aria-labelledby="repair-confirm-title" onKeyDown={e=>{if(e.key==='Escape')setConfirmRepair(false);}}><div className="download-dialog-card"><h3 id="repair-confirm-title">{t('setup.repair.confirmTitle')}</h3><p>{t('setup.repair.confirmText')}</p><p><code>{repairTarget.request.storagePath}</code></p><div className="aio-actions"><button type="button" autoFocus onClick={()=>setConfirmRepair(false)}>{t('setup.reinstallCancel')}</button><button type="button" data-env-repair-confirm onClick={()=>void repair()}>{t('setup.repair.confirm')}</button></div></div></div>}
   {confirmUpgrade&&<div className="download-dialog" role="alertdialog" aria-modal="true" aria-labelledby="upgrade-title" onKeyDown={e=>{if(e.key==='Escape')setConfirmUpgrade(false);}}><div className="download-dialog-card"><h3 id="upgrade-title">{t('setup.updateTitle')}</h3>
    {!installed?<p>{t('setup.updateAppWarning')}</p>:<fieldset className="aio-update-scopes"><legend>{t('setup.update.choose')}</legend>
     {updateScopes.map(scope=>{const torch=scope==='torch'?torchUpdate:null;const blocked=scope==='torch'&&(torch==='checking'||!torch?.to||!!torch.blocked);

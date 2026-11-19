@@ -27,7 +27,9 @@ export const isOptionsPref=(v:unknown):v is OptionsPref=>{
  return !!o&&typeof o==='object'&&typeof o.attention==='string'&&(o.vae==='full'||o.vae==='tiled')&&Number.isInteger(o.tile)&&o.tile>=256&&o.tile<=4096&&o.tile%64===0
   &&['','EasyCache','LazyCache'].includes(o.cache)&&typeof o.threshold==='number'&&o.threshold>=0&&o.threshold<=3&&typeof o.compile==='string'&&(o.sigmas===undefined||typeof o.sigmas==='string')&&(o.outputNaming===undefined||typeof o.outputNaming==='string')&&(o.chunkHeadroom===undefined||headrooms.includes(o.chunkHeadroom))&&(o.output===undefined||isVideoOutput(o.output))&&(o.enhancedPreview===undefined||typeof o.enhancedPreview==='boolean');
 };
-type Allow=Pick<RecipeAllowlist,'nodes'|'attention'|'sage'|'compile'|'videoPreviews'>;
+type Allow=Pick<RecipeAllowlist,'nodes'|'attention'|'sage'|'compile'|'videoPreviews'|'triton'>;
+/** `inductor` generates Triton kernels; an owned GPU environment without Triton cannot run it. */
+const noTriton=(allow:Allow|null,backend:string)=>backend==='inductor'&&allow?.triton===false;
 
 /** Intent `options` from the remembered state. Choices a read backend does not list are left out; an unread backend leaves the check to native preparation. */
 export function runOptions(p:OptionsPref,allow:Allow|null):RunOptions|undefined{
@@ -38,7 +40,7 @@ export function runOptions(p:OptionsPref,allow:Allow|null):RunOptions|undefined{
   ...(kind==='a:'&&has('ModelAttentionBackend')&&listed(allow?.attention,value)?{attention:value}:{}),
   ...(kind==='s:'&&has('PathchSageAttentionKJ')&&listed(allow?.sage,value)?{sage:value}:{}),
   ...(p.cache&&has(p.cache)?{cache:{node:p.cache,threshold:p.threshold}}:{}),
-  ...(p.compile&&!kitchen(p)&&has('TorchCompileModel')&&listed(allow?.compile,p.compile)?{compile:p.compile}:{}),
+  ...(p.compile&&!kitchen(p)&&has('TorchCompileModel')&&listed(allow?.compile,p.compile)&&!noTriton(allow,p.compile)?{compile:p.compile}:{}),
   ...(p.vae==='tiled'&&has('VAEDecodeTiled')?{vaeTile:p.tile}:{}),
  };
  return Object.keys(o).length?o:undefined;
@@ -102,6 +104,6 @@ export function OptionsPanel({value:p,onChange,allow,family,video=false,imageInp
    <label><span>{t('studio.run.opt.output.imageCompression')}</span><input type="number" value={out.imageCompression} min={0} max={100} step={1} onChange={e=>{const n=Number(e.target.value);if(Number.isInteger(n)&&n>=0&&n<=100)setOut({imageCompression:n});}}/></label>
    {(['saveFirstFrame','saveLastFrame'] as const).map(k=><label key={k} className="wb-option-row"><input type="checkbox" checked={out[k]} onChange={e=>setOut({[k]:e.target.checked})}/>{t(`studio.run.opt.output.${k}`)}</label>)}
   </div>,t('studio.run.opt.output.hint'),undefined,()=>set({output:defaultVideoOutput}))}
-  {card('compile',<select aria-label={t('studio.run.opt.compile')} value={p.compile} disabled={off('TorchCompileModel')||kitchen(p)} onChange={e=>set({compile:e.target.value})}><option value="">{t('studio.run.opt.off')}</option>{keep([...(allow?.compile??[])],p.compile).map(b=><option key={b} value={b} disabled={!allow?.compile?.includes(b)}>{b}</option>)}</select>,missing('TorchCompileModel')||t(kitchen(p)?'studio.run.opt.compile.kitchen':'studio.run.opt.compile.hint'))}
+  {card('compile',<select aria-label={t('studio.run.opt.compile')} value={p.compile} disabled={off('TorchCompileModel')||kitchen(p)} onChange={e=>set({compile:e.target.value})}><option value="">{t('studio.run.opt.off')}</option>{keep([...(allow?.compile??[])],p.compile).map(b=><option key={b} value={b} disabled={!allow?.compile?.includes(b)||noTriton(allow,b)}>{b}</option>)}</select>,missing('TorchCompileModel')||t(kitchen(p)?'studio.run.opt.compile.kitchen':allow?.triton===false?'studio.run.opt.compile.noTriton':'studio.run.opt.compile.hint'),noTriton(allow,p.compile)?t('studio.run.opt.compile.noTriton'):undefined)}
  </div>;
 }

@@ -1468,5 +1468,7 @@
   "tagCompletion.aliases": "CSV 内の別名でも検索",
   "tagCompletion.contains": "タグ名の途中も検索",
   "tagCompletion.minimum": "最小投稿数",
-  "tagCompletion.shared": "正・負の両プロンプトに適用されます。タグはアップロードされません。"
+  "tagCompletion.shared": "正・負の両プロンプトに適用されます。タグはアップロードされません。",
+  "studio.run.indexGap": "バックエンドには、このリストにまだ表示されていないモデルファイルが {count} 件あります（手動でコピーしたファイルなど）。「再読み込み」で追加されます。",
+  "studio.run.opt.compile.noTriton": "この環境には GPU 用の Triton がないため、inductor バックエンドは実行できません。「バックエンド → アップグレード」でインストールされます。他のコンパイルバックエンドは引き続き使用できます。"
 }

@@ -235,6 +235,7 @@ fn main() {
             deas::native_install_plan,
             deas::native_install_start,
             deas::native_install_open,
+            deas::native_install_repair,
             deas::native_install_status,
             deas::native_install_cancel,
             deas::native_install_update,

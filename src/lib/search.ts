@@ -330,6 +330,7 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: 'backend', tab: 'settings.button', section: 'settings.title', label: 'settings.output', target: '[data-folder="output"]', aliases: ['folder', 'directory'], reason: 'search.reason.installed' },
   { view: 'backend', tab: 'settings.button', section: 'settings.title', label: 'app.language', target: '#language-select', aliases: ['locale', 'translation'] },
   { view: 'backend', tab: 'settings.button', section: 'settings.button', label: 'setup.upgrade', target: '[data-upgrade]', aliases: ['update'] },
+  { view: 'backend', tab: 'settings.button', section: 'settings.button', label: 'setup.repair.action', target: '[data-env-repair-start]', aliases: ['repair', 're-provision', 'node pack'] },
   // Logs
   { view: 'logs', tab: 'logs.title', section: 'search.section.filters', label: 'logs.search', target: '.logs-search', aliases: ['find', 'filter'] },
   { view: 'logs', tab: 'logs.title', section: 'search.section.filters', label: 'logs.sources', target: '[data-logs-group="source"] button', aliases: ['filter'] },

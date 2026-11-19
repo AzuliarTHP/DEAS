@@ -4722,3 +4722,122 @@ Live provider acceptance on native WebKitGTK (isolated profile, anonymous only):
   `api.civitai.com` answers the Cloudflare HTML challenge to non-browser clients, so the
   adapter sees zero entries; the UI renders the empty list without error and marks the
   bundled creator resources login-gated. No CivitAI download was attempted (login-gated upstream).
+
+## 0.3.4 — fixes for the 0.3.3 Windows session findings (2026-11-19)
+
+Source: findings 1–4 of the TESTPC session report (`artifacts/verification/windows-033/README.md`). All evidence below is Linux CPU/fixture evidence; no Windows runtime, GPU or real older environment was exercised for these fixes.
+
+- **Outdated pack pins → explicit repair (finding 1).** `install.rs::existing_plan` now turns a `validate_gguf_install` failure that `pin_outdated` classifies as a revision mismatch (`ComfyUI-* install does not match its pinned revision; re-provision required`) into a preview with `repair: {id, reason}` and no `reopenId`; the unmodified saved plan is held in `Inner::pin_repair` under a one-time token. `native_install_repair` → `Engine::arm_pin_repair` (confirmation, idle installer/backend, exact token) moves it to `Inner::repair` and delegates to the unchanged `native_install_update` path (default `UpdateScope::Comfy` re-fetches every pack at its pin; success captures approval like a provision). `source changed` (modified pack files) and identity errors stay hard refusals. Frontend `AiOSetup.tsx`: restore and folder choice show **Environment needs an update** with **Update environment** + confirmation dialog, header **Update required**, no automatic new-install planning while the offer stands; success sets the installed root and notifies `onInstalled`; failure re-previews. Six locales, global search entry `setup.repair.action` → `[data-env-repair-start]`.
+  - Rust: `outdated_pack_pin_previews_an_explicit_repair_instead_of_a_dead_end` (real KJNodes HEAD mismatch on the backend fixture: preview not persisted, open refused, unconfirmed/stale/reused tokens refused, plan file byte-identical, backend never started), `only_revision_mismatches_are_repairable_not_modified_sources`.
+  - UI: `AiOSetup.test.tsx` › *offers an explicit environment update when a saved environment has outdated pack pins, then opens it* (no technical error, no Start install, no open/start/update before confirmation, exact `native_install_repair` arguments, installed afterwards, header switches to Installed).
+- **Bounded uv download retry (finding 2).** `install.rs::download_with_retry`: 3 attempts, 2 s / 5 s backoff (10 ms under test), `WARN: download attempt n/3 …` log per retry, cancellation honoured during the wait; 4xx except 429 and size-limit violations are final; digest verification is unchanged and still runs on the final bytes. Test `release_download_retries_a_transient_failure_but_not_a_missing_asset` against a scripted loopback server: drop → 503 → 200 recovers in exactly 3 requests; three drops fail after exactly 3; 404 and oversize fail after 1. The existing stall test still passes.
+- **Index gap note (finding 3).** `modelLibrary.ts::backendIndexGap` compares backend checkpoints/LoRAs/diffusion models (separator- and case-normalized; diffusion models against `diffusion_models` and `unet`) with the index; `Workbench.tsx` shows `[data-index-gap]` next to **Reload** (`aria-describedby`) without scanning. An automatic refresh was prototyped first and rejected: it added scans in 13 existing Workbench tests that pin the deliberate no-implicit-rescan contract from the refocus fix. Tests: `Workbench.indexGap.test.tsx` (pure key cases; note appears with count 1, `scanModels` called once until Reload, Reload with `refresh=true` clears it).
+- **KJNodes triton traceback (finding 4).** `backend.rs::LogCondenser` per captured stream: holds from the KJNodes PatchTritonVAE warning, accepts only traceback lines and `No module named 'triton'`, emits `KJNODES_TRITON_SUMMARY` on `ImportError: PatchTritonVAE requires triton`, flushes verbatim on any other line, after 80 held lines or at stream end. Text shape confirmed with the owned Core's `ColoredFormatter` reproducing the same chained exception. Test `kjnodes_missing_triton_traceback_is_condensed_and_other_output_is_untouched`. KJNodes itself is unchanged (pinned `d3cfe216…`; a quieter upstream log would need a separately authorized PR).
+- **Triton provisioning (follow-up to finding 4).** Before: no explicit Triton handling. Linux NVIDIA already received `triton 3.8.0` through `torch 2.14.1+cu130` (`Requires-Dist: triton~=3.8.0; platform_system == "Linux"`, confirmed in the owned environment); Linux ROCm resolves `triton==3.8.0+git4cff872c.rocm10.0.0` from AMD's `torch[device-gfx1100]==2.13.0+rocm10.0.0` (read-only `uv pip compile` against `stable.repo.amd.com/rocm/whl-next/`); Windows NVIDIA had none. Now `install.rs::triton_package` adds `triton-windows==3.8.0.post29` (MIT, cp312 win_amd64 wheel on PyPI, matching Torch 2.14 / Triton 3.8 like the reference installer's `windowsTritonSpec`) after the Torch step on Windows NVIDIA CUDA 13 plans only, with `--only-binary :all:` and the existing `UV_CONSTRAINT` Torch pins; it runs on fresh installs and on every update (both update scopes rerun the Torch step). `triton_expected` (CUDA 13 NVIDIA, ROCm; not Pascal/CPU) makes the verify step import `triton` and record `tritonVersion`. `Engine::owned_triton` (running owned GPU backend at that endpoint + venv file check for `triton/__init__.py`, both venv layouts) feeds `allowlist.triton` in `native_recipe_prerequisites` and `jobs_workbench::validate_compile_triton`, which refuses `options.compile = "inductor"` before upload when it is `Some(false)`. Studio `OptionsPanel` disables `inductor` with a six-language reason shown as the card's alert. Tests: `triton_comes_from_torch_on_linux_and_from_triton_windows_on_windows_nvidia`, `triton_presence_is_a_venv_file_check_for_both_layouts`, `torch_compile_inductor_is_refused_only_for_an_owned_environment_without_triton`, `OptionsPanel.test.tsx` › *drops inductor only for an owned environment that reports no Triton*. No real Windows install, Triton import on Windows or compiled run was performed (PLAN B-07).
+- Gates at 0.3.4: `npm run typecheck` clean; `npm run test:core` 167/167; `npm run test:ui` 2356/2356; `npm run build` and `npm run test:layout` passed; `cargo clippy --locked --all-targets -D warnings` clean; `cargo fmt --check` clean; serial `cargo test --lib`: 1086 passed, 19 failed, 80 ignored with `/tmp` as TMPDIR — all 19 are fixtures refusing the world-writable `/tmp` (`requires a safe owned directory without group/world write`) and pass (23/23 incl. the two backend shutdown fixtures) with a private 0700 TMPDIR. One Workbench test (`switching model architecture leaves retained LoRAs inactive…`) timed out once under the parallel full-directory run and passed alone and twice in its file.
+- Not established: the repair against the real 0.2.34 environment on the Windows host (`C:\Users\testacct\DEAS`), a real GitHub transient failure, the note in the native WebView2/WebKitGTK app, and the condensed line from a real Windows backend start. Tracked as PLAN B-07.
+
+## Closed plan items moved from PLAN.md (2026-11-19)
+
+Moved verbatim during the PLAN restructuring (IDs, types and blockers added to every open item). These texts describe delivered work, closed gates or superseded rows; any remaining gate they mention is tracked under its PLAN ID.
+
+### Capability status snapshot (0.2.17 baseline with later per-row notes)
+
+| Area | State (0.2.17 baseline; later versions named per row) | Open |
+| --- | --- | --- |
+| Shell, navigation, layout | Implemented. Creative tabs left: Studio, Library, Prompt Forge, Chat, TVE, Comfy; utility tabs right: Monitoring, Run Plan, Backend, Logs. Shared viewport gate `npm run test:layout` | Windows/native visual acceptance |
+| Provisioning (installer) | Partial. Immutable consented plans, Linux/Windows x86_64 CPU/NVIDIA baseline, pinned ComfyUI-GGUF, checked reopening, foreign-install takeover, explicit Upgrade/Reinstall | §4.8 |
+| Owned backend lifecycle | Implemented, bounded. Approved ownership, default-on autostart, explicit Stop, Windows Job Object / Linux process group; graceful maintenance stop and previous-state resume | Native Windows slow-start confirmation ([#39](https://github.com/darksidewalker/DEAS/issues/39)) and graceful-stop/update/move acceptance, real GPU restart matrix, crash/power-loss recovery |
+| Downloads and Library | Partial. Catalogs, providers, managed placement, integrity, cancellation, Scan Files | Resume, free-space UX, §4.7 backlog, broad authenticated-provider acceptance |
+| Authentication | Partial. Native exact-origin credentials, metadata-only readback | Real OS-store and provider acceptance beyond fixtures |
+| Localization | Implemented, bounded. Six languages, module-owned locales | Native-speaker review |
+| API negotiation | Partial. Classic/v2 discovery, exact node/model/sampler choices | Complete v2/SDK execution adapter |
+| Remote browser interface / DEAS API | Planned, not implemented. Host-owned app execution, browser display/control and authenticated integration API | §4.8; separate from outgoing ComfyUI API negotiation |
+| Image generation and families | Partial. Image recipes, LoRA stacks, family constraints, MOSS, SDXL/Qwen/Krea/MOSS image references, paired refine products, GGUF split loaders, Edit meta… family override, wrong-folder gating. 0.2.12–0.2.13 added DualCLIPLoader/Flux, SD3/SD3.5, Chroma/Radiance, HiDream, PixArt/HunyuanDiT, Lumina2, SD1.5/SD2, Kandinsky5, Ideogram4, Boogu, OmniGen2, Fibo2, Ernie, Flux.2/3 and Mage-Flow | Per-family real-model matrix; §4.4, §4.5 |
+| Video generation | Partial. LTX 2.3, Wan 2.2, MiniMax H3 (T2VA/I2VA/FL2VA/L2VA/REF2VA, image edit) incl. the HyperFlow H3 Flash GGUF variant (fixed 4/6/8-step schedule via the upstream node pack; latent upscale unverified/disabled), LTX v2v/keyframes, learned H3/LTX latent upscale | §4.1 |
+| Director and Continuity | Partial. Continuity for all H3 pipelines, sessions, checkpoint/imported/uploaded sources, overlap, use-references, Forge Next action, References modal, RefMod reading, packs, people boxes, cast/pose cards | joined clips, automatic card reading; RefMod creation acceptance; §4.1 |
+| Music (YuE2 and ACE-Step) | YuE2 implemented 0.1.66, fixture-verified: Text to Music (ABC Off/Full/Melody), Cover Music, FLAC results/history (all-in-one checkpoints only). ACE-Step Text to Music for original 1.0 and resolved 1.5 Base/SFT/Turbo/XL implemented 0.2.16, fixture/CPU-schema verified | §4.3; split diffusion-model loading §4.5; real ACE model/native acceptance in F3 |
+| Prompt Forge / Chat / shared LLM | Partial. Native writers, MOSS Layout Studio, streamed Chat with HTTP cancellation, model-exact routing, in-chat image writes and `render_picture` through Generate, tag suggestions | Forge request streaming (Forge still sends `stream:false`), remote API-key auth where absent, real-LLM acceptance |
+| Presets, wildcards, seeds | Partial. Separate Presets/Wildcards tabs, reproducible seeds | Custom wildcard library editing/import, versioned cross-feature smart presets, hardware-aware recommendations |
+| Image editing | Partial. Layers/masks, paint, magic wand, outpaint frame, full-size drop, crop-inpaint-composite | Undo, transparent inserts, outpaint seam quality, §4.4 |
+| Queue, jobs, history | Implemented, bounded. Repeated Run, split Run/Stop (scoped pending delete + `/deas/jobs/interrupt`), all-job polling, owned preview observers, last-10 recent history | Queue statistics expansion (§4.6); real GPU cancellation |
+| Media and playback | Partial. Media dock, star/unstar raw↔starred, metadata, Linux video via embedded libmpv, WebKit `<audio>` with bundled GStreamer plugins | §4.1 playback acceptance |
+| Output and export | Partial. PNG/FLAC bounded retrieval, cache, no-clobber export; paired image products with capability-gated baseline-first image refinement (0.2.19) | Image native/model acceptance; video ordering and paired video products (§4.2) |
+| Projects | Partial. Image-draft projects, single-writer lock, managed PNG import, draft ZIP | Full persistence is deferred by owner scope (§4.6) |
+| TVE video post-processing | Partial. TVE tab (Rust FFprobe inspection, chooser or Media-panel source, native source retention), TVE stages (upscale model, RTX denoise/deblur/VSR, RTX/RIFE frame generation) in every video pipeline as paired Original/Processed products, and the TVE tab's backend enhance recipe (0.1.67). The standalone Rust ONNX engine was retired in 0.1.67 | §4.2 |
+| Video comparison | Implemented 0.2.40: compare slider renders a synced original/processed video pair (bottom drives, muted copy follows >60 ms drift); live codec acceptance on native runtimes open | §4.9 |
+| Video assembly | Missing | §4.9 |
+| Training / datasets | Missing | §4.9 |
+| Telemetry / optimization | Partial primitives (`hardware.rs`) | Resource profiles, shared GPU scheduling, opt-in benchmarks |
+| Plugin platform | Data-only metadata/catalog/theme plugins only; no executable or UI-plugin loading | §4.10 |
+| Updates and migrations | Partial. Confirmed app-binary update (Linux self-replace; Windows manual), in-place backend update | Staged update/rollback, project migrations, packed release assets (§4.8) |
+| Distribution | Partial. Local unsigned Linux/Windows builds, release manifest/SHA256SUMS; hosted workflows disabled | Signed/portable distribution, fresh-machine acceptance, glibc portability |
+
+### Library Catalog and PR #38 — closed acceptance gates (released in 0.2.40)
+
+The Catalog continuation and [PR #38](https://github.com/darksidewalker/DEAS/pull/38)
+are integrated locally. Installed and Catalog share their gallery skin, category
+bar, filters, folder groups, supported sorts, grid/list views and bounded loading.
+Catalog favorites/notes/tags use separate identities; local scan, family edits and
+file operations remain Installed-only. Deferred browse and captured provider/target
+regressions are covered, and returning from provider search clears its old query
+without an extra request. See [Library](LIBRARY.md) and the
+[integration evidence](VERIFICATION.md#pr-38-integration-and-catalog-continuation--2026-11-17).
+
+- [x] Native WebKitGTK interaction with Catalog controls, dialogs, narrow-pane
+  scrolling and favorites/notes/tags persistence passed on the live desktop
+  (isolated scratch profile, real restart, 960px minimum resize; evidence in
+  [VERIFICATION.md](VERIFICATION.md#pr-38-integration-and-catalog-continuation--2026-11-17)).
+  DOM-dispatched input, not OS-level key injection; reference assignment/reordering
+  and prompt-tag options were covered in Chromium fixtures only.
+- [x] Windows WebView2 Catalog smoke: fresh run directory with isolated WebView profile,
+  loopback CDP through SSH, real Playwright input — page live at `http://tauri.localhost/`,
+  native IPC answered, 15 catalog cards, favorite toggle, details dialog with note
+  persistence and Escape close. Evidence in
+  [VERIFICATION.md](VERIFICATION.md#0240-gate-closes--windows-runtime-webview2-smoke-and-live-provider-downloads-2026-11-17).
+- [x] Live provider and real multi-file download acceptance (anonymous GitHub): discovery
+  search → repo listing (with the pagination and hidden-entry fixes) → two files per basket
+  entry → Download all → engine `succeeded` 2/2 → files plus manifest persisted under the
+  configured models folder, and clean app restart. CivitAI anonymous listing is not testable
+  from these hosts (Cloudflare HTML challenge to non-browser clients); the UI handles the
+  empty result and login-gated marks without error. Token-authenticated paths were not
+  exercised anonymously.
+- [x] Windows native runtime acceptance of the updated retained-source deletion and
+  duplicate-physical-file batch admission tests: the current working-tree test binary ran
+  on the real Windows host, `media_delete` 11/11 including share-delete pending reporting,
+  delayed preview release with filename reuse and duplicate case/hardlink rejection.
+
+The GitHub adapter fixes, inpaint pipette, named native request errors and these
+acceptance records shipped in 0.2.40. Only the H3 generation/quality gate above
+remains open.
+
+### References role slots (W7) — folded into UX-02
+
+- **References role slots (W7) — native acceptance only.** First/last-frame and LTX source-video slots now live in the Video References role editor with replace/remove/drop. Remaining native/runtime acceptance is folded into §4.6; do not build a second editor.
+
+### H3 join clips and transitions — delivered continuation, audio seams and dungeon case (2026-11-15/16)
+
+    - **Owner-authorized continuation (2026-11-15): implemented, GPU retest pending.** Node pack 0.5.53 (later rebased and published as 0.5.57, installed in the owned environment — see the next bullet) adds the opt-in `smooth-seams` audio policy and Transition-Guide RAM reclaim through Core's own pressure hooks; DEAS 0.2.35 adds the default-OFF **Smooth audio seams** option. Native Linux owned-backend admission, a real model-free join, pending→running race reconciliation and running interrupt passed through native IPC. Evidence: [continuation](VERIFICATION.md#h3-join-continuation-native-linux-owned-backend-audio-seams-and-ram-reclaim--2026-11-15).
+    - **Audio seam quality — listening approved and pack installed (2026-11-16).** Opt-in `smooth-seams` lowered the measured T3 seam jump from 0.424 to 0.0027 on the retained real media with unchanged duration/video; `preserve` stays default and byte-identical. Owner listened to the A/B seam clip (T3 join, 1.75 s boundary) and both full dungeon joins and authorized publication; evidence files: `artifacts/verification/audio-seam-listening-20261116/`. The change was rebased over upstream 0.5.54–0.5.56 (the original 0.5.53 number was taken upstream) and published as **0.5.57** (`ba3d4be`, both remotes) with 146 targeted pack tests green; the owned environment's checkout was fast-forwarded to it. DEAS preflight now admits `smoothAudioSeams` instead of refusing. Remaining: real GPU joins through the native UI with the option ON (lifecycle acceptance below) and the sequential memory retest.
+    - **Owner-reference dungeon case (2026-11-15):** the supplied silver-haired/red-eyed heroine was rendered with the exact requested Graviton Turbo int8 checkpoint, 8 steps/CFG 1. Two 124-frame H3 reference shots plus a real 29-frame bridge produced a fully decoded **240-frame / 10.000 s** H.264/AAC result (544×704/24 fps, 480,000 stereo audio samples). Both German dialogue lines were prompted; the owner reviewed the delivered film and reported no visible problem (visual acceptance of this case). Exact wording/lip-sync and perceived audio continuity still need distinct listening judgement; contact-sheet or RMS evidence does not prove them. [Case evidence](VERIFICATION.md#h3-dungeon-adventure-with-owner-reference--2026-11-15).
+  - Real model-free join execution is proven for H.264/AAC re-encode and AV1 packet copy (248 frames, decoded pixels identical to the two source copies). Non-keyframe trims visibly fall back to re-encode; mismatched geometry is rejected with an actionable error. Originals/intermediates remain intact; these backend runs do not close native playback/export acceptance.
+
+### H3 face refinement — RF1/RF2 regression fix (0.2.38)
+
+    - [x] RF1: separate whole-source manual face refinement from the mask-analysis window, derive exact full-source timing at the native/backend boundary and preserve compatibility with explicit legacy window intents. Keep memory admission, Original/Processed ordering, source identity and scoped Stop. Regress the actual Workbench payload and native graph, not only hand-written intents.
+    - [x] RF2: exercise a real five-second, 24-fps source with audio through the CPU acquisition/save boundary; verify full frame count/duration and audio samples, silent-video handling and source preservation. Keep this evidence distinct from model inference.
+
+### Inpaint colour pipette — gate and implementation (0.2.40)
+
+  - [x] Gate done: WebKitGTK 2.54.2 exposes no `EyeDropper` (symbol-less; probe `ERR Invalid type`) while the desktop's xdg-desktop-portal offers `Screenshot.PickColor`; WebView2/Chromium has `EyeDropper`. Chosen: browser API when present, else `native_pick_screen_color` portal call with explicit consent, RGB-only, no capture stored; unsupported runtimes keep manual selection with an explanatory note. The original requirement was to choose browser `EyeDropper` or an existing native/desktop-portal path. Sampling only the image canvas does **not** satisfy screen-wide picking. Use explicit user activation and any required platform consent; no persistent screen capture, screenshot storage or silent permissions. If unavailable, explain the limitation and retain manual colour selection rather than claiming screen-wide support.
+  - [x] Provided: `.sie-pipette` button with picking state, confirmed pick updates swatch/hex, cancel or unsupported keeps the previous colour; search entry `studio.editor.color` added; six locales; `docs/STUDIO.md` section; jsdom 47/47; Chromium inpaint fixture clicks the button end-to-end (mock IPC) and the toolbar kept the 1440×960/320 layout budgets. Preserve brush/mask semantics, focus, zoom/pan, layers and existing input/intent/recipe contracts.
+
+### MOSS-Image SLG and negative prompt (shipped in 0.2.38)
+
+  - **MOSS Skip-Layer Guidance (SLG) — implemented CPU-side (2026-11-16; shipped in 0.2.38).** The MOSS field **Skip layers** (comma-separated list, default **`22`**, empty = unchanged graph) is sent as intent `skipLayers` and emitted as the core `SkipLayerGuidanceDiTSimple` node (`single_layers` = field, `double_layers` empty, start 0.0/end 1.0) chained after the model/sampling patch and before `KSampler`. Core Simple SLG patches only the uncond branch — the ComfyUI-graph equivalent of the Python API's `uncond_skip_layers`; the official ComfyUI template wires the same node. TS compiler, `jobs.rs` preflight, prerequisites catalog, Workbench field, MOSS Run gate, global search and six locales are covered; invalid lists, nonexistent layer indices (the shared family declares 42 layers, indices 0–41) and non-MOSS families are refused with concrete reasons. History/recognized graph reuse restores SLG, with absence clearing it. Real-run acceptance stays open below.
+  - **MOSS negative prompt — implemented CPU-side (2026-11-16; shipped in 0.2.38).** The family defaults carry the recommended general-generation prompt `nsfw, worst quality, bad anatomy, watermark, jpeg artifact`; genuine initial/default MOSS setup prefills it into an empty Negative field, while same-kind model switches preserve the exact authored prompt, including empty text. It stays editable and travels through the normal intent path (no silent compiler injection). The Python API default remains empty.
+  - [x] Add the SLG field to the MOSS adapter path (TS compiler + `jobs.rs` preflight + prerequisites), the recommended negative prompt, six locales, global search and the `docs/STUDIO.md` family text; CPU fixtures prove the emitted node, both compilers' refusals and the prefill.
+
+### Owner-authorized phased follow-through (priority note; Replace wizard is now listed in PLAN §2)
+
+- **Owner-authorized phased follow-through.** Stop selected/all, image PP1a/b, clipboard intake (0.2.22) and the encoded-video PP1c slice (0.2.22) are implemented; PP1c2 latent-upscale ordering landed in 0.2.23 (§4.2); next in this sequence: the image Replace wizard (Dark Wizards tab, not started). Native/real-backend acceptance of each stays open. No commit/publication or external-service restart is authorized by this sequence.

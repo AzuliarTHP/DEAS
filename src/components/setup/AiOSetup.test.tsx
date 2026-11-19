@@ -234,6 +234,37 @@ describe('automatic-first installation — read-only mock IPC fixtures',()=>{
   await screen.findByRole('button',{name:'Use existing environment'});expect((screen.getByLabelText('Storage directory') as HTMLInputElement).value).toBe('/chosen/env');
   expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_install_start'||c==='native_install_open')).toBe(false);
  });
+ it('offers an explicit environment update when a saved environment has outdated pack pins, then opens it',async()=>{
+  nativeFixture();const installed=vi.fn();localStorage.setItem('deas.pref.install.root','"/old/env"');localStorage.setItem('deas.pref.backend.autostart','false');
+  const reason='ComfyUI-HyperFlow-Flash install does not match its pinned revision; re-provision required';
+  let state='idle';
+  vi.mocked(invoke).mockImplementation(async c=>{if(c==='native_theme_packs')return {directory:'/fixture/env/themes',packs:[],warnings:[]};if(c==='native_llm_read')return defaultLlmConfig;if(c==='native_llm_models')return {models:[],warnings:[]};
+   if(c==='native_files_present')return [true];
+   if(c==='native_install_defaults')return defaults;
+   if(c==='native_install_plan')return {...plan({...request,storagePath:'/old/env'}),id:'repair-1',repair:{id:'repair-1',reason}};
+   if(c==='native_settings_read')return {};
+   if(c==='native_install_repair'){state='running';return {state,stepId:'gguf',logs:[],error:null};}
+   if(c==='native_install_status'){state='succeeded';return {state,stepId:null,logs:['Upgrade checks succeeded'],error:null};}
+   if(c==='native_backend_test')return DEPS;
+   return {state:'stopped',endpoint:null,logs:[],error:null,generationReady:false};
+  });
+  mount(vi.fn(),installed);open();
+  const action=await screen.findByRole('button',{name:'Update environment'});
+  expect(document.querySelector('[data-backend-installed]')?.textContent).toContain('Update required');
+  expect(screen.queryByText(/Technical error/)).toBeNull();
+  expect(screen.queryByRole('button',{name:'Start install'})).toBeNull();
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_install_open'||c==='native_install_start'||c==='native_install_repair')).toBe(false);
+  fireEvent.click(action);
+  const dialog=await screen.findByRole('alertdialog',{name:'Update this environment?'});
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_install_repair')).toBe(false);
+  fireEvent.click(dialog.querySelector('[data-env-repair-confirm]')!);
+  await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_install_repair',{planId:'repair-1',confirmed:true}));
+  await waitFor(()=>expect(installed).toHaveBeenCalledWith(request.features),{timeout:3000});
+  expect(JSON.parse(localStorage.getItem('deas.pref.install.root')!)).toBe('/old/env');
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_install_start'||c==='native_install_update'||c==='native_backend_start')).toBe(false);
+  open();await waitFor(()=>expect(document.querySelector('[data-backend-installed]')?.textContent).toContain('Installed'));
+  expect(screen.queryByRole('button',{name:'Update environment'})).toBeNull();
+ });
  it('does not autostart an unverified remembered folder or turn it into a new install',async()=>{
   nativeFixture();localStorage.removeItem('deas.pref.backend.autostart');localStorage.setItem('deas.pref.install.root','"/invalid/env"');
   vi.mocked(invoke).mockImplementation(async c=>c==='native_llm_read'?defaultLlmConfig:c==='native_llm_models'?{models:[],warnings:[]}:c==='native_files_present'?[true]:plan());

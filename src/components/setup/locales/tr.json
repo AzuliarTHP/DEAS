@@ -301,5 +301,14 @@
   "search.section.panes": "Backend panelleri",
   "search.reason.lines": "Mevcut filtreyle eşleşen log satırı yok",
   "search.reason.backendRunning": "Yalnızca arka uç durdurulmuşken",
-  "search.reason.startupCacheLru": "Yalnızca düğüm sonucu önbelleği sabit boyutlu LRU olarak ayarlandığında görünür."
+  "search.reason.startupCacheLru": "Yalnızca düğüm sonucu önbelleği sabit boyutlu LRU olarak ayarlandığında görünür.",
+  "setup.overview.repair": "Güncelleme gerekli",
+  "setup.repair.title": "Ortamın güncellenmesi gerekiyor",
+  "setup.repair.help": "Bu ortam eski bir DEAS sürümüyle kuruldu: bazı node paketleri bu sürümün gerektirdiğinden farklı revizyonlarda, bu yüzden olduğu gibi açılamıyor. „Ortamı güncelle“ gerekli paket revizyonlarını ve bağımlılıklarını indirir. Modeller, girdiler, çıktılar ve ayarlar değişmez.",
+  "setup.repair.details": "Teknik ayrıntılar",
+  "setup.repair.action": "Ortamı güncelle",
+  "setup.repair.actionHint": "Bu DEAS sürümünün gerektirdiği node paketi revizyonlarını indirir; önce onay ister. Modeller, girdiler ve çıktılar korunur.",
+  "setup.repair.confirmTitle": "Bu ortam güncellensin mi?",
+  "setup.repair.confirmText": "DEAS gerekli node paketi revizyonlarını indirir ve bağımlılıklarını bu ortamın kendi Python'una kurar. Modellere, girdilere, çıktılara ve ayarlara dokunulmaz. Ardından backend her zamanki gibi başlar.",
+  "setup.repair.confirm": "Güncelle"
 }

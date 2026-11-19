@@ -56,6 +56,10 @@ A quiet hover hint discloses a differing label; metadata can be incorrect.
 Folder/search/visibility filters only affect browsing; active, present LoRAs
 enter the generation intent. All selected entries remain visible in the LoRA count, including mismatches. New external
 files require explicit Reload or Library Refresh models; Library and Studio keep their own display filters.
+When the running backend already lists checkpoints, LoRAs or diffusion models that the index does not contain
+(typically files copied in by hand), the Models and LoRAs docks show a note with their number next to **Reload**;
+Reload adds them. The note compares names only and never starts a scan by itself. Backend files outside the configured
+model roots keep the note visible after Reload, because DEAS does not index them.
 
 In Advanced Studio, the **Dials** settings button beside References and Continuity
 opens the steering controls for supported MiniMax H3 video pipelines. Files inside
@@ -840,7 +844,7 @@ On Linux the native video surface is temporarily hidden during internal drags an
 | Presets | [Save and resume Studio settings](PROMPTING.md#presets) |
 | Wildcards | [Prompting guide](PROMPTING.md#wildcards) |
 
-Options default to launch-default attention, full VAE (512px tile selection retained), cache/compile off, threshold 0.05 when cache is enabled, no sigma override and video chunking off. Comfy Kitchen INT8 and torch.compile are not combined; Spectrum H3 remains disabled. Custom sigmas must be finite, strictly descending and end at zero; model-fixed schedules are used unless overridden.
+Options default to launch-default attention, full VAE (512px tile selection retained), cache/compile off, threshold 0.05 when cache is enabled, no sigma override and video chunking off. Comfy Kitchen INT8 and torch.compile are not combined; on the owned GPU backend the `inductor` choice is disabled with a reason when its environment has no Triton (see [Triton](BACKEND.md#triton)); Spectrum H3 remains disabled. Custom sigmas must be finite, strictly descending and end at zero; model-fixed schedules are used unless overridden.
 
 Output defaults: Auto video codec/container/bit depth, quality 20, Auto audio codec, 192k, first/last PNG off, image PNG/compression 44. [Source defaults](../src/lib/videoIntent.ts) and actual encoder/node capabilities are authoritative; quality/compression values have backend-specific semantics, not a universal lossless scale.
 

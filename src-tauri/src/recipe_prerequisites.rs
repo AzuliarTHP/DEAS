@@ -530,7 +530,15 @@ fn parse(base: &reqwest::Url, nodes: &Value) -> Result<Value, String> {
 
 /// Explicit core probe only; does not negotiate v2 or follow upstream metadata.
 #[tauri::command]
-pub async fn native_recipe_prerequisites(base_url: String) -> Result<Value, String> {
+pub async fn native_recipe_prerequisites(
+    base_url: String,
+    engine: tauri::State<'_, crate::install::Engine>,
+) -> Result<Value, String> {
+    let triton = engine.owned_triton(&base_url);
+    recipe_prerequisites(base_url, triton).await
+}
+/// Read-only discovery; `triton` is the owned GPU environment's Triton state, `None` elsewhere.
+pub async fn recipe_prerequisites(base_url: String, triton: Option<bool>) -> Result<Value, String> {
     let base = crate::validate_base_url(&base_url)?;
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(3))
@@ -543,13 +551,18 @@ pub async fn native_recipe_prerequisites(base_url: String) -> Result<Value, Stri
         .await?
         .ok_or("Missing object_info response")?;
     // A reachable backend whose object_info is rejected would otherwise keep Run disabled silently.
-    parse(&base, &nodes).inspect_err(|error| {
+    let mut evidence = parse(&base, &nodes).inspect_err(|error| {
         crate::warn_backend_limited("object_info:PREREQUISITES", || {
             format!(
                 "WARN: backend prerequisites rejected: {error} (repeats limited to once per minute)"
             )
         })
-    })
+    })?;
+    // Only the owned GPU environment can be inspected for Triton; elsewhere the field stays absent.
+    if let Some(triton) = triton {
+        evidence["allowlist"]["triton"] = Value::Bool(triton);
+    }
+    Ok(evidence)
 }
 
 #[cfg(test)]
@@ -1218,7 +1231,7 @@ mod tests {
                 info.as_object_mut().unwrap().remove(*name);
             }
             let (base, request) = fixture(info.to_string()).await;
-            let result = native_recipe_prerequisites(base).await.unwrap();
+            let result = recipe_prerequisites(base, None).await.unwrap();
             assert_eq!(result["missingNodes"], json!(absent));
             assert_eq!(
                 result["allowlist"]["nodes"],
@@ -1261,7 +1274,7 @@ mod tests {
             info["KSampler"]["input"]["required"][field][0] = choices.clone();
             let (base, request) = fixture(info.to_string()).await;
             assert!(
-                native_recipe_prerequisites(base).await.is_err(),
+                recipe_prerequisites(base, None).await.is_err(),
                 "accepted KSampler.{field}: {choices}"
             );
             request.await.unwrap();
@@ -1286,7 +1299,7 @@ mod tests {
             info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"][0] =
                 json!([name, "ok.safetensors", "ok.safetensors"]);
             let (base, request) = fixture(info.to_string()).await;
-            let result = native_recipe_prerequisites(base).await.unwrap();
+            let result = recipe_prerequisites(base, None).await.unwrap();
             assert_eq!(
                 result["allowlist"]["checkpoints"],
                 json!(["ok.safetensors"]),
@@ -1300,7 +1313,7 @@ mod tests {
         // GGUF dual text encoders are file combos too: one odd name must not reject the backend.
         info["DualCLIPLoaderGGUF"] = json!({"input":{"required":{"clip_name1":[[" odd.gguf", "ok.gguf", "ok.gguf"]],"type":[["flux"]]}}});
         let (base, request) = fixture(info.to_string()).await;
-        let result = native_recipe_prerequisites(base).await.unwrap();
+        let result = recipe_prerequisites(base, None).await.unwrap();
         assert_eq!(result["allowlist"]["checkpoints"], json!([]));
         assert_eq!(
             result["allowlist"]["ggufDualTextEncoders"],
@@ -1315,7 +1328,7 @@ mod tests {
             r"Größe\模型 v2.safetensors"
         ]);
         let (base, request) = fixture(info.to_string()).await;
-        let result = native_recipe_prerequisites(base).await.unwrap();
+        let result = recipe_prerequisites(base, None).await.unwrap();
         assert_eq!(
             result["allowlist"]["loras"],
             json!([
@@ -1333,7 +1346,7 @@ mod tests {
         let mut info = nodes();
         info["KSampler"]["input"]["required"]["scheduler"][0] = json!([" normal"]);
         let (base, request) = fixture(info.to_string()).await;
-        assert!(native_recipe_prerequisites(base).await.is_err());
+        assert!(recipe_prerequisites(base, None).await.is_err());
         request.await.unwrap();
         // Sibling rejection tests share the once-per-minute limiter; only presence is stable.
         assert!(crate::logs::after(0)
@@ -1361,7 +1374,7 @@ mod tests {
                 info[node]["input"]["required"][field] = schema.clone();
                 let (base, request) = fixture(info.to_string()).await;
                 assert!(
-                    native_recipe_prerequisites(base).await.is_err(),
+                    recipe_prerequisites(base, None).await.is_err(),
                     "accepted {node}.{field}: {schema}"
                 );
                 request.await.unwrap();
@@ -1374,7 +1387,7 @@ mod tests {
         let mut info = nodes();
         info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"] = json!([[]]);
         let (base, request) = fixture(info.to_string()).await;
-        let result = native_recipe_prerequisites(base).await.unwrap();
+        let result = recipe_prerequisites(base, None).await.unwrap();
         assert_eq!(result["allowlist"]["checkpoints"], json!([]));
         assert_eq!(result["missingNodes"], json!([]));
         assert_eq!(result["generationReady"], false);
@@ -1391,7 +1404,7 @@ mod tests {
         }
         for info in cases {
             let (base, request) = fixture(info.to_string()).await;
-            assert!(native_recipe_prerequisites(base).await.is_err());
+            assert!(recipe_prerequisites(base, None).await.is_err());
             request.await.unwrap();
         }
     }
@@ -1403,7 +1416,7 @@ mod tests {
                 "HTTP/1.1 {status} Error\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
             );
             let (base, request) = fixture_response(response, Duration::ZERO).await;
-            let error = native_recipe_prerequisites(base).await.unwrap_err();
+            let error = recipe_prerequisites(base, None).await.unwrap_err();
             assert!(error.contains(&format!("HTTP {status}")), "{error}");
             request.await.unwrap();
         }
@@ -1413,7 +1426,7 @@ mod tests {
     async fn rejects_html_and_invalid_json() {
         for body in ["<html>Not ComfyUI</html>", "{broken"] {
             let (base, request) = fixture(body.into()).await;
-            assert!(native_recipe_prerequisites(base)
+            assert!(recipe_prerequisites(base, None)
                 .await
                 .unwrap_err()
                 .contains("invalid JSON"));
@@ -1429,7 +1442,7 @@ mod tests {
             destination.local_addr().unwrap()
         );
         let (base, request) = fixture_response(response, Duration::ZERO).await;
-        assert!(native_recipe_prerequisites(base)
+        assert!(recipe_prerequisites(base, None)
             .await
             .unwrap_err()
             .contains("HTTP 302"));
@@ -1452,7 +1465,7 @@ mod tests {
         );
         for response in [declared, chunked] {
             let (base, request) = fixture_response(response, Duration::ZERO).await;
-            assert!(native_recipe_prerequisites(base)
+            assert!(recipe_prerequisites(base, None)
                 .await
                 .unwrap_err()
                 .contains("response size limit"));
@@ -1487,7 +1500,7 @@ mod tests {
             "http://localhost:8188/#fragment",
             "not a url",
         ] {
-            assert!(native_recipe_prerequisites(base.into()).await.is_err());
+            assert!(recipe_prerequisites(base.into(), None).await.is_err());
         }
     }
 
@@ -1580,7 +1593,7 @@ mod tests {
         info["PathchSageAttentionKJ"] = json!({"input":{"required":{"model":["MODEL"],"sage_attention":[["disabled","auto","sageattn_qk_int8_pv_fp8_cuda++","bad\u{0000}"],{"default":false}]}}});
         info["VAEDecodeTiled"] = json!({});
         let (base, request) = fixture(info.to_string()).await;
-        let result = native_recipe_prerequisites(base).await.unwrap();
+        let result = recipe_prerequisites(base, None).await.unwrap();
         let allow = &result["allowlist"];
         assert_eq!(
             allow["attention"],
@@ -1607,7 +1620,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_option_choices() {
-        let result = native_recipe_prerequisites(std::env::var("DEAS_LIVE_COMFY").unwrap())
+        let result = recipe_prerequisites(std::env::var("DEAS_LIVE_COMFY").unwrap(), None)
             .await
             .unwrap();
         let allow = &result["allowlist"];
@@ -1624,7 +1637,7 @@ mod tests {
     #[tokio::test]
     async fn discovers_exact_core_choices_with_prefixed_get() {
         let (base, request) = fixture(nodes().to_string()).await;
-        let result = native_recipe_prerequisites(base.clone()).await.unwrap();
+        let result = recipe_prerequisites(base.clone(), None).await.unwrap();
         assert_eq!(
             result,
             json!({

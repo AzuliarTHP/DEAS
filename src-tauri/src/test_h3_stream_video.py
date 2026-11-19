@@ -9,7 +9,7 @@ import types
 import unittest
 
 HERE = Path(__file__).parent
-CORE = Path(os.environ.get('DEAS_TEST_COMFY_ROOT', '~/dev/deas-environment/ComfyUI'))
+CORE = Path(os.path.expanduser(os.environ.get('DEAS_TEST_COMFY_ROOT', '~/dev/deas-environment/ComfyUI')))
 
 
 def owned():
@@ -95,7 +95,7 @@ class ExportTests(unittest.TestCase):
     def setUpClass(cls):
         import av
         cls.av = av
-        path = Path(os.environ.get('DEAS_TEST_DASIWA_ROOT', '~/dev/ComfyUI-DaSiWa-Nodes')) / 'nodes/helper_pyav_video.py'
+        path = Path(os.path.expanduser(os.environ.get('DEAS_TEST_DASIWA_ROOT', '~/dev/ComfyUI-DaSiWa-Nodes'))) / 'nodes/helper_pyav_video.py'
         if not path.exists():
             raise unittest.SkipTest('optional installed pack absent')
         spec = importlib.util.spec_from_file_location('pack_pyav_test', path)
@@ -135,7 +135,7 @@ class ExportTests(unittest.TestCase):
             from comfy.nested_tensor import NestedTensor
         finally:
             sys.argv = previous
-        source = Path(os.environ.get('DEAS_TEST_DASIWA_ROOT', '~/dev/ComfyUI-DaSiWa-Nodes')) / 'nodes/nodes_enhanced_video_combine.py'
+        source = Path(os.path.expanduser(os.environ.get('DEAS_TEST_DASIWA_ROOT', '~/dev/ComfyUI-DaSiWa-Nodes'))) / 'nodes/nodes_enhanced_video_combine.py'
         namespace = dict(torch=torch, os=os, datetime=datetime, re=re, helper_pyav_video=self.helper)
         parsed = ast.parse(source.read_text())
         selected = [n for n in parsed.body if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.Assign))]
@@ -198,7 +198,7 @@ class ExportTests(unittest.TestCase):
         import numpy as np
         import torch
         from unittest.mock import patch
-        source = Path(os.environ.get('DEAS_TEST_DASIWA_ROOT', '~/dev/ComfyUI-DaSiWa-Nodes')) / 'nodes/nodes_enhanced_video_combine.py'
+        source = Path(os.path.expanduser(os.environ.get('DEAS_TEST_DASIWA_ROOT', '~/dev/ComfyUI-DaSiWa-Nodes'))) / 'nodes/nodes_enhanced_video_combine.py'
         namespace = dict(torch=torch, os=os, datetime=datetime, re=re, helper_pyav_video=self.helper)
         parsed = ast.parse(source.read_text())
         selected = [n for n in parsed.body if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.Assign))]

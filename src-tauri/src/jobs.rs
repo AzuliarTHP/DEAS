@@ -44,6 +44,8 @@ pub use cancel::{native_workbench_cancel_pending, native_workbench_interrupt_run
 pub use history::{native_jobs_history, native_jobs_history_outputs, native_logs_history_error};
 use observer::watch;
 pub use stop::native_workbench_stop;
+#[cfg(test)]
+pub(crate) use workbench::validate_compile_triton;
 pub use workbench::{native_workbench_current, native_workbench_poll, native_workbench_run};
 
 const RESPONSE_LIMIT: usize = 1024 * 1024;
@@ -1794,7 +1796,7 @@ impl Jobs {
         }
         let result = async {
             let prerequisites =
-                crate::recipe_prerequisites::native_recipe_prerequisites(base.to_string()).await?;
+                crate::recipe_prerequisites::recipe_prerequisites(base.to_string(), None).await?;
             let allow = &prerequisites["allowlist"];
             if intent["videoPost"]["derope"]["keepBackground"] == true
                 && allow["deropeKeepBackground"] != true

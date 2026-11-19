@@ -1,5 +1,28 @@
 # News
 
+## 0.3.4 (unreleased)
+
+### Older environments update instead of failing
+
+When DEAS finds an environment that an older version installed with other node-pack revisions, the Backend tab now
+says **Environment needs an update** and offers **Update environment**, instead of a technical error with no way
+forward. After you confirm, DEAS fetches the required pack revisions and opens the environment. Models, inputs,
+outputs and settings are kept.
+
+### Fewer install and log surprises
+
+The first-run uv download retries a dropped connection or a busy server before giving up. Studio's Models and LoRAs
+docks tell you when the backend already lists model files that the list does not show yet (for example files you
+copied in by hand); **Reload** adds them. On Windows, the KJNodes "triton" traceback at every backend start is now a
+single information line in Logs.
+
+### Triton on Windows
+
+Windows NVIDIA environments now get Triton (`triton-windows`) like Linux already did through PyTorch, so
+**Torch Compile** and Triton-based nodes can work there. Existing Windows environments get it with
+**Backend → Upgrade**. When an environment has no Triton, Studio says so in Options instead of letting a
+Torch Compile job fail.
+
 ## 0.3.3
 
 ### Weights are typeable again

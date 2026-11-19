@@ -22,7 +22,7 @@ from safetensors.torch import load_file, save_file
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import convert_open_h3_regenerate_lora as conv  # noqa: E402
 
-COMFY = os.environ.get("COMFYUI_DIR", "~/dev/deas-environment/ComfyUI")
+COMFY = os.path.expanduser(os.environ.get("COMFYUI_DIR", "~/dev/deas-environment/ComfyUI"))
 H3_CHECKPOINT = os.environ.get("H3_CHECKPOINT", "~/dev/AI-Ressources/models/diffusion_models/MiniMaxH3/"
                                "dasiwa_minimax_h3_graviton_v5_pruned_bf16.safetensors")
 HID, HEADS, HD, FFN, LAYERS, REFINER, CURVE = 16, 2, 8, 24, 2, 1, 8

@@ -20,6 +20,20 @@ describe('run options', () => {
     expect(runOptions(all, null)?.compile).toBeUndefined();
   });
 
+  it('drops inductor only for an owned environment that reports no Triton', () => {
+    const compiling = { ...allow, nodes: [...allow.nodes, 'TorchCompileModel'], compile: ['inductor', 'cudagraphs'] };
+    const pick: OptionsPref = { ...defaultOptions, compile: 'inductor' };
+    expect(runOptions(pick, compiling)).toEqual({ compile: 'inductor' });
+    expect(runOptions(pick, { ...compiling, triton: true })).toEqual({ compile: 'inductor' });
+    expect(runOptions(pick, { ...compiling, triton: false })).toBeUndefined();
+    expect(runOptions({ ...pick, compile: 'cudagraphs' }, { ...compiling, triton: false })).toEqual({ compile: 'cudagraphs' });
+    render(<I18nProvider><OptionsPanel value={pick} onChange={() => {}} allow={{ ...compiling, triton: false }} imageInput={false} onRead={() => {}} canRead /></I18nProvider>);
+    const select = screen.getByRole('combobox', { name: 'torch.compile' }) as HTMLSelectElement;
+    expect((select.querySelector('option[value="inductor"]') as HTMLOptionElement).disabled).toBe(true);
+    expect((select.querySelector('option[value="cudagraphs"]') as HTMLOptionElement).disabled).toBe(false);
+    expect(screen.getByRole('alert').textContent).toMatch(/no Triton for its GPU/);
+  });
+
   it('rejects stale or malformed remembered state', () => {
     expect(isOptionsPref(all)).toBe(true);
     for (const bad of [null, { ...all, tile: 500 }, { ...all, cache: 'TeaCache' }, { ...all, threshold: 4 }, { ...all, vae: 'x' }, { ...all, sigmas: 3 }, { ...all, chunkHeadroom: 5 }, { ...all, output: { codec: 'H.266' } }]) expect(isOptionsPref(bad)).toBe(false);

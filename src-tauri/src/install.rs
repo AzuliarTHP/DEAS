@@ -50,6 +50,9 @@ const HYPERFLOW_REVISION: &str = "356649c32dca9a1dd46608d530ccb5e025fb338d";
 // matlowai/ComfyUI-Dials; to control updates, fork that repository and point both constants at the fork.
 const DIALS: &str = "https://github.com/matlowai/ComfyUI-Dials.git";
 const DIALS_REVISION: &str = "9a6b474b3ecd53190ae6cd84c01e3a5605ab36f3";
+/// Triton build for Windows matching the CUDA 13 Torch 2.14 profile (Linux wheels pull `triton~=3.8.0`
+/// through Torch itself). Needed by Torch Compile's inductor backend and Triton-based nodes.
+const WINDOWS_TRITON: &str = "triton-windows==3.8.0.post29";
 const KJNODES: &str = "https://github.com/kijai/ComfyUI-KJNodes.git";
 const KJNODES_REVISION: &str = "d3cfe21625e5170126ce06fbfcfe1d88108688c3";
 #[path = "install_torch.rs"]
@@ -162,6 +165,10 @@ pub struct Plan {
     pub preview_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reopen_id: Option<String>,
+    /// Preview-only: an existing environment whose pinned node packs are outdated. It cannot be
+    /// opened as-is; `native_install_repair` updates it to the pins (never persisted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair: Option<Repair>,
     pub request: Request,
     pub steps: Vec<Step>,
     pub warnings: Vec<String>,
@@ -169,6 +176,12 @@ pub struct Plan {
     pub can_execute: bool,
     pub hardware: Option<torch_profile::Hardware>,
     pub torch: Option<torch_profile::Torch>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Repair {
+    pub id: String,
+    pub reason: String,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -214,6 +227,8 @@ pub(crate) struct Inner {
     plans: HashMap<String, Plan>,
     pub(crate) approved: Option<crate::backend::Approved>,
     reopen: Option<(String, crate::backend::Approved)>,
+    // Outdated-pin preview of an existing environment: token and its unmodified saved plan.
+    pin_repair: Option<(String, Plan)>,
     // Environment of the last upgrade/reinstall, so a failed or cancelled run can be repaired.
     pub(crate) repair: Option<Plan>,
     status: Status,
@@ -418,6 +433,22 @@ impl Engine {
         )?;
         self.backend.start(approved)
     }
+    /// For the running owned GPU backend at `base`: whether Torch Compile's inductor can use Triton
+    /// there. `None` for CPU plans, other endpoints or a stopped backend (no claim either way).
+    pub(crate) fn owned_triton(&self, base: &str) -> Option<bool> {
+        let status = self.backend.status();
+        if status.state != "running"
+            || crate::validate_base_url(status.endpoint.as_deref()?).ok()?
+                != crate::validate_base_url(base).ok()?
+        {
+            return None;
+        }
+        let plan = lock(&self.inner).approved.as_ref()?.plan().clone();
+        if matches!(plan.request.backend, Backend::Cpu | Backend::Intel) {
+            return None;
+        }
+        Some(triton_expected(&plan) && triton_installed(Path::new(&plan.request.storage_path)))
+    }
     /// Read-only dependency check for the owned backend; lists every check, launches nothing.
     pub(crate) fn backend_test(&self) -> Vec<crate::backend::DependencyCheck> {
         let g = lock(&self.inner);
@@ -468,6 +499,25 @@ impl Engine {
         g.status = Status { state: "succeeded".into(), step_id: None, logs: vec!["Existing DEAS environment opened. No installation, downloads or backend start performed.".into()], error: None };
         Ok(g.status.clone())
     }
+    /// Turn a confirmed outdated-pin preview into the repair plan an ordinary update consumes.
+    fn arm_pin_repair(&self, id: &str, confirmed: bool) -> Result<(), String> {
+        if !confirmed {
+            return Err("Explicit confirmation is required".into());
+        }
+        let mut g = lock(&self.inner);
+        if g.status.state == "running" || self.backend.active() {
+            return Err("Wait for installation and stop only the owned backend before updating; no service was stopped".into());
+        }
+        if !g.pin_repair.as_ref().is_some_and(|(token, _)| token == id) {
+            return Err(
+                "Environment update preview is missing or stale; choose the folder again".into(),
+            );
+        }
+        let (_, plan) = g.pin_repair.take().unwrap();
+        g.approved = None;
+        g.repair = Some(plan);
+        Ok(())
+    }
     fn existing_plan(&self, input: &str) -> Result<Plan, String> {
         let path = Path::new(input);
         if !path.is_absolute() || input.split(['/', '\\']).any(|s| s == ".." || s == ".") {
@@ -503,7 +553,27 @@ impl Engine {
             );
         }
         validate_ref(&plan.request.comfy_ref)?;
-        validate_gguf_install(&plan, &root)?;
+        if let Err(error) = validate_gguf_install(&plan, &root) {
+            if !pin_outdated(&error) {
+                return Err(error);
+            }
+            // An older DEAS installed other pack revisions: offer the explicit update instead of a
+            // dead end. Nothing is opened, started or changed until the user confirms it.
+            let id = uuid::Uuid::new_v4().to_string();
+            let mut g = lock(&self.inner);
+            if g.status.state == "running" || self.backend.active() {
+                return Err(
+                    "An owned installation/backend is active; no environment was changed".into(),
+                );
+            }
+            g.reopen = None;
+            g.pin_repair = Some((id.clone(), plan.clone()));
+            plan.id = id.clone();
+            plan.repair = Some(Repair { id, reason: error });
+            plan.steps.clear();
+            plan.warnings = vec!["Existing DEAS installation with outdated node-pack revisions: it is not opened. Update environment fetches the pinned packs and keeps models, inputs and outputs; nothing changes before you confirm.".into()];
+            return Ok(plan);
+        }
         let approved = crate::backend::Approved::capture(&plan)?;
         let id = uuid::Uuid::new_v4().to_string();
         let mut g = lock(&self.inner);
@@ -682,6 +752,10 @@ impl Engine {
                     selected.packages.join(" / "),
                     selected.index_url
                 );
+                let windows_nvidia = cfg!(windows) && matches!(request.backend, Backend::Nvidia);
+                if windows_nvidia && selected.cuda.as_deref() == Some("13.0") {
+                    step.detail += &format!(", plus {WINDOWS_TRITON} from PyPI");
+                }
             }
         }
         if matches!(request.backend, Backend::Nvidia) {
@@ -692,6 +766,7 @@ impl Engine {
             gguf_ref: Some(GGUF_REVISION.into()),
             preview_ref: Some(KJNODES_REVISION.into()),
             reopen_id: None,
+            repair: None,
             id: uuid::Uuid::new_v4().to_string(),
             request,
             steps,
@@ -938,6 +1013,18 @@ pub fn native_install_open(
         );
     }
     engine.open_existing(&plan_id, confirmed)
+}
+/// Update an existing environment whose pinned node packs are outdated (from its repair preview).
+/// Same mutation as a confirmed Upgrade: packs are fetched at their pins, models/inputs/outputs stay.
+#[tauri::command]
+pub async fn native_install_repair(
+    plan_id: String,
+    confirmed: bool,
+    app: tauri::AppHandle,
+) -> Result<Status, String> {
+    use tauri::Manager;
+    app.state::<Engine>().arm_pin_repair(&plan_id, confirmed)?;
+    native_install_update(false, confirmed, None, app).await
 }
 #[tauri::command]
 pub async fn native_install_update(
@@ -1223,22 +1310,83 @@ async fn bootstrap(
         .timeout(Duration::from_secs(900))
         .build()
         .map_err(|e| e.to_string())?;
-    let mut response=tokio::select! {r=client.get(UV_URL).send()=>r.map_err(uv_download_error)?, _=wait_cancel(cancel)=>return Err("Cancelled".into())}.error_for_status().map_err(uv_download_error)?;
-    let mut bytes = vec![];
-    loop {
-        let chunk = tokio::select! { r=response.chunk()=>r.map_err(uv_download_error)?, _=wait_cancel(cancel)=>return Err("Cancelled".into()) };
-        let Some(chunk) = chunk else { break };
-        if bytes.len() + chunk.len() > 64 * 1024 * 1024 {
-            return Err("uv archive exceeds size limit".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = download_with_retry(&client, UV_URL, 64 * 1024 * 1024, inner, cancel).await?;
     let uv = extract_verified_uv(&bytes, root)?;
     log(
         inner,
         "uv archive SHA-256 verified against embedded release digest".into(),
     );
     Ok(uv)
+}
+/// Attempts for one release-asset download: a transient network/server failure is retried with a
+/// short backoff before the error reaches the user (a fresh GitHub connection usually succeeds).
+const DOWNLOAD_ATTEMPTS: u32 = 3;
+#[cfg(not(test))]
+const DOWNLOAD_BACKOFF: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(5)];
+#[cfg(test)]
+const DOWNLOAD_BACKOFF: [Duration; 2] = [Duration::from_millis(10), Duration::from_millis(10)];
+/// Whole-body download of a fixed asset; the caller verifies its digest afterwards.
+async fn download_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    limit: usize,
+    inner: &Arc<Mutex<Inner>>,
+    cancel: &Arc<AtomicBool>,
+) -> Result<Vec<u8>, String> {
+    let mut attempt = 1;
+    loop {
+        match download_once(client, url, limit, cancel).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(Failure::Final(error)) => return Err(error),
+            Err(Failure::Transient(error)) if attempt >= DOWNLOAD_ATTEMPTS => return Err(error),
+            Err(Failure::Transient(error)) => {
+                let wait = DOWNLOAD_BACKOFF[(attempt - 1) as usize];
+                log(
+                    inner,
+                    format!(
+                        "WARN: download attempt {attempt}/{DOWNLOAD_ATTEMPTS} failed, retrying in {} ms: {error}",
+                        wait.as_millis()
+                    ),
+                );
+                tokio::select! { _=tokio::time::sleep(wait)=>{}, _=wait_cancel(cancel)=>return Err("Cancelled".into()) }
+                attempt += 1;
+            }
+        }
+    }
+}
+enum Failure {
+    Transient(String),
+    Final(String),
+}
+fn classify(error: reqwest::Error) -> Failure {
+    // Client errors (404/403…) will not change on retry; rate limits and server errors may.
+    let status = error.status();
+    let message = uv_download_error(error);
+    match status {
+        Some(code) if code.is_client_error() && code.as_u16() != 429 => Failure::Final(message),
+        _ => Failure::Transient(message),
+    }
+}
+async fn download_once(
+    client: &reqwest::Client,
+    url: &str,
+    limit: usize,
+    cancel: &Arc<AtomicBool>,
+) -> Result<Vec<u8>, Failure> {
+    let cancelled = || Failure::Final("Cancelled".into());
+    let mut response = tokio::select! {r=client.get(url).send()=>r.map_err(classify)?, _=wait_cancel(cancel)=>return Err(cancelled())}
+        .error_for_status()
+        .map_err(classify)?;
+    let mut bytes = vec![];
+    loop {
+        let chunk = tokio::select! { r=response.chunk()=>r.map_err(classify)?, _=wait_cancel(cancel)=>return Err(cancelled()) };
+        let Some(chunk) = chunk else { break };
+        if bytes.len() + chunk.len() > limit {
+            return Err(Failure::Final("uv archive exceeds size limit".into()));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
 }
 fn uv_download_error(error: reqwest::Error) -> String {
     if error.is_timeout() {
@@ -1686,6 +1834,50 @@ fn enable_gguf_upgrade(plan: &mut Plan) {
 }
 
 /// The environment an update acts on: the checked open environment, else the last update's plan.
+/// GPU profiles that ship a usable Triton: CUDA 13 NVIDIA (Linux through Torch's own dependency,
+/// Windows through `WINDOWS_TRITON`) and Linux ROCm (AMD's Torch pulls its ROCm Triton). Pascal's
+/// CUDA 12.1 profile is excluded: Triton does not compile for compute capability 6.x.
+pub(crate) fn triton_expected(plan: &Plan) -> bool {
+    match plan.request.backend {
+        Backend::Nvidia => plan.torch.as_ref().and_then(|t| t.cuda.as_deref()) == Some("13.0"),
+        Backend::Amd => true,
+        Backend::Cpu | Backend::Intel => false,
+    }
+}
+/// The extra package that brings Triton to `plan`, if Torch does not already depend on it.
+fn triton_package(plan: &Plan, windows: bool) -> Option<&'static str> {
+    let torch = plan.torch.as_ref()?;
+    (windows
+        && matches!(plan.request.backend, Backend::Nvidia)
+        && torch.cuda.as_deref() == Some("13.0")
+        && torch.packages[0].starts_with("torch==2.14."))
+    .then_some(WINDOWS_TRITON)
+}
+/// Whether the environment's venv contains the `triton` package (file check only, nothing runs).
+pub(crate) fn triton_installed(root: &Path) -> bool {
+    if root
+        .join("venv/Lib/site-packages/triton/__init__.py")
+        .is_file()
+    {
+        return true;
+    }
+    std::fs::read_dir(root.join("venv/lib"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            entry.file_name().to_string_lossy().starts_with("python3")
+                && entry
+                    .path()
+                    .join("site-packages/triton/__init__.py")
+                    .is_file()
+        })
+}
+/// A pack checkout at another revision than this build pins (older DEAS); modified files are not.
+fn pin_outdated(error: &str) -> bool {
+    error.starts_with("ComfyUI-")
+        && error.ends_with("install does not match its pinned revision; re-provision required")
+}
 fn current_plan(g: &Inner) -> Result<Plan, String> {
     match &g.approved {
         Some(approved) => {
@@ -2116,6 +2308,31 @@ async fn packages(
     }
     torch_args.extend(selected.packages.iter().map(String::as_str));
     run(uv, &torch_args, root, root, inner, cancel).await?;
+    if let Some(triton) = triton_package(plan, cfg!(windows)) {
+        // PyPI wheel only; the Torch constraints keep the trio from moving.
+        log(
+            inner,
+            format!("Installing {triton} (Triton for Torch Compile and Triton-based nodes)"),
+        );
+        run(
+            uv,
+            &[
+                "pip",
+                "install",
+                "--python",
+                py,
+                "--only-binary",
+                ":all:",
+                triton,
+            ],
+            root,
+            root,
+            inner,
+            cancel,
+        )
+        .await
+        .map_err(|e| format!("Triton for Windows ({triton}) failed: {e}"))?;
+    }
     step(inner, "requirements");
     let mut args = vec![
         "pip",
@@ -2356,6 +2573,21 @@ async fn packages(
         cancel,
     )
     .await?;
+    let triton_version = if triton_expected(plan) {
+        let version = run(
+            &python,
+            &["-I", "-c", "import triton;print(triton.__version__)"],
+            comfy,
+            root,
+            inner,
+            cancel,
+        )
+        .await
+        .map_err(|e| format!("Triton import failed for this GPU profile: {e}"))?;
+        Some(version.trim().to_string())
+    } else {
+        None
+    };
     run_with_timeout(
         &python,
         &[
@@ -2386,7 +2618,7 @@ async fn packages(
     )
     .await?;
     cancelled(cancel)?;
-    let manifest = serde_json::json!({"planId":plan.id,"comfyRevision":revision,"nodepackRevision":node_revision,"ggufRevision":gguf_revision,"hyperflowRevision":hyperflow_revision,"dialsRevision":dials_revision,"previewRevision":preview_revision,"backend":plan.request.backend,"hardware":plan.hardware,"torchProfile":selected,"python":py,"versions":versions.trim(),"generationReady":false});
+    let manifest = serde_json::json!({"planId":plan.id,"comfyRevision":revision,"nodepackRevision":node_revision,"ggufRevision":gguf_revision,"hyperflowRevision":hyperflow_revision,"dialsRevision":dials_revision,"previewRevision":preview_revision,"tritonVersion":triton_version,"backend":plan.request.backend,"hardware":plan.hardware,"torchProfile":selected,"python":py,"versions":versions.trim(),"generationReady":false});
     std::fs::write(
         root.join("deas-install.json"),
         serde_json::to_vec_pretty(&manifest).map_err(|e| e.to_string())?,
@@ -2552,6 +2784,74 @@ mod tests {
         assert!(error.starts_with("uv download stalled"), "{error}");
     }
 
+    /// Serves scripted responses in order: `None` drops the connection without an answer.
+    fn scripted_server(
+        script: Vec<Option<&'static [u8]>>,
+    ) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = hits.clone();
+        std::thread::spawn(move || {
+            for reply in script {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                if let Some(reply) = reply {
+                    let _ = stream.write_all(reply);
+                }
+            }
+        });
+        (format!("http://{address}/uv.zip"), hits)
+    }
+    #[tokio::test]
+    async fn release_download_retries_a_transient_failure_but_not_a_missing_asset() {
+        let client = reqwest::Client::builder().build().unwrap();
+        let inner = Arc::new(Mutex::new(Inner::default()));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let ok: &'static [u8] =
+            b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nuvok";
+        let busy: &'static [u8] =
+            b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        // Dropped connection, then a server error, then success: recovered within the bound.
+        let (url, hits) = scripted_server(vec![None, Some(busy), Some(ok)]);
+        let bytes = download_with_retry(&client, &url, 1024, &inner, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(bytes, b"uvok");
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+        assert!(lock(&inner)
+            .status
+            .logs
+            .iter()
+            .any(|l| l.contains("attempt 1/3")));
+        // Every attempt failing surfaces the last error after exactly three tries.
+        let (url, hits) = scripted_server(vec![None, None, None, Some(ok)]);
+        assert!(download_with_retry(&client, &url, 1024, &inner, &cancel)
+            .await
+            .unwrap_err()
+            .starts_with("uv download failed"));
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+        // A missing asset is final at once.
+        let missing: &'static [u8] =
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let (url, hits) = scripted_server(vec![Some(missing), Some(ok)]);
+        assert!(download_with_retry(&client, &url, 1024, &inner, &cancel)
+            .await
+            .is_err());
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+        // Oversized bodies are not retried either.
+        let (url, hits) = scripted_server(vec![Some(ok), Some(ok)]);
+        assert!(download_with_retry(&client, &url, 2, &inner, &cancel)
+            .await
+            .unwrap_err()
+            .contains("size limit"));
+        assert_eq!(hits.load(Ordering::SeqCst), 1);
+    }
     #[cfg(target_os = "linux")]
     #[test]
     fn existing_environment_requires_explicit_open_without_reinstall_or_autostart() {
@@ -2576,6 +2876,157 @@ mod tests {
             std::fs::read(tmp.path().join("deas-install.json")).unwrap()
         );
         assert!(engine.open_existing(&plan.id, true).is_err());
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn outdated_pack_pin_previews_an_explicit_repair_instead_of_a_dead_end() {
+        let (tmp, _) = crate::backend::tests::fixture(crate::backend::tests::SERVER);
+        let root = tmp.path();
+        // An older DEAS recorded the Enhanced-preview pack at another revision.
+        let mut saved: Plan =
+            serde_json::from_slice(&std::fs::read(root.join("deas-plan.json")).unwrap()).unwrap();
+        saved.preview_ref = Some(KJNODES_REVISION.into());
+        std::fs::write(
+            root.join("deas-plan.json"),
+            serde_json::to_vec(&saved).unwrap(),
+        )
+        .unwrap();
+        let node = root.join("ComfyUI/custom_nodes/ComfyUI-KJNodes/.git");
+        std::fs::create_dir_all(&node).unwrap();
+        std::fs::write(
+            node.join("HEAD"),
+            "0000000000000000000000000000000000000000\n",
+        )
+        .unwrap();
+        let before = std::fs::read(root.join("deas-plan.json")).unwrap();
+        let engine = Engine::default();
+        let mut r = request(root);
+        r.storage_path = root.to_str().unwrap().into();
+        let preview = engine.plan(r.clone()).unwrap();
+        let repair = preview
+            .repair
+            .clone()
+            .expect("outdated pin must offer a repair");
+        assert!(preview.reopen_id.is_none());
+        assert!(repair
+            .reason
+            .contains("ComfyUI-KJNodes install does not match its pinned revision"));
+        // The preview is never persisted and authorizes nothing by itself.
+        assert!(!serde_json::to_string(&saved).unwrap().contains("repair"));
+        assert!(engine.open_existing(&repair.id, true).is_err());
+        assert!(engine.arm_pin_repair(&repair.id, false).is_err());
+        assert!(engine.arm_pin_repair("stale", true).is_err());
+        assert!(lock(&engine.inner).repair.is_none());
+        engine.arm_pin_repair(&repair.id, true).unwrap();
+        {
+            let g = lock(&engine.inner);
+            assert!(g.approved.is_none());
+            let armed = g.repair.as_ref().unwrap();
+            assert_eq!(armed.id, saved.id);
+            assert!(armed.repair.is_none());
+        }
+        // One-time token; files untouched until the confirmed update runs.
+        assert!(engine.arm_pin_repair(&repair.id, true).is_err());
+        assert_eq!(before, std::fs::read(root.join("deas-plan.json")).unwrap());
+        assert!(!engine.backend.active());
+    }
+    #[test]
+    fn triton_comes_from_torch_on_linux_and_from_triton_windows_on_windows_nvidia() {
+        let tmp = scratch();
+        let mut plan = Engine::default().plan(request(tmp.path())).unwrap();
+        // CPU: no Triton expected, nothing extra installed on either OS.
+        assert!(!triton_expected(&plan));
+        assert_eq!(triton_package(&plan, true), None);
+        // CUDA 13 NVIDIA: expected everywhere; only Windows needs the extra wheel.
+        plan.request.backend = Backend::Nvidia;
+        plan.torch = Some(
+            torch_profile::select(&torch_profile::Hardware {
+                vendor: "NVIDIA".into(),
+                name: "NVIDIA GeForce RTX 4070 Ti SUPER".into(),
+                uuid: "GPU-fixture".into(),
+                driver_version: "621.24".into(),
+                compute_capability: "8.9".into(),
+            })
+            .unwrap(),
+        );
+        assert!(triton_expected(&plan));
+        assert_eq!(triton_package(&plan, true), Some(WINDOWS_TRITON));
+        assert_eq!(triton_package(&plan, false), None);
+        assert!(WINDOWS_TRITON.starts_with("triton-windows==3.8."));
+        // Pascal's CUDA 12.1 profile: Triton cannot compile for 6.x, so nothing is promised.
+        plan.torch = Some(
+            torch_profile::select(&torch_profile::Hardware {
+                vendor: "NVIDIA".into(),
+                name: "NVIDIA GeForce GTX 1080".into(),
+                uuid: "GPU-fixture".into(),
+                driver_version: "560.0".into(),
+                compute_capability: "6.1".into(),
+            })
+            .unwrap(),
+        );
+        assert!(!triton_expected(&plan));
+        assert_eq!(triton_package(&plan, true), None);
+        // A future Torch on CUDA 13 gets no stale Windows pin.
+        plan.torch = Some(torch_profile::Torch {
+            packages: [
+                "torch==2.15.0".into(),
+                "torchvision==0.30.0".into(),
+                "torchaudio==2.12.0".into(),
+            ],
+            index_url: "https://download.pytorch.org/whl/cu130".into(),
+            cuda: Some("13.0".into()),
+        });
+        assert_eq!(triton_package(&plan, true), None);
+        // ROCm: AMD's Torch depends on its own Triton build; nothing extra.
+        plan.request.backend = Backend::Amd;
+        plan.torch = Some(torch_profile::amd("gfx1100"));
+        assert!(triton_expected(&plan));
+        assert_eq!(triton_package(&plan, false), None);
+    }
+    #[test]
+    fn triton_presence_is_a_venv_file_check_for_both_layouts() {
+        let tmp = scratch();
+        assert!(!triton_installed(tmp.path()));
+        let linux = tmp.path().join("venv/lib/python3.12/site-packages/triton");
+        std::fs::create_dir_all(&linux).unwrap();
+        assert!(!triton_installed(tmp.path()));
+        std::fs::write(linux.join("__init__.py"), "").unwrap();
+        assert!(triton_installed(tmp.path()));
+        let other = scratch();
+        let windows = other.path().join("venv/Lib/site-packages/triton");
+        std::fs::create_dir_all(&windows).unwrap();
+        std::fs::write(windows.join("__init__.py"), "").unwrap();
+        assert!(triton_installed(other.path()));
+        // A stopped backend makes no claim.
+        assert_eq!(
+            Engine::default().owned_triton("http://127.0.0.1:8188/"),
+            None
+        );
+    }
+    #[test]
+    fn torch_compile_inductor_is_refused_only_for_an_owned_environment_without_triton() {
+        use crate::jobs::validate_compile_triton as check;
+        let inductor = serde_json::json!({"options":{"compile":"inductor"}});
+        let graphs = serde_json::json!({"options":{"compile":"cudagraphs"}});
+        assert!(check(&inductor, Some(false))
+            .unwrap_err()
+            .contains("needs Triton"));
+        assert!(check(&inductor, Some(true)).is_ok());
+        assert!(check(&inductor, None).is_ok());
+        assert!(check(&graphs, Some(false)).is_ok());
+        assert!(check(&serde_json::json!({}), Some(false)).is_ok());
+    }
+    #[test]
+    fn only_revision_mismatches_are_repairable_not_modified_sources() {
+        assert!(pin_outdated(
+            "ComfyUI-HyperFlow-Flash install does not match its pinned revision; re-provision required"
+        ));
+        assert!(!pin_outdated(
+            "ComfyUI-KJNodes source changed: nodes.py; re-provision required"
+        ));
+        assert!(!pin_outdated(
+            "Owned environment identity changed; re-provision required"
+        ));
     }
     #[cfg(target_os = "linux")]
     #[test]
@@ -2644,6 +3095,7 @@ mod tests {
             gguf_ref: None,
             preview_ref: None,
             reopen_id: None,
+            repair: None,
             id: uuid::Uuid::new_v4().to_string(),
             request: r.clone(),
             steps: vec![],
@@ -3415,6 +3867,7 @@ mod tests {
                 gguf_ref: None,
                 preview_ref: None,
                 reopen_id: None,
+                repair: None,
                 id: uuid::Uuid::new_v4().to_string(),
                 request: r,
                 steps: vec![],

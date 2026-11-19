@@ -30,9 +30,28 @@ Successful native provisioning or checked reopening authorizes the owned backend
 
 Read [the port ledger](INSTALLER-INTEGRATION.md) and [native IPC details](../src-tauri/README.md) for unsupported options and verification limits. Node requirements explicitly resolve NVIDIA VFX wheels and select backend-specific llama-cpp-python binary wheels, following the reference installer; unavailable wheels fail without a source build or silent CPU fallback. Complete selected nodepack installation, required Director/Continuity registration and owned API lifecycle are verified on the 32 GB test GPU; model generation and every included feature recipe remain separate acceptance work. Full Go-installer parity is unfinished.
 
+## Environments from an older DEAS version
+
+DEAS pins the revisions of the node packs it installs (ComfyUI-GGUF, ComfyUI-KJNodes, ComfyUI-HyperFlow-Flash, ComfyUI-Dials). When a saved or chosen environment has one of them at another revision, typically because an older DEAS installed it, the environment is not opened as it is. The Backend tab shows **Environment needs an update** with the environment path, the exact reason under *Technical details* and an **Update environment** button; the header reads **Update required** and no new installation is planned automatically. After you confirm, DEAS performs the same mutation as **Upgrade → ComfyUI and node packs**: it fetches the pinned pack revisions and installs their dependencies in the environment's own venv under the recorded Torch profile. Models, inputs, outputs and settings are not touched. When the update succeeds, the environment opens and the backend starts according to **Auto-start backend**. If it fails or is cancelled, the failure is shown in the installation status and the offer reappears for another attempt. Choosing a different folder dismisses the offer. Pack checkouts whose files were modified (`source changed`) are not repairable this way and stay refused.
+
 ## Adopting a foreign installation
 
 Under Advanced options, **Adopt a foreign installation (rebuild its venv)** lets DEAS take over a local ComfyUI folder it does not already manage. The folder must contain `ComfyUI/main.py`; symlinks and traversal are rejected, and a folder DEAS already manages is refused (reopen it from the saved environment instead). The plan warns, and an explicit confirmation dialog gates the start: DEAS deletes and rebuilds the folder's venv and runtime, resets the chosen ComfyUI ref and manages the backend from then on. Models, inputs, outputs and untracked files are kept. Running servers are not adopted; connect them through the backend address instead.
+
+## Triton
+
+Triton is the GPU kernel compiler behind Studio's **Torch Compile** option (its default `inductor` backend) and behind Triton-based nodes such as KJNodes' *Patch Triton VAE*. DEAS provides it wherever the GPU profile supports it:
+
+| Environment | Triton | Source |
+| --- | --- | --- |
+| Linux, NVIDIA (CUDA 13 profile) | `triton 3.8.0` | dependency of the pinned `torch 2.14.1+cu130` wheel |
+| Linux, AMD ROCm | `triton 3.8.0+…rocm10.0.0` | dependency of AMD's `torch 2.13.0+rocm10.0.0` wheel (resolution checked; no AMD hardware run yet) |
+| Windows, NVIDIA (CUDA 13 profile) | `triton-windows==3.8.0.post29` | extra PyPI wheel installed right after Torch, held by the same Torch constraints |
+| Pascal / GTX 10 (CUDA 12.1 profile), CPU | none promised | Triton does not compile for compute capability 6.x; CPU needs no Triton |
+
+On the GPU profiles above the installer's final check imports `triton` and records its version as `tritonVersion` in `deas-install.json`; a failed import fails the installation instead of leaving a silent gap. Windows environments installed before 0.3.4 get `triton-windows` through an explicit **Upgrade** (ComfyUI and node packs); opening or starting an environment never installs it.
+
+For the running owned GPU backend, Studio's **Options → torch.compile** disables `inductor` with a reason when the environment has no usable Triton (Pascal, or a Windows environment not yet upgraded); other compile backends stay selectable. Native admission refuses an `inductor` job for that backend before any upload. External backends and CPU environments are not judged. Whether Torch Compile then runs fast, or at all, on a given model is separate: on Windows, PyTorch's inductor may additionally need the Microsoft C++ build tools for some kernels; this is not verified or provisioned by DEAS.
 
 ## Backend lifecycle and startup settings
 
@@ -52,4 +71,4 @@ See [source](../src-tauri/src/startup.rs), [LLM settings](PROMPTING.md#shared-ll
 
 If ComfyUI starts but DEAS stays on **Starting**, check the **DEAS** source in **Logs**. Look for `operation=readiness` to see when the owned listener appeared, the overall startup budget (120 seconds) and the result. Required local API probes such as `object_info` and `system_stats` can take up to 45 seconds each, within the remaining startup budget. Slow responses and request failures include the endpoint and elapsed time. Export the DEAS and ComfyUI logs together when reporting a startup timeout; a timeout alone is not a reason to reinstall.
 
-Follow [first setup](GETTING-STARTED.md#first-setup-inside-deas) for storage/models/consent. Driver and Git remain external prerequisites. Unsupported profiles/options and missing resources block execution. Read [Logs](LOGS.md); never delete existing environments or stop foreign services to clear a blocker. Full repair/resume, staged rollback and broad hardware/Windows acceptance remain incomplete.
+The first-run download of the pinned uv release makes up to three attempts when the connection drops, times out or GitHub answers 429/5xx (2 s and 5 s pauses, each retry logged as `WARN: download attempt …`). A missing asset, an oversized download or a checksum mismatch fails immediately. Follow [first setup](GETTING-STARTED.md#first-setup-inside-deas) for storage/models/consent. Driver and Git remain external prerequisites. Unsupported profiles/options and missing resources block execution. Read [Logs](LOGS.md); never delete existing environments or stop foreign services to clear a blocker. Full repair/resume, staged rollback and broad hardware/Windows acceptance remain incomplete.

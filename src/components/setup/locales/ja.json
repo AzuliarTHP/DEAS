@@ -301,5 +301,14 @@
   "search.section.panes": "バックエンドパネル",
   "search.reason.lines": "現在のフィルターに一致するログ行がありません",
   "search.reason.backendRunning": "バックエンド停止中のみ",
-  "search.reason.startupCacheLru": "ノード結果キャッシュが固定サイズの LRU に設定されているときにのみ表示されます。"
+  "search.reason.startupCacheLru": "ノード結果キャッシュが固定サイズの LRU に設定されているときにのみ表示されます。",
+  "setup.overview.repair": "更新が必要",
+  "setup.repair.title": "環境の更新が必要です",
+  "setup.repair.help": "この環境は古い DEAS バージョンでインストールされました。一部のノードパックがこのバージョンの必要とするリビジョンと異なるため、このままでは開けません。「環境を更新」は必要なパックのリビジョンと依存関係を取得します。モデル、入力、出力、設定は変更されません。",
+  "setup.repair.details": "技術的な詳細",
+  "setup.repair.action": "環境を更新",
+  "setup.repair.actionHint": "この DEAS バージョンが必要とするノードパックのリビジョンを取得します。実行前に確認します。モデル、入力、出力は保持されます。",
+  "setup.repair.confirmTitle": "この環境を更新しますか？",
+  "setup.repair.confirmText": "DEAS は必要なノードパックのリビジョンを取得し、その依存関係をこの環境専用の Python にインストールします。モデル、入力、出力、設定には触れません。その後、バックエンドは通常どおり起動します。",
+  "setup.repair.confirm": "更新"
 }

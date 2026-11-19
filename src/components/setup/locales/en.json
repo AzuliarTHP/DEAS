@@ -301,5 +301,14 @@
   "search.section.panes": "Backend panes",
   "search.reason.lines": "No log lines match the current filter",
   "search.reason.backendRunning": "Only while the backend is stopped",
-  "search.reason.startupCacheLru": "Only appears once the node result cache is set to LRU with a fixed size."
+  "search.reason.startupCacheLru": "Only appears once the node result cache is set to LRU with a fixed size.",
+  "setup.overview.repair": "Update required",
+  "setup.repair.title": "Environment needs an update",
+  "setup.repair.help": "This environment was installed by an older DEAS version: some of its node packs are at different revisions than this version requires, so it cannot be opened as it is. Update environment fetches the required pack revisions and their dependencies. Models, inputs, outputs and settings stay unchanged.",
+  "setup.repair.details": "Technical details",
+  "setup.repair.action": "Update environment",
+  "setup.repair.actionHint": "Fetches the node-pack revisions this DEAS version requires; asks for confirmation first. Models, inputs and outputs are kept.",
+  "setup.repair.confirmTitle": "Update this environment?",
+  "setup.repair.confirmText": "DEAS fetches the required node-pack revisions and installs their dependencies in this environment's own Python. Models, inputs, outputs and settings are not touched. The backend starts afterwards as usual.",
+  "setup.repair.confirm": "Update"
 }

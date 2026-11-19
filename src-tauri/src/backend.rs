@@ -1061,10 +1061,52 @@ pub(crate) fn read_log_segment<R: std::io::BufRead>(
         }
     }
 }
+/// Condenses known-harmless optional-node import tracebacks into one line. ComfyUI-KJNodes logs a
+/// full traceback on every start where `triton` is absent (stock Windows) for its optional
+/// Patch Triton VAE node; users read it as a failed backend. Anything else passes unchanged, and an
+/// unexpected end of the held block is flushed verbatim.
+#[derive(Default)]
+pub(crate) struct LogCondenser {
+    held: Vec<String>,
+}
+const KJNODES_TRITON_START: &str = "KJNodes: PatchTritonVAE node could not be imported";
+const KJNODES_TRITON_END: &str = "ImportError: PatchTritonVAE requires triton";
+pub(crate) const KJNODES_TRITON_SUMMARY: &str = "INFO: KJNodes: optional Patch Triton VAE node unavailable because triton is not installed; all other KJNodes nodes load normally (traceback condensed by DEAS)";
+impl LogCondenser {
+    pub(crate) fn feed(&mut self, line: String) -> Vec<String> {
+        if self.held.is_empty() {
+            if line.contains(KJNODES_TRITON_START) {
+                self.held.push(line);
+                return vec![];
+            }
+            return vec![line];
+        }
+        if line.starts_with(KJNODES_TRITON_END) {
+            self.held.clear();
+            return vec![KJNODES_TRITON_SUMMARY.into()];
+        }
+        let traceback_line = line.starts_with(' ')
+            || line.starts_with('\t')
+            || line.starts_with("Traceback (most recent call last)")
+            || line.starts_with("The above exception was the direct cause")
+            || line.starts_with("During handling of the above exception")
+            || line == "ModuleNotFoundError: No module named 'triton'"
+            || line.starts_with("ModuleNotFoundError: No module named 'triton.");
+        self.held.push(line);
+        if !traceback_line || self.held.len() > 80 {
+            return std::mem::take(&mut self.held);
+        }
+        vec![]
+    }
+    pub(crate) fn finish(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.held)
+    }
+}
 fn capture<R: std::io::Read + Send + 'static>(reader: R, inner: Arc<Mutex<Inner>>, serial: u64) {
     std::thread::spawn(move || {
         let mut reader = std::io::BufReader::new(reader);
         let mut line = Vec::new();
+        let mut condenser = LogCondenser::default();
         loop {
             line.clear();
             match read_log_segment(&mut reader, &mut line) {
@@ -1079,8 +1121,13 @@ fn capture<R: std::io::Read + Send + 'static>(reader: R, inner: Arc<Mutex<Inner>
             }
             let text = clean_log_line(&line);
             if !text.is_empty() {
-                crate::logs::push(crate::logs::Source::Comfyui, &text);
+                for text in condenser.feed(text) {
+                    crate::logs::push(crate::logs::Source::Comfyui, &text);
+                }
             }
+        }
+        for text in condenser.finish() {
+            crate::logs::push(crate::logs::Source::Comfyui, &text);
         }
     });
 }

@@ -1468,5 +1468,7 @@
   "tagCompletion.aliases": "Aliasse in CSV-Listen abgleichen",
   "tagCompletion.contains": "Innerhalb von Tag-Namen suchen",
   "tagCompletion.minimum": "Minimale Beitragsanzahl",
-  "tagCompletion.shared": "Diese Optionen gelten für positive und negative Prompts. Es werden keine Tags hochgeladen."
+  "tagCompletion.shared": "Diese Optionen gelten für positive und negative Prompts. Es werden keine Tags hochgeladen.",
+  "studio.run.indexGap": "Das Backend kennt {count} Modelldatei(en), die diese Liste noch nicht zeigt, etwa von Hand kopierte Dateien. „Neu laden“ nimmt sie auf.",
+  "studio.run.opt.compile.noTriton": "Diese Umgebung hat kein Triton für ihre GPU, daher kann das inductor-Backend nicht laufen. Backend → Aktualisieren installiert es; andere Compile-Backends bleiben verfügbar."
 }
