@@ -109,8 +109,15 @@ fn incident_model_footprint_counts_each_file_once() {
     for &(_, path, size) in &INCIDENT_MODELS {
         sparse(root.path(), path, size);
     }
-    let estimate = footprint(&incident_graph(), &incident_intent(true), &[root.path().into()]);
-    assert_eq!(estimate.model_files, 6, "the shared text encoder must count once");
+    let estimate = footprint(
+        &incident_graph(),
+        &incident_intent(true),
+        &[root.path().into()],
+    );
+    assert_eq!(
+        estimate.model_files, 6,
+        "the shared text encoder must count once"
+    );
     assert_eq!(
         estimate.model_bytes, INCIDENT_TOTAL,
         "must equal the measured 42.54 GiB graph total"
@@ -139,7 +146,10 @@ fn streaming_decode_removes_the_pixel_buffers_from_the_estimate() {
     assert!(bounded_path(&stream));
     let root = tempfile::tempdir().unwrap();
     let estimate = footprint(&incident_graph(), &stream, &[root.path().into()]);
-    assert_eq!(estimate.pixel_bytes, 0, "the bounded path does not hold full RGB batches");
+    assert_eq!(
+        estimate.pixel_bytes, 0,
+        "the bounded path does not hold full RGB batches"
+    );
     assert!(estimate.bounded_decode);
     let plan = incident_intent(false);
     assert!(!bounded_path(&plan));
@@ -161,7 +171,11 @@ fn the_measured_case_fits_with_streaming_and_does_not_without() {
         &incident_intent(true),
         &roots,
     );
-    assert_eq!(fit, Decision::Proceed, "42.5 GiB + 2 GiB fits under 52.9 GiB");
+    assert_eq!(
+        fit,
+        Decision::Proceed,
+        "42.5 GiB + 2 GiB fits under 52.9 GiB"
+    );
     let over = admission_with(
         Mode::Block,
         headroom(52.9),
@@ -181,7 +195,10 @@ fn the_measured_case_fits_with_streaming_and_does_not_without() {
         &incident_intent(true),
         &roots,
     );
-    assert!(matches!(tight, Decision::Refused(_)), "no headroom left at all: {tight:?}");
+    assert!(
+        matches!(tight, Decision::Refused(_)),
+        "no headroom left at all: {tight:?}"
+    );
 }
 
 #[test]
@@ -203,7 +220,10 @@ fn refusal_says_what_to_change_and_warn_names_the_override() {
     };
     assert!(message.starts_with("HOST_MEMORY: "));
     assert!(message.contains("full-frame decode buffers"));
-    assert!(message.contains("Streaming decode"), "advice for this job: {message}");
+    assert!(
+        message.contains("Streaming decode"),
+        "advice for this job: {message}"
+    );
     assert!(message.contains("DEAS_HOST_MEMORY_ADMISSION=warn"));
     assert!(message.contains("page file"));
 
@@ -241,7 +261,11 @@ fn small_jobs_still_start_on_a_pressured_desktop() {
     for &(_, path, size) in &INCIDENT_MODELS {
         sparse(root.path(), path, size);
     }
-    sparse(root.path(), "diffusion_models/tiny.safetensors", 40 * 1024 * 1024);
+    sparse(
+        root.path(),
+        "diffusion_models/tiny.safetensors",
+        40 * 1024 * 1024,
+    );
     let graph = json!({"1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "tiny.safetensors"}}});
     let decision = admission_with(
         Mode::Block,
@@ -323,8 +347,16 @@ fn off_mode_and_unknown_inputs_never_block() {
 #[test]
 fn model_names_resolve_with_and_without_their_subfolder() {
     let root = tempfile::tempdir().unwrap();
-    sparse(root.path(), "MiniMaxH3/nested.safetensors", (3.0 * GIB_F) as u64);
-    sparse(root.path(), "deep/deeper/bare.safetensors", (2.0 * GIB_F) as u64);
+    sparse(
+        root.path(),
+        "MiniMaxH3/nested.safetensors",
+        (3.0 * GIB_F) as u64,
+    );
+    sparse(
+        root.path(),
+        "deep/deeper/bare.safetensors",
+        (2.0 * GIB_F) as u64,
+    );
     let graph = json!({
         "1": {"class_type":"CheckpointLoaderSimple","inputs":{"ckpt_name":"MiniMaxH3/nested.safetensors"}},
         "2": {"class_type":"VAELoader","inputs":{"vae_name":"bare.safetensors"}},
@@ -334,11 +366,25 @@ fn model_names_resolve_with_and_without_their_subfolder() {
     let estimate = footprint(&graph, &json!({"recipeId": "image"}), &[root.path().into()]);
     assert_eq!(estimate.model_files, 2);
     assert!((gib(estimate.model_bytes) - 5.0).abs() < 0.01);
-    assert_eq!(estimate.unresolved_models, 1, "a missing reference must be reported, not guessed");
-    assert_eq!(estimate.pixel_bytes, 0, "image recipes hold no full-frame RGB batch");
-    let Decision::Tight(line) = admission_with(Mode::Warn, headroom(1.0), &graph, &json!({}), &[root.path().into()])
-    else {
+    assert_eq!(
+        estimate.unresolved_models, 1,
+        "a missing reference must be reported, not guessed"
+    );
+    assert_eq!(
+        estimate.pixel_bytes, 0,
+        "image recipes hold no full-frame RGB batch"
+    );
+    let Decision::Tight(line) = admission_with(
+        Mode::Warn,
+        headroom(1.0),
+        &graph,
+        &json!({}),
+        &[root.path().into()],
+    ) else {
         panic!("1 GiB free with 5 GiB of models must warn");
     };
-    assert!(line.contains("not found in the model folders and not counted"), "{line}");
+    assert!(
+        line.contains("not found in the model folders and not counted"),
+        "{line}"
+    );
 }

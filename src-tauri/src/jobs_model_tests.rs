@@ -456,7 +456,11 @@ async fn host_memory_admission_refuses_before_the_backend_and_stays_retryable() 
         .unwrap_err();
     assert!(error.starts_with("HOST_MEMORY:"), "{error}");
     assert!(error.contains("model files"), "{error}");
-    assert_eq!(posts.load(std::sync::atomic::Ordering::SeqCst), 0, "the backend was never asked to start this job");
+    assert_eq!(
+        posts.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the backend was never asked to start this job"
+    );
     assert!(
         jobs.lock().unwrap().job.is_none(),
         "a refused job must not appear in the session"

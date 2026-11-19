@@ -127,10 +127,10 @@ def verify(browser,url,shots):
         assert not [c for c in calls if c['c'] in ['native_download_start','native_download_plan','native_model_scan_start','native_model_family_write','native_backend_start']]
         assert not errors,errors
         result={'status':'PASS','checks':checks,'kind':'Chromium with synthetic catalog/model data and strict simulated IPC; no native/provider operations','screenshots':str(shots)}
-        (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))
+        (shots/'result.json').write_text(json.dumps(result,indent=2)+'\n', encoding='utf-8');print(json.dumps(result,indent=2))
     except Exception:
         page.screenshot(path=str(shots/'failure.png'))
-        (shots/'failure.html').write_text(page.content())
+        (shots/'failure.html').write_text(page.content(), encoding='utf-8')
         print('FAILURE_ARTIFACTS',shots)
         print('SELECTS',page.locator('select').evaluate_all('(es)=>es.map(e=>({label:e.closest("label")?.textContent,aria:e.getAttribute("aria-label"),html:e.outerHTML.slice(0,350)}))'))
         raise

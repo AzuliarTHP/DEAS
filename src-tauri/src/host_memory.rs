@@ -101,7 +101,9 @@ fn index(root: &Path) -> BTreeMap<String, (PathBuf, u64)> {
         if depth > 6 || found.len() >= 4000 {
             continue;
         }
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -111,13 +113,20 @@ fn index(root: &Path) -> BTreeMap<String, (PathBuf, u64)> {
             let Some(size) = entry.metadata().ok().map(|m| m.len()) else {
                 continue;
             };
-            if path.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
-                MODEL_SUFFIXES
-                    .iter()
-                    .any(|s| name.to_ascii_lowercase().ends_with(s))
-            }) {
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| {
+                    MODEL_SUFFIXES
+                        .iter()
+                        .any(|s| name.to_ascii_lowercase().ends_with(s))
+                })
+            {
                 found.insert(
-                    path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_owned(),
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_owned(),
                     (path, size),
                 );
             }
@@ -168,11 +177,7 @@ pub(crate) fn footprint(graph: &Value, intent: &Value, roots: &[PathBuf]) -> Foo
         model_bytes: bytes,
         model_files: counted.len(),
         unresolved_models: unresolved,
-        pixel_bytes: if bounded {
-            0
-        } else {
-            pixel_batches(intent)
-        },
+        pixel_bytes: if bounded { 0 } else { pixel_batches(intent) },
         bounded_decode: bounded,
     }
 }
@@ -195,7 +200,12 @@ fn pixel_batches(intent: &Value) -> u64 {
     if frames == 0 || width == 0 || height == 0 {
         return 0;
     }
-    let batch = |w: u64, h: u64| frames.saturating_mul(w).saturating_mul(h).saturating_mul(12);
+    let batch = |w: u64, h: u64| {
+        frames
+            .saturating_mul(w)
+            .saturating_mul(h)
+            .saturating_mul(12)
+    };
     let mut total = batch(width, height);
     if intent.get("latentUpscale").is_some() {
         let (up_w, up_h) = crate::jobs_video::latent_upscale_size(intent);
@@ -224,12 +234,12 @@ pub(crate) fn headroom() -> Option<Headroom> {
         // passes, while a fixture built to 2 TiB (jobs_model_tests' huge_declaration) is refused.
         // The decision boundary itself is tested directly through `admission_with`, which takes
         // headroom as an argument.
-        return Some(Headroom {
+        Some(Headroom {
             available_bytes: 60 * GIB,
             total_bytes: 64 * GIB,
             swap_free_bytes: 8 * GIB,
             swap_total_bytes: 64 * GIB,
-        });
+        })
     }
     #[cfg(not(test))]
     {
@@ -329,8 +339,13 @@ pub(crate) fn admission_with(
             gib(available.swap_total_bytes)
         ));
     }
-    if !estimate.bounded_decode && crate::jobs_video::is_video(intent) && crate::jobs_video::h3_stream_candidate(intent) {
-        detail.push_str(". Turning on Streaming decode keeps the pixel buffers out of RAM for this job");
+    if !estimate.bounded_decode
+        && crate::jobs_video::is_video(intent)
+        && crate::jobs_video::h3_stream_candidate(intent)
+    {
+        detail.push_str(
+            ". Turning on Streaming decode keeps the pixel buffers out of RAM for this job",
+        );
     }
     let message = format!("HOST_MEMORY: {detail}");
     if mode == Mode::Warn {

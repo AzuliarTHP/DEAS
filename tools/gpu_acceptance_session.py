@@ -876,7 +876,7 @@ class MemoryWatch:
         pids = [self.pid]
         try:
             pids += [int(x) for x in
-                     Path(f'/proc/{self.pid}/task/{self.pid}/children').read_text().split()]
+                     Path(f'/proc/{self.pid}/task/{self.pid}/children').read_text(encoding='utf-8').split()]
         except OSError:
             pass
         total = 0
@@ -899,7 +899,7 @@ class MemoryWatch:
         except OSError:
             pass
         try:
-            return info, Path('/sys/module/zswap/parameters/enabled').read_text().strip()
+            return info, Path('/sys/module/zswap/parameters/enabled').read_text(encoding='utf-8').strip()
         except OSError:
             return info, 'unknown'
 
@@ -928,7 +928,7 @@ class MemoryWatch:
         if not self.pid:
             return None
         try:
-            text = Path(f'/proc/{self.pid}/smaps').read_text()
+            text = Path(f'/proc/{self.pid}/smaps').read_text(encoding='utf-8')
         except OSError:
             return None
         buckets, current = {}, '[anonymous/private]'
@@ -994,12 +994,12 @@ class MemoryWatch:
         """Full 2 s series plus the minute-by-minute residency breakdown for later analysis."""
         path.write_text('t_s,vram_mib,ram_gib,swap_gib,backend_rss_gib,private_dirty_gib,'
                         'shared_clean_gib,swap_kib\n' +
-                        '\n'.join(','.join(str(x) for x in row) for row in self.samples) + '\n')
+                        '\n'.join(','.join(str(x) for x in row) for row in self.samples) + '\n', encoding='utf-8')
         if self.mappings:
             (path.parent / path.name.replace('memory-', 'residency-')).write_text(
                 '\n'.join(f'T+{t}s total {total} GiB :: ' + ', '.join(f'{name} {gib} GiB'
                                                                       for name, gib in top)
-                          for t, total, top in self.mappings) + '\n')
+                          for t, total, top in self.mappings) + '\n', encoding='utf-8')
 
     def growth_points(self, step_gib=1.0, limit=12):
         """Where system RAM jumped between samples: the stage attribution for P-02."""
@@ -1116,15 +1116,15 @@ fn print_compiled_intent() {{
     println!("COMPILED_INTENT_MARKER {{}}", serde_json::to_string(&graph).unwrap());
 }}
 '''
-    orig = path.read_text()
+    orig = path.read_text(encoding='utf-8')
     if 'print_compiled_intent' not in orig:
-        path.write_text(orig + body)
+        path.write_text(orig + body, encoding='utf-8')
     return path, orig
 
 
 def remove_marker_test(path, orig):
-    if path.read_text() != orig:
-        path.write_text(orig)
+    if path.read_text(encoding='utf-8') != orig:
+        path.write_text(orig, encoding='utf-8')
 
 
 def compile_intent(intent, logbuf):
@@ -1227,7 +1227,7 @@ def replay(session_dir, logbuf):
     results = []
     by_name = {}
     ctx = {'outdir': session, 'by_name': by_name, 'observations': {}}
-    for line in (session / 'results.jsonl').read_text().splitlines():
+    for line in (session / 'results.jsonl').read_text(encoding='utf-8').splitlines():
         r = json.loads(line)
         gate = next((g for g in GATES if g['name'] == r['name']), None)
         if not gate:
@@ -1263,9 +1263,9 @@ def replay(session_dir, logbuf):
                        'lying-sigma A/B is incomplete.')
     if caveats:
         lines += ['', '## Replay caveats', ''] + [f'- {c}' for c in caveats]
-    (session / 'summary-verified.md').write_text('\n'.join(lines) + '\n')
+    (session / 'summary-verified.md').write_text('\n'.join(lines) + '\n', encoding='utf-8')
     (session / 'results-verified.jsonl').write_text(
-        '\n'.join(json.dumps(r) for r in results) + '\n')
+        '\n'.join(json.dumps(r) for r in results) + '\n', encoding='utf-8')
     return results
 
 
@@ -1319,7 +1319,7 @@ def sync_adapters(logbuf, outdir, enabled=True):
             log(logbuf, f"synced adapter deas_{name}.py: backend "
                         f"{(entry['installed_sha256'] or 'absent')[:12]} -> repo "
                         f"{entry['repo_sha256'][:12]} ({len(repo_bytes)} bytes)")
-    (keep / 'manifest.json').write_text(json.dumps(manifest, indent=1))
+    (keep / 'manifest.json').write_text(json.dumps(manifest, indent=1), encoding='utf-8')
     if backup:
         atexit.register(_restore_pairs, backup)
         log(logbuf, f'NOTE: {len(backup)} adapter(s) in the owned backend were replaced by repo '
@@ -1544,7 +1544,7 @@ def main():
                 backend.kill()
             restore_adapters(adapters_backup, logbuf)
             log(logbuf, 'dry run finished: throwaway backend stopped and adapters restored.')
-            (outdir / 'session.log').write_text('\n'.join(logbuf) + '\n')
+            (outdir / 'session.log').write_text('\n'.join(logbuf) + '\n', encoding='utf-8')
             return
 
     marker_path, marker_orig = install_marker_test()
@@ -1668,8 +1668,8 @@ def main():
         summary = render_summary(results, logbuf, notes=session_notes(results, adapters_backup))
         summary.append('\nDraft-gated items (check the intent shape against the PLAN item before trusting): '
                        + ', '.join(g['name'] for g in GATES if g['draft'] and g['name'] in wanted))
-        (outdir / 'summary.md').write_text('\n'.join(summary) + '\n')
-        (outdir / 'session.log').write_text('\n'.join(logbuf) + '\n')
+        (outdir / 'summary.md').write_text('\n'.join(summary) + '\n', encoding='utf-8')
+        (outdir / 'session.log').write_text('\n'.join(logbuf) + '\n', encoding='utf-8')
         print('\n'.join(summary))
         print(f'\nEvidence: {outdir}')
 
