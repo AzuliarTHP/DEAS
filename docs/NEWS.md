@@ -1,5 +1,14 @@
 # News
 
+## 0.3.6
+
+### Face refine works straight after a generation
+
+Starting **Face refine** right after a large video generation could fail with a SAM3 memory message, because
+ComfyUI was still holding the previous run's models and results in memory. It would have let go of them on
+demand, but DEAS checked first. DEAS now asks ComfyUI to free that memory before checking, so the post-process
+starts without rerunning anything. Restart the backend once after updating.
+
 ## 0.3.5
 
 ### The memory check no longer stops jobs on its own

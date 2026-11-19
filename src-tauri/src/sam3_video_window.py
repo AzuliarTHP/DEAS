@@ -47,9 +47,51 @@ def available_memory():
 # Serialize admission through acquisition: no second decoder spends an unmaterialized reservation.
 _decode_lock = threading.Lock()
 _log = logging.getLogger(__name__)
+BUDGET_SHARE = 0.75
 
 
-def window_plan(width, height, fps, frames, seconds, start, duration, max_objects, available):
+def reclaim_host_memory(target, measure=None):
+    """Ask ComfyUI to drop what it only keeps for speed until `target` bytes are available.
+
+    ComfyUI's RAM-pressure cache holds the previous run's outputs and model pins until free RAM
+    falls below its own headroom (10 % of RAM), so right after a large generation a post-process
+    can see too little free memory although ComfyUI would release it on demand. Same staged order
+    as the node pack's encode reclaim: inactive cache entries, model pins, then active entries
+    (ComfyUI itself evicts those under pressure; anything evicted is reloaded when needed).
+    """
+    import gc
+    measure = measure or available_memory
+    before = available = measure()
+    if available >= target:
+        return available
+    try:
+        from comfy import memory_management, model_management
+    except ImportError:
+        return available
+    release_cache = getattr(memory_management, "extra_ram_release", None)
+    free_pins = getattr(model_management, "free_pins", None)
+    cleanup_models = getattr(model_management, "cleanup_models", None)
+    for stage in ("inactive", "pins", "active"):
+        if stage == "pins":
+            if free_pins is not None:
+                free_pins(max(0, target - available) + 512 * 1024 ** 2)
+        elif release_cache is not None:
+            release_cache(target, free_active=stage == "active")
+        gc.collect()
+        if cleanup_models is not None:
+            cleanup_models()
+        available = measure()
+        if available >= target:
+            break
+    soft_empty = getattr(model_management, "soft_empty_cache", None)
+    if soft_empty is not None:
+        soft_empty()
+    _log.info("SAM3_VIDEO_WINDOW reclaimed host memory %.2f -> %.2f GiB (target %.2f GiB)",
+              before / 1024 ** 3, available / 1024 ** 3, target / 1024 ** 3)
+    return available
+
+
+def window_plan(width, height, fps, frames, seconds, start, duration, max_objects, available, reclaim=None):
     values = (width, height, fps, frames, seconds, start, duration, max_objects, available)
     if any(isinstance(v, bool) or not math.isfinite(v) for v in values):
         raise ValueError("SAM3_VIDEO_WINDOW: finite numeric metadata and window required")
@@ -75,7 +117,11 @@ def window_plan(width, height, fps, frames, seconds, start, duration, max_object
     estimated = count * (pixels * 68 + 1008 * 1008 * 8 + 128) + count * max_objects * 1008 * 126 * 3 + max_objects * 1008 * 1008 * 16
     # Shot mode adds a CPU union destination and bounded float64 RGB scoring tiles.
     estimated += 128 * 128 * 3 * 8 * 3
-    budget = int(available * 0.75)
+    budget = int(available * BUDGET_SHARE)
+    if reclaim is not None and estimated > budget:
+        # Free ComfyUI's caches before refusing: the shortfall is usually the previous run.
+        available = reclaim(math.ceil(estimated / BUDGET_SHARE) + 1)
+        budget = int(available * BUDGET_SHARE)
     if available <= 0 or estimated > budget:
         raise ValueError(f"SAM3_VIDEO_WINDOW: estimated incremental host memory {estimated} bytes exceeds 75% of available memory ({budget} bytes); shorten the window or reduce maxObjects")
     return count, estimated, budget
@@ -217,7 +263,7 @@ class SAM3VideoWindow:
         if start_seconds == 0 and duration_seconds == 0:
             duration_seconds = seconds
         window_plan(width, height, fps, frames, seconds, start_seconds, duration_seconds,
-                    max_objects, available_memory())
+                    max_objects, available_memory(), reclaim_host_memory)
         # Bounds are already checked against admitted metadata. Core as_trimmed() reopens
         # the path for duration discovery and may decode before this guard is installed.
 
@@ -243,7 +289,7 @@ class SAM3VideoWindow:
                         raise ValueError("SAM3_VIDEO_WINDOW: source changed after admission")
                     self.admitted_frames, estimated, budget = window_plan(
                         width, height, fps, frames, seconds, start_seconds, duration_seconds,
-                        max_objects, available_memory())
+                        max_objects, available_memory(), reclaim_host_memory)
                     # This is an incremental planning reservation, not allocated RAM or a VRAM guarantee.
                     # Available memory already excludes resident model/tensor pages; do not subtract them twice.
                     _log.info("SAM3_VIDEO_WINDOW admission frames=%d estimate_bytes=%d available_share_bytes=%d",

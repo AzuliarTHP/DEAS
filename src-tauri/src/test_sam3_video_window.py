@@ -64,6 +64,50 @@ class WindowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "75% of available"):
             plan(available=estimate)
 
+    def test_short_budget_reclaims_comfy_caches_before_refusing(self):
+        _, estimate, _ = plan()
+        asked = []
+        def reclaim(target):
+            asked.append(target)
+            return target
+        # The previous run's caches were enough: admission proceeds after one reclaim.
+        count, _, budget = plan(available=estimate, reclaim=reclaim)
+        self.assertEqual(count, 12)
+        self.assertEqual(len(asked), 1)
+        self.assertGreaterEqual(asked[0] * window.BUDGET_SHARE, estimate)
+        self.assertGreaterEqual(budget, estimate)
+        # Enough headroom up front never touches ComfyUI's caches.
+        plan(available=estimate * 2, reclaim=lambda target: self.fail("no reclaim needed"))
+        # Live inputs that cannot be freed still refuse with the same message.
+        with self.assertRaisesRegex(ValueError, "75% of available"):
+            plan(available=estimate, reclaim=lambda target: estimate)
+
+    def test_reclaim_releases_in_comfy_order_and_stops_once_enough(self):
+        from types import ModuleType, SimpleNamespace
+        calls, pool = [], {"free": 100}
+        memory = ModuleType("comfy.memory_management")
+        model = ModuleType("comfy.model_management")
+        def release(target, free_active=False):
+            calls.append(("active" if free_active else "inactive", target))
+            pool["free"] += 50
+        def pins(size):
+            calls.append(("pins", size))
+            pool["free"] += 400
+        memory.extra_ram_release = release
+        model.free_pins = pins
+        model.cleanup_models = lambda: calls.append(("cleanup",))
+        model.soft_empty_cache = lambda: calls.append(("empty",))
+        comfy = SimpleNamespace(memory_management=memory, model_management=model)
+        with patch.dict(sys.modules, {"comfy": comfy, "comfy.memory_management": memory,
+                                      "comfy.model_management": model}):
+            got = window.reclaim_host_memory(500, measure=lambda: pool["free"])
+            self.assertEqual(got, 550)
+            self.assertEqual([c[0] for c in calls], ["inactive", "cleanup", "pins", "cleanup", "empty"])
+            self.assertEqual(calls[2][1], 500 - 150 + 512 * 1024 ** 2)
+            calls.clear()
+            self.assertEqual(window.reclaim_host_memory(10, measure=lambda: pool["free"]), 550)
+            self.assertEqual(calls, [], "enough memory must not evict anything")
+
     def test_whole_window_unpacked_tracker_masks_are_included_for_tiny_sources(self):
         count, estimate, _ = plan(width=8,height=8,max_objects=1)
         self.assertGreaterEqual(estimate,count*1008*1008*8)

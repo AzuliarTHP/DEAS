@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6
+
+- **Face refine and other SAM3 post-processes no longer fail right after a large generation.** ComfyUI keeps the previous run's cached results and model memory until free RAM falls below its own headroom (about 10 % of RAM), so straight after an H3 generation the SAM3 video window could see too little free memory and refuse (*SAM3_VIDEO_WINDOW: estimated incremental host memory … exceeds 75% of available memory*) although ComfyUI would have released that memory on demand. Before refusing, the window now asks ComfyUI to free what it only keeps for speed, in its own order: old cached results first, then model pinned memory, then current cached results (anything dropped is reloaded when needed). It refuses only if the memory is still short afterwards, and Logs show the before/after figures. VRAM was not the cause: SAM3 and H3 load through ComfyUI, which already makes room on the GPU itself. Reaches an existing environment at the next backend start; no node pack update.
+
 ## 0.3.5
 
 - **The host memory check no longer blocks jobs by default.** 0.3.4 refused a job when the model files it names plus its decode buffers exceeded free RAM (for example *estimated need 40.1 GiB … 43.1 GiB available*). That estimate counts every model as resident at the same time, which ComfyUI's memory management (offloading, smart memory, unloading one model before the next) does not do, so jobs that run fine were refused. The check is now off unless you opt in: `DEAS_HOST_MEMORY_ADMISSION=warn` writes the estimate to **Logs** and starts the job, `=block` restores the refusal.
