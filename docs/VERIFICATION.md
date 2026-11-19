@@ -1,5 +1,18 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.4 (published)
+
+Published [v0.3.4](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.4) from source commit `b8da6dcce2dd8c44358eb0efa2ca41afb51a94eb` (tree `68f76977d7f2c84048d06ea7c09946af99571928`; annotated tag object `19b497af0553428e3d2099c46cc738958f7f2a9d`, pushed to both remotes, both peeling to the source commit). `Verify DEAS` and `Release DEAS` remain `disabled_manually`; the build ran locally with `build-linux.sh --release` on the clean tree at that commit (rustc 1.97.0, Linux binary host-linked with a direct glibc floor of 2.39 like 0.3.3, `ldd` reports nothing missing, both binaries embed `index-BYTInzQk.js`; the loose `artifacts/deas-linux-amd64` is byte-identical to the staged asset). Gates: the fresh chain recorded above under *LoRA details edits and prompt examples*. Published draft-first: every server asset `digest` and size matched the local file before the release was made **Latest** (not a prerelease); the four assets were then re-downloaded into a new directory, where `sha256sum -c SHA256SUMS` passed and `cmp` reported all four byte-identical to the staged set.
+
+| Asset | SHA-256 |
+| --- | --- |
+| `deas-linux-amd64` | `be53f3eb9d99655e958c595293f34c0b18291a39467808ddd2a6926ad5636588` |
+| `deas.exe` | `c763e8298c38e18277a2cb7853e565f4f0fcc8c82883ee787d4b38e8801049b1` |
+| `BUILD-MANIFEST.json` | `a00353a5238ec1aa1d0465391851b8b10359aa73f06fc78a69f03d4bf6347b55` |
+| `SHA256SUMS` | `f3349038c14d37b0e04dee046bd04e278700c162af0a1b42e622f5533a0e5eec` |
+
+The Windows `deas.exe` is a cargo-xwin cross-build and has not been run on Windows before publication (PLAN B-07, B-08, L-05).
+
 ## Issue #39 — Studio capability poll livelock on slow `object_info` (0.3.4)
 
 Diagnosis from the reporters' own 0.3.3 logs (three files: two machines, one of them also a fresh install with default
