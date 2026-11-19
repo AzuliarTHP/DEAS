@@ -1,0 +1,4 @@
+# Files whose RFC1918 addresses are documented synthetic unit-test fixtures.
+# Add entries here ONLY for obviously fake fixtures; real LAN/WAN addresses
+# and anything personal must never appear, fixture or not.
+src-tauri/src/downloads_tests.rs
