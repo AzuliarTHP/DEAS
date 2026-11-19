@@ -792,12 +792,49 @@ class MemoryWatch:
     """Sample VRAM, RAM and swap during a run. P-02's acceptance criterion IS memory, and the
     skill driver only samples VRAM/RAM - swap was the actual symptom of the 48.1 GB incident."""
 
-    def __init__(self):
-        self.peak = {'vram_mib': 0, 'ram_gib': 0.0, 'swap_gib': 0.0}
+    def __init__(self, pid=None):
+        self.pid = pid
+        self.peak = {'vram_mib': 0, 'ram_gib': 0.0, 'swap_gib': 0.0, 'backend_rss_gib': 0.0}
+        self.samples = []            # [t_s, vram_mib, ram_gib, swap_gib, backend_rss_gib]
+        self.swap_pages = {}         # pswpin/pswout delta across the run (1 KiB pages... in 4 KiB units)
         self._stop = threading.Event()
         self._thread = None
 
+    def _vmstat(self):
+        out = {}
+        try:
+            for line in open('/proc/vmstat'):
+                key, _, value = line.partition(' ')
+                if key in ('pswpin', 'pswpout'):
+                    out[key] = int(value)
+        except OSError:
+            pass
+        return out
+
+    def _backend_rss_gib(self):
+        """RSS of the backend process and its direct children: separates the run from page cache."""
+        if not self.pid:
+            return 0.0
+        pids = [self.pid]
+        try:
+            pids += [int(x) for x in
+                     Path(f'/proc/{self.pid}/task/{self.pid}/children').read_text().split()]
+        except OSError:
+            pass
+        total = 0
+        for pid in pids:
+            try:
+                for line in open(f'/proc/{pid}/status'):
+                    if line.startswith('VmRSS:'):
+                        total += int(line.split()[1])
+                        break
+            except OSError:
+                continue
+        return total / 2 ** 20
+
     def _pump(self):
+        t0 = time.time()
+        first = self._vmstat()
         while not self._stop.is_set():
             try:
                 v = int(subprocess.run(['nvidia-smi', '--query-gpu=memory.used',
@@ -807,12 +844,36 @@ class MemoryWatch:
                 kb = lambda k: int(info[k].split()[0])
                 ram = (kb('MemTotal') - kb('MemAvailable')) / 2 ** 20
                 swap = (kb('SwapTotal') - kb('SwapFree')) / 2 ** 20
+                rss = self._backend_rss_gib()
                 self.peak['vram_mib'] = max(self.peak['vram_mib'], v)
                 self.peak['ram_gib'] = round(max(self.peak['ram_gib'], ram), 1)
                 self.peak['swap_gib'] = round(max(self.peak['swap_gib'], swap), 1)
+                self.peak['backend_rss_gib'] = round(max(self.peak['backend_rss_gib'], rss), 2)
+                self.samples.append([round(time.time() - t0), v, round(ram, 1), round(swap, 1),
+                                     round(rss, 2)])
             except Exception:
                 pass
             self._stop.wait(2)
+        last = self._vmstat()
+        self.swap_pages = {k: last.get(k, 0) - first.get(k, 0) for k in ('pswpin', 'pswout')}
+
+    def csv(self, path):
+        """Full 2 s series, so a later analysis can attribute the growth to a stage."""
+        path.write_text('t_s,vram_mib,ram_gib,swap_gib,backend_rss_gib\n' +
+                        '\n'.join(','.join(str(x) for x in row) for row in self.samples) + '\n')
+
+    def growth_points(self, step_gib=1.0, limit=12):
+        """Where system RAM jumped between samples: the stage attribution for P-02."""
+        out = []
+        for previous, current in zip(self.samples, self.samples[1:]):
+            jump = current[2] - previous[2]
+            if abs(jump) >= step_gib:
+                out.append(f'T+{current[0]}s {jump:+.1f} GiB (RAM {current[2]} GiB, '
+                           f'swap {current[3]} GiB, backend RSS {current[4]} GiB, '
+                           f'VRAM {current[1]} MiB)')
+                if len(out) >= limit:
+                    break
+        return out
 
     def __enter__(self):
         self._thread = threading.Thread(target=self._pump, daemon=True)
@@ -992,7 +1053,10 @@ def render_summary(results, logbuf, notes=()):
         for r in sampled:
             mw = r['memory_watch']
             lines.append(f"- {r.get('name')}: VRAM {mw['vram_mib']} MiB, RAM {mw['ram_gib']} GiB, "
-                         f"swap {mw['swap_gib']} GiB")
+                         f"swap {mw['swap_gib']} GiB, backend RSS {mw.get('backend_rss_gib')} GiB, "
+                         f"swap pages in/out {mw.get('swap_pages')}")
+            for point in mw.get('growth') or ():
+                lines.append(f"  - {point}")
     measured = [r for r in results if r.get('checks')]
     if measured:
         lines += ['', '## Measured acceptance checks', '']
@@ -1382,7 +1446,7 @@ def main():
                     continue
                 log(logbuf, f"RUN  {g['name']} ({g['item']}) — {g['note']}")
                 obs = PreviewObserver(base) if g.get('observe') else None
-                watch = MemoryWatch() if g.get('memory_watch') else None
+                watch = MemoryWatch(backend.pid if backend else None) if g.get('memory_watch') else None
                 try:
                     drv.precompiled = compiled[g['name']]
                     if obs:
@@ -1393,7 +1457,9 @@ def main():
                     elif watch:
                         with watch:
                             r = drv.run(g['name'], g['intent'](), timeout=g.get('timeout', 7200))
-                        r['memory_watch'] = watch.peak
+                        r['memory_watch'] = dict(watch.peak, swap_pages=watch.swap_pages,
+                                                 growth=watch.growth_points())
+                        watch.csv(outdir / f'memory-{g["name"]}.csv')
                         ctx['by_name'][g['name']] = {'files': [], 'result': r}
                     else:
                         r = drv.run(g['name'], g['intent'](), timeout=g.get('timeout', 7200))

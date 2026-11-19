@@ -133,7 +133,13 @@ def _validate_video(path, shape, count, rate, audio, audio_encoder, metadata, in
                     problem = (f"metadata key {name!r} read back as invalid JSON ({error}); read "
                                f"starts with {read[:60]!r}")
                 else:
-                    if parsed == value:
+                    # ComfyUI prompt graphs carry `is_changed: [NaN]`, and NaN never equals
+                    # itself, so object equality rejects provenance that came back byte for byte
+                    # (measured 2026-11-19: all seven encoder candidates were rejected this way
+                    # and only the last, lenient one published). Canonical re-serialization is
+                    # the honest comparison: the bytes are what the container is expected to keep.
+                    if read == written or json.dumps(parsed, separators=(",", ":"),
+                                                     ensure_ascii=False) == written:
                         continue
                     offset = next((i for i, (a, b) in enumerate(zip(written, read)) if a != b),
                                   min(len(written), len(read)))

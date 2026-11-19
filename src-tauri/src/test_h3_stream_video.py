@@ -150,6 +150,33 @@ class ExportTests(unittest.TestCase):
                                        None, None, lambda: None, metadata_strict=False)
             self.assertIn('frame count', str(caught.exception))
 
+    def test_nan_bearing_graph_provenance_round_trips_and_passes_strict(self):
+        """ComfyUI graphs carry is_changed:[NaN]; NaN != NaN must not reject identical bytes."""
+        module = owned()
+        nan = float('nan')
+        metadata = {'prompt': {'7': {'class_type': 'DEAS_H3StreamVideoSave', 'is_changed': [nan]}},
+                    'workflow': {'nodes': [{'id': '7', 'is_changed': [nan]}]}}
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+            target = Path(directory) / 'result.mp4'
+            self.export(target, module=module, metadata=metadata)
+            with self.av.open(str(target)) as media:
+                back = json.loads(media.metadata['prompt'])
+                # (comparing NaN with == is the very trap this test guards: [nan] != [nan])
+                self.assertEqual(json.dumps(back, separators=(',', ':')),
+                                 json.dumps(metadata['prompt'], separators=(',', ':')))
+            module._validate_video(target, (1, 3, 6, 16, 16), 6, self.helper._rate(24), None, None,
+                                   metadata, lambda: None, container_name='MP4')
+            self.assertEqual(module._validate_video(target, (1, 3, 6, 16, 16), 6,
+                                                    self.helper._rate(24), None, None, metadata,
+                                                    lambda: None, metadata_strict=False,
+                                                    container_name='MP4'), [])
+            # a genuinely different payload is still caught, with NaN in it
+            with self.assertRaises(module.ValidationFailure) as caught:
+                module._validate_video(target, (1, 3, 6, 16, 16), 6, self.helper._rate(24), None,
+                                       None, {'prompt': {'7': {'is_changed': [nan, nan]}}},
+                                       lambda: None, container_name='MP4')
+            self.assertIn('differs after readback', str(caught.exception))
+
     def test_matroska_family_carries_provenance_in_the_uppercase_envelope(self):
         """The matroska muxer drops non-uppercase tags, so DEAS must not demand what cannot return."""
         module = owned()
