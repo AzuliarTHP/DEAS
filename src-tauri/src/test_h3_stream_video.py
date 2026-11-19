@@ -1,6 +1,7 @@
 """CPU-only contract tests; no learned decoder or GPU inference is exercised."""
 import ast
 import importlib.util
+import json
 import math
 import os
 from pathlib import Path
@@ -102,19 +103,125 @@ class ExportTests(unittest.TestCase):
         cls.helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.helper)
 
-    def export(self, target, interrupt=lambda: None):
+    def frames(self):
         import torch
-        import numpy as np
-        shape = (1, 3, 6, 16, 16)
         def decode(sink):
             for start in (0, 3):
                 sink[:, :, start:start + 3, :, :].copy_(torch.full((1, 3, 3, 16, 16), .4))
-        audio = (np.sin(np.arange(12000)[None, :] * .05).astype('float32') * .1, 48000)
-        return owned().encode_stream(decode, shape, target, self.helper,
-            container_name='MP4', encoder='libx264', frame_rate=24, bit_depth=8,
-            quality=20, audio=audio, audio_encoder='aac', audio_bitrate='192k',
-            metadata={'prompt': {'test': 'stream'}}, interrupt=interrupt,
-            save_first_frame=True, save_last_frame=True)
+        return decode
+
+    def audio(self):
+        import numpy as np
+        return (np.sin(np.arange(12000)[None, :] * .05).astype('float32') * .1, 48000)
+
+    def export(self, target, interrupt=lambda: None, module=None, **overrides):
+        kwargs = dict(container_name='MP4', encoder='libx264', frame_rate=24, bit_depth=8,
+                      quality=20, audio=self.audio(), audio_encoder='aac', audio_bitrate='192k',
+                      metadata={'prompt': {'test': 'stream'}}, interrupt=interrupt,
+                      save_first_frame=True, save_last_frame=True)
+        kwargs.update(overrides)
+        return (module or owned()).encode_stream(self.frames(), (1, 3, 6, 16, 16), target,
+                                                 self.helper, **kwargs)
+
+    def test_metadata_readback_failure_names_the_key_and_stays_retryable(self):
+        module = owned()
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+            target = Path(directory) / 'result.mp4'
+            self.export(target, module=module)
+            for metadata, fragment in (({'prompt': {'test': 'other'}}, 'differs after readback'),
+                                       ({'workflow': {'x': 1}}, 'absent after readback')):
+                with self.subTest(metadata=sorted(metadata)):
+                    with self.assertRaises(module.ValidationFailure) as caught:
+                        module._validate_video(target, (1, 3, 6, 16, 16), 6, self.helper._rate(24),
+                                               None, None, metadata, lambda: None)
+                    self.assertIn(sorted(metadata)[0], str(caught.exception))
+                    self.assertIn(fragment, str(caught.exception))
+                    self.assertEqual(caught.exception.diagnosis['key'], sorted(metadata)[0])
+                    self.assertTrue(caught.exception.stage.endswith('result.mp4'))
+            # only the final candidate may publish despite this, and then it must be reported
+            problems = module._validate_video(target, (1, 3, 6, 16, 16), 6, self.helper._rate(24),
+                                              None, None, {'prompt': {'test': 'other'}},
+                                              lambda: None, metadata_strict=False)
+            self.assertEqual(len(problems), 1)
+            self.assertIn('prompt', problems[0])
+            # every other check stays fatal even in the lenient mode
+            with self.assertRaises(ValueError) as caught:
+                module._validate_video(target, (1, 3, 6, 16, 16), 5, self.helper._rate(24), None,
+                                       None, None, lambda: None, metadata_strict=False)
+            self.assertIn('frame count', str(caught.exception))
+
+    def test_matroska_family_carries_provenance_in_the_uppercase_envelope(self):
+        """The matroska muxer drops non-uppercase tags, so DEAS must not demand what cannot return."""
+        module = owned()
+        self.assertEqual(module._container_tags('MKV', {'prompt': {'a': 1}}),
+                         {'DEAS': {'prompt': {'a': 1}}})
+        self.assertEqual(module._container_tags('WebM', {'prompt': {'a': 1}}),
+                         {'DEAS': {'prompt': {'a': 1}}})
+        self.assertEqual(module._container_tags('MP4', {'prompt': {'a': 1}}), {'prompt': {'a': 1}})
+        metadata = {'prompt': {'test': 'stream'}, 'workflow': {'nodes': 'x' * 4000}}
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+            target = Path(directory) / 'result.mkv'
+            self.export(target, module=module, container_name='MKV', encoder='libx264',
+                        metadata=metadata)
+            with self.av.open(str(target)) as media:
+                tags = dict(media.metadata)
+            self.assertNotIn('prompt', {key.casefold() for key in tags})
+            self.assertEqual(json.loads(tags['DEAS']), metadata)
+            # the strict first candidate now succeeds instead of burning the encoder chain
+            module._validate_video(target, (1, 3, 6, 16, 16), 6, self.helper._rate(24), None, None,
+                                   metadata, lambda: None, container_name='MKV')
+            # a stage file that lost the envelope stays a named, retryable failure
+            with self.assertRaises(module.ValidationFailure) as caught:
+                module._validate_video(target, (1, 3, 6, 16, 16), 6, self.helper._rate(24), None,
+                                       None, {'prompt': metadata['prompt']}, lambda: None)
+            self.assertIn('prompt', str(caught.exception))
+            self.assertIn('DEAS', caught.exception.diagnosis['container_tags'])
+
+    def test_lenient_metadata_policy_publishes_and_reports_the_problem(self):
+        """The real-world shape: the muxer kept no tags, so readback cannot match."""
+        from unittest.mock import patch
+        module = owned()
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+            target = Path(directory) / 'result.mp4'
+            seen = []
+            with patch.object(self.helper, '_metadata', lambda container, metadata: None):
+                self.export(target, module=module, metadata_strict=False, on_warning=seen.append)
+                self.assertEqual(len(seen), 1)
+                self.assertIn('prompt', seen[0])
+            self.assertTrue(target.is_file(), 'the final candidate must still produce a file')
+            with self.av.open(str(target)) as media:
+                self.assertNotIn('prompt', {key.casefold() for key in media.metadata})
+            seen.clear()
+            with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as strict_dir:
+                with patch.object(self.helper, '_metadata', lambda container, metadata: None):
+                    with self.assertRaises(module.ValidationFailure):
+                        self.export(Path(strict_dir) / 'strict.mp4', module=module,
+                                    on_warning=seen.append)
+            self.assertEqual(seen, [], 'a strict candidate never reports a warning')
+
+    def test_rejected_stage_file_is_retained_only_when_the_owner_asks(self):
+        from unittest.mock import patch
+        module = owned()
+
+        def reject(path, *args, **kwargs):
+            raise module.ValidationFailure("Encoded metadata key 'prompt' differs after readback",
+                                           diagnosis={'key': 'prompt'}, stage=path)
+
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as directory:
+            with patch.object(module, '_validate_video', reject):
+                with self.assertRaises(module.ValidationFailure):
+                    self.export(Path(directory) / 'strict.mp4', module=module)
+            self.assertEqual(list(Path(directory).iterdir()), [],
+                             'a rejected encode leaves nothing behind unless asked')
+            with patch.object(module, '_validate_video', reject):
+                with patch.dict(os.environ, {'DEAS_H3_KEEP_FAILED': '1'}):
+                    with self.assertRaises(module.ValidationFailure) as caught:
+                        self.export(Path(directory) / 'kept.mp4', module=module)
+            retained = sorted(path.name for path in Path(directory).iterdir())
+            self.assertEqual(retained, ['kept.validation-failed-libx264.mp4'])
+            self.assertEqual(caught.exception.diagnosis['retained'],
+                             str(Path(directory) / retained[0]))
+            self.assertTrue((Path(directory) / retained[0]).stat().st_size > 0)
 
     @unittest.skipUnless(CORE.is_dir(), 'optional Core absent')
     def test_complete_node_audio_retry_and_house_schema(self):
@@ -321,8 +428,8 @@ class ExportTests(unittest.TestCase):
                     sink.copy_(torch.zeros(1, 3, 6, 16, 16))
                     after_decode = True
                 original_validate = module._validate_video
-                def validated(*args):
-                    original_validate(*args)
+                def validated(*args, **kwargs):
+                    original_validate(*args, **kwargs)
                     if phase == 'publish':
                         raise Cancelled('just before publication')
                 disk_calls = 0
@@ -355,8 +462,8 @@ class ExportTests(unittest.TestCase):
                     original.write_bytes(b'baseline')
                     collision = target if phase == 'video-collision' else target.with_name('result-last-frame.png')
                     validate = module._validate_video
-                    def validated(*args):
-                        validate(*args)
+                    def validated(*args, **kwargs):
+                        validate(*args, **kwargs)
                         if phase.endswith('collision'):
                             collision.write_bytes(b'concurrent original')
                     def publish(source, destination, move=False):
@@ -435,6 +542,21 @@ class ExportTests(unittest.TestCase):
 
 
 class NodeTests(unittest.TestCase):
+    def test_streaming_node_retries_readback_failures_and_relaxes_only_on_the_last_candidate(self):
+        source = (HERE / 'h3_stream_video.py').read_text()
+        tree = ast.parse(source)
+        node = next(n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)
+                    and n.name == 'DEAS_H3StreamVideoSave')
+        retrying = [handler for handler in ast.walk(node) if isinstance(handler, ast.ExceptHandler)
+                    and isinstance(handler.type, ast.Tuple)
+                    and {'CodecFailure', 'ValidationFailure'} <= {getattr(e, 'id', None)
+                                                                  for e in handler.type.elts}]
+        self.assertTrue(retrying, 'the encoder candidate loop must retry readback failures')
+        self.assertIn('lenient_metadata = attempt == len(candidates) - 1', source)
+        self.assertIn('DEAS_H3_KEEP_FAILED', source)
+        self.assertTrue(issubclass(owned().ValidationFailure, ValueError),
+                        'readback failures stay ValueError for existing callers')
+
     def test_codec_configuration_boundary_without_optional_dependencies(self):
         import errno
         import sys

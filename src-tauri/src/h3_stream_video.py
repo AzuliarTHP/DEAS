@@ -15,6 +15,20 @@ class CodecFailure(RuntimeError):
     """Only failures originating in codec operations may trigger a fresh decode."""
 
 
+class ValidationFailure(ValueError):
+    """A finished encode failed DEAS's own readback checks.
+
+    Container tags are written and read back differently per codec/container combination, so
+    this class of failure is retryable with the next candidate rather than fatal: a decode of
+    hundreds of frames must never end with no product at all.
+    """
+
+    def __init__(self, message, *, diagnosis=None, stage=None):
+        super().__init__(message)
+        self.diagnosis = diagnosis if diagnosis is not None else {}
+        self.stage = str(stage) if stage else None
+
+
 def _codec(call, *args, configuration=False, **kwargs):
     import av
     try:
@@ -64,7 +78,29 @@ def _admit(shape, directory, audio, bit_depth, endpoints):
         raise OSError(errno.ENOSPC, 'Insufficient free disk for private H3 export')
 
 
-def _validate_video(path, shape, count, rate, audio, audio_encoder, metadata, interrupt):
+# Matroska-family containers silently drop metadata keys that are not ALL UPPERCASE: measured
+# against the shipped ffmpeg (libavformat matroska muxer), writing 'prompt'/'workflow' into MKV
+# or WebM yields no user tags at all, while 'PROMPT' and 'DEAS' survive at 260 KB. DEAS writes
+# lowercase provenance keys, so an Auto-codec H3 export (AV1 -> Matroska) used to fail its own
+# readback check after a full generation. Provenance therefore goes into one uppercase envelope
+# tag for those containers; MP4 keeps the per-key tags that already work.
+MATROSKA_FAMILY = ('MKV', 'WebM')
+ENVELOPE_TAG = 'DEAS'
+
+
+def _container_tags(container_name, metadata):
+    """The tag dictionary this container can actually carry."""
+    if not metadata:
+        return None
+    if container_name in MATROSKA_FAMILY:
+        return {ENVELOPE_TAG: metadata}
+    return metadata
+
+
+def _validate_video(path, shape, count, rate, audio, audio_encoder, metadata, interrupt,
+                    metadata_strict=True, container_name=None):
+    """Verify the encoded file; returns metadata problems when metadata_strict is False."""
+    problems = []
     import av
     with av.open(str(path)) as media:
         if len(media.streams.video) != 1:
@@ -80,10 +116,41 @@ def _validate_video(path, shape, count, rate, audio, audio_encoder, metadata, in
             seen += 1
         if seen != count:
             raise ValueError('Encoded video frame count differs')
-        tags = {key.casefold(): value for key, value in media.metadata.items()}
-        for key, value in (metadata or {}).items():
-            if json.loads(tags.get(str(key).casefold(), 'null')) != value:
-                raise ValueError('Encoded metadata did not survive readback')
+        tags = dict(media.metadata)
+        for key, value in (_container_tags(container_name, metadata) or {}).items():
+            name = str(key)
+            written = json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+            read = next((v for k, v in tags.items() if k.casefold() == name.casefold()), None)
+            problem = None
+            if read is None:
+                problem = (f"metadata key {name!r} is absent after readback ({len(written)} "
+                           f"characters were written; the container reported "
+                           f"{sorted(tags) or 'no user tags'})")
+            else:
+                try:
+                    parsed = json.loads(read)
+                except ValueError as error:
+                    problem = (f"metadata key {name!r} read back as invalid JSON ({error}); read "
+                               f"starts with {read[:60]!r}")
+                else:
+                    if parsed == value:
+                        continue
+                    offset = next((i for i, (a, b) in enumerate(zip(written, read)) if a != b),
+                                  min(len(written), len(read)))
+                    window = slice(max(0, offset - 24), offset + 24)
+                    problem = (f"metadata key {name!r} differs after readback ({len(read)} "
+                               f"characters read against {len(written)} written; first difference "
+                               f"at character {offset}; wrote {written[window]!r}, read "
+                               f"{read[window]!r})")
+            if metadata_strict:
+                raise ValidationFailure(f'Encoded {problem}',
+                                        diagnosis={'key': name,
+                                                   'container': container_name,
+                                                   'written_characters': len(written),
+                                                   'read_characters': None if read is None else len(read),
+                                                   'container_tags': sorted(tags)},
+                                        stage=path)
+            problems.append(problem)
     if audio is not None and audio_encoder:
         with av.open(str(path)) as media:
             if len(media.streams.audio) != 1:
@@ -109,13 +176,21 @@ def _validate_video(path, shape, count, rate, audio, audio_encoder, metadata, in
                 raise ValueError('Encoded audio sample coverage differs')
             if declared is not None and abs(declared - wanted) > 1:
                 raise ValueError('Encoded audio presentation duration differs')
+    return problems
 
 
 def encode_stream(decode, shape, output_path, helper, *, container_name, encoder,
                   frame_rate, bit_depth, quality, audio=None, audio_encoder=None,
                   audio_bitrate='192k', metadata=None, interrupt=lambda: None,
-                  crop_to_audio=False, save_first_frame=False, save_last_frame=False):
-    """Decode anew for this attempt; publish only validated output, never overwrite."""
+                  crop_to_audio=False, save_first_frame=False, save_last_frame=False,
+                  metadata_strict=True, on_warning=None):
+    """Decode anew for this attempt; publish only validated output, never overwrite.
+
+    With metadata_strict False a metadata-tag round-trip problem is reported through
+    on_warning and the file is still published; every other check stays fatal. Set
+    DEAS_H3_KEEP_FAILED=1 to keep a rejected stage file next to the intended output for
+    diagnosis (off by default: that file can be gigabytes).
+    """
     import av
     import torch
     from PIL import Image
@@ -142,7 +217,7 @@ def encode_stream(decode, shape, output_path, helper, *, container_name, encoder
         try:
             options = {'movflags': '+faststart+use_metadata_tags', 'movie_timescale': '48000'} if container_name == 'MP4' else {'loop': '0'} if container_name == 'Animated WebP' else {}
             output = _codec(av.open, str(stage), 'w', format=helper.FORMAT_NAMES[container_name], options=options)
-            helper._metadata(output, metadata)
+            helper._metadata(output, _container_tags(container_name, metadata))
             video = _codec(helper._configure_video_stream, output, encoder, shape[4], shape[3], frame_rate, bit_depth, quality, configuration=True)
             video.codec_context.thread_count = 1
             audio_stream = None
@@ -183,7 +258,21 @@ def encode_stream(decode, shape, output_path, helper, *, container_name, encoder
             interrupt()
             _codec(output.close)
             output = None
-            _validate_video(stage, shape, count, rate, audio, audio_encoder, metadata, interrupt)
+            try:
+                problems = _validate_video(stage, shape, count, rate, audio, audio_encoder,
+                                          metadata, interrupt, metadata_strict=metadata_strict,
+                                          container_name=container_name)
+            except ValidationFailure as error:
+                if os.environ.get('DEAS_H3_KEEP_FAILED'):
+                    keep = target.parent / f'{target.stem}.validation-failed-{encoder}{target.suffix}'
+                    if keep.exists():
+                        keep.unlink()
+                    stage.rename(keep)
+                    error.stage, error.diagnosis['retained'] = str(keep), str(keep)
+                raise
+            for problem in problems or ():
+                if on_warning is not None:
+                    on_warning(f'{container_name}/{encoder}: {problem}')
             for endpoint in exports:
                 with Image.open(endpoint) as check:
                     check.verify()
@@ -375,9 +464,13 @@ class DEAS_H3StreamVideoSave:
                 for encoder in house._ENCODER_NAMES[selected]:
                     for audio_encoder in house._audio_encoder_candidates(audio_codec, target) if audio is not None else (None,):
                         candidates.append((selected, target, encoder, audio_encoder))
-        for selected, target, encoder, audio_encoder in candidates:
+        for attempt, (selected, target, encoder, audio_encoder) in enumerate(candidates):
             if encoder not in available or (audio_encoder is not None and audio_encoder not in available):
                 continue
+            # The final candidate publishes even when only the metadata round-trip failed: after
+            # an expensive decode a file without container provenance still beats no file, and
+            # the warning names exactly what is missing.
+            lenient_metadata = attempt == len(candidates) - 1
             active_audio = None if animated else audio
             active_depth = 8 if target == 'Animated WebP' else depth
             extension = animated[0] if animated else house._CONTAINER_EXTENSIONS[target]
@@ -389,9 +482,18 @@ class DEAS_H3StreamVideoSave:
                     audio_encoder=audio_encoder, audio_bitrate=audio_bitrate,
                     metadata=None if animated else metadata, interrupt=check_export,
                     crop_to_audio=False if animated else crop_to_audio,
-                    save_first_frame=save_first_frame, save_last_frame=save_last_frame)
-            except CodecFailure as error:
-                errors.append(f'{selected}/{target}/{encoder}/{audio_encoder}: {error}')
+                    save_first_frame=save_first_frame, save_last_frame=save_last_frame,
+                    metadata_strict=not lenient_metadata or bool(animated),
+                    on_warning=lambda note: print(f'[DEAS H3 Streaming Video Save] WARN published '
+                                                  f'without full container provenance: {note}',
+                                                  flush=True))
+            except (CodecFailure, ValidationFailure) as error:
+                reason = f'{selected}/{target}/{encoder}/{audio_encoder}: {error}'
+                if isinstance(error, ValidationFailure):
+                    print(f'[DEAS H3 Streaming Video Save] readback check rejected this candidate, '
+                          f'trying the next one: {reason} (stage: {error.stage}, diagnosis: '
+                          f'{error.diagnosis})', flush=True)
+                errors.append(reason)
                 continue
             output_type = 'output' if save_output else 'temp'
             mime = animated[2] if animated else {'MP4': 'video/mp4', 'WebM': 'video/webm', 'MKV': 'video/x-matroska'}[target]

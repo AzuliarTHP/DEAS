@@ -106,6 +106,7 @@ SAM3 = 'SAM3/sam3.1_multiplex_fp16.safetensors'
 
 PROBE_IMAGE = 'deas-inputs/acceptance-a.png'   # staged by the session from /input sources
 PROBE_IMAGE2 = 'deas-inputs/acceptance-b.png'  # second reference for multi-reference gates
+PROBE_FACE = 'deas-inputs/acceptance-face.png'  # head-and-shoulders crop for face gates
 
 
 def h3_base():
@@ -180,6 +181,18 @@ def _image_intent():
 def _probe(files):
     v = main_video(files)
     return ffprobe(v) if v else {}
+
+
+def _image_dims(files):
+    img = main_image(files)
+    if not img:
+        return None
+    try:
+        from PIL import Image
+        with Image.open(img) as im:
+            return im.size
+    except Exception:
+        return None
 
 
 def _dims(files):
@@ -314,8 +327,17 @@ def _checks_face(files, ctx):
     if not (base and proc):
         return [('baseline and processed both present', '2 files', f'{len(files)}', False)]
     frac, peak = changed_fraction(base, proc)
-    return [('refine touched the face region', '> 0.1% of pixels changed',
-             f'{frac}% (peak {peak})', bool(frac is not None and frac > 0.1))]
+    bbox = changed_bbox(base, proc)
+    out = [('refine touched a face-sized region', '> 1% of pixels changed',
+            f'{frac}% (peak {peak})', bool(frac is not None and frac > 1.0))]
+    if bbox:
+        y0, y1, x0, x1 = bbox
+        out.append(('changed region is face-sized, not a stray detection', 'both sides >= 64 px',
+                    f'{y1 - y0 + 1}x{x1 - x0 + 1} px', (y1 - y0 + 1) >= 64 and (x1 - x0 + 1) >= 64))
+        before, after = sharpness(base, box=bbox), sharpness(proc, box=bbox)
+        out.append(('refined region gained sharpness', 'processed > baseline',
+                    f'{after} vs {before}', bool(after and before and after > before)))
+    return out
 
 
 def _checks_stream(files, ctx):
@@ -341,12 +363,21 @@ def _checks_preview(files, ctx):
     obs = ctx['observations'].get('V-03-enhanced-preview') or {}
     previews = obs.get('previews')
     out = _checks_h3_base(files, ctx, (832, 480), 124)
+    seconds = ((ctx['by_name'].get('V-03-enhanced-preview') or {}).get('result') or {}).get('seconds')
     if previews is None:
         out.append(('live preview traffic on /ws during sampling', '> 0 preview messages',
                     'not observed (no websocket record for this run)', False))
     else:
-        out.append(('live preview traffic on /ws during sampling', '> 0 preview messages',
-                    f'{previews} previews, first at T+{obs.get("first_preview_seconds")}s', previews > 0))
+        first, last = obs.get('first_preview_seconds'), obs.get('last_preview_seconds')
+        out.append(('live previews arrived over /ws', '>= 3 preview images',
+                    f'{previews} previews, first at T+{first}s, last at T+{last}s', previews >= 3))
+        out.append(('previews are real images, not empty events', '> 2 KB each on average',
+                    f'{obs.get("preview_base64_bytes", 0)} base64 bytes total across {previews}',
+                    bool(previews and (obs.get('preview_base64_bytes') or 0) / previews > 2048)))
+        out.append(('previews streamed during sampling, not only at the end',
+                    'last preview before the run finished',
+                    f'last at T+{last}s against a {seconds}s run',
+                    bool(last is not None and seconds and last < seconds - 0.5)))
     if obs.get('error'):
         out.append(('preview observer healthy', 'no error', obs['error'], False))
     return out
@@ -410,11 +441,8 @@ GATES = [
         observe=True,
         check=lambda files, ctx: _checks_preview(files, ctx),
         draft=False),
-    dict(name='MD-08-gguf', item='MD-08', intent=lambda: {
-        **h3_base(), 'family': 'minimax-h3-hyperflow',
-        'model': 'MiniMaxH3/minimax_h3_ref2va_hyperflow_flash_14b-Q8_0.gguf',
-        'h3': {**h3_base()['h3'], 'mode': 'REF2VA'}},
-        note='GGUF real inference (HyperFlow Flash Q8_0): SKIPs until that file is in the library', draft=False),
+    # MD-08 (GGUF real inference) retired by owner decision 2026-11-19: this recipe already ran
+    # as GGUF earlier, so no extra GPU validation is required; PLAN keeps only its Windows half.
     dict(name='V-14-learned-latent-upscale', item='V-14', intent=lambda: {
         **h3_base(), 'latentUpscale': {'model': H3_LATENT_UPSCALER, 'scale': 2, 'steps': 3, 'denoise': 0.25}},
         note='learned 3D-conv latent upscale; sharpness/flicker via measured Laplacian variance vs '
@@ -454,8 +482,17 @@ GATES = [
              'the same scene, and temporal diff must not get worse',
         check=lambda files, ctx: _checks_derope(files, ctx), draft=False),
     dict(name='P-03-face-refine', item='P-03', intent=lambda: {
-        **h3_base(), 'faceRefine': face_block()},
-        note='automatic whole-video face refine; measured changed-pixel fraction vs baseline',
+        **h3_base(),
+        # A tight close-up makes the detected face crop swallow the frame (measured: side=736 of a
+        # 768 canvas), which turns a face refine into a full-frame second pass. Medium shot keeps
+        # the crop face-sized, which is what the feature is for.
+        'positivePrompt': 'upper-body portrait of a young woman at a window, soft light, she '
+                          'smiles slightly, hands still, subtle camera drift',
+        'width': 736, 'height': 928,
+        'h3': {**h3_base()['h3'], 'media': [{'type': 'image', 'file': PROBE_FACE, 'slot': 0}]},
+        'faceRefine': face_block()},
+        note='automatic whole-video face refine on a portrait close-up; measures the changed '
+             'region and whether that region actually gained sharpness',
         check=lambda files, ctx: _checks_face(files, ctx), draft=False),
     dict(name='P-02-stream-362f', item='P-02', intent=lambda: {
         **{**h3_base(), 'width': 736, 'height': 928, 'frames': 362},
@@ -469,7 +506,8 @@ GATES = [
     dict(name='MD-01b-sigma-control', item='MD-01', intent=lambda: {
         **_image_intent(), 'lyingSigma': {'factor': 0.0, 'startPercent': 0.2, 'endPercent': 0.6}},
         note='same image settings at lying-sigma factor 0.0 (control for the MD-01 A/B)',
-        check=lambda files, ctx: [('image is 1024x1024', (1024, 1024), _dims(files), True)],
+        check=lambda files, ctx: [('image is 1024x1024', (1024, 1024), _image_dims(files),
+                                   _image_dims(files) == (1024, 1024))],
         draft=False),
     dict(name='MD-01-lying-sigma', item='MD-01', intent=lambda: {
         **_image_intent(), 'lyingSigma': {'factor': 0.5, 'startPercent': 0.2, 'endPercent': 0.6}},
@@ -630,17 +668,48 @@ def _gray_frames(path, limit=8, size=None):
     return out
 
 
-def sharpness(path, limit=8, size=None):
-    """Mean Laplacian variance; higher = sharper. size forces a common resolution."""
+def _laplacian_variance(a):
+    pad = np.pad(a, ((1, 1), (1, 1)), mode='edge')
+    k = ((0, 1, 0), (1, -4, 1), (0, 1, 0))
+    conv = sum(pad[i:i + a.shape[0], j:j + a.shape[1]] * k[i][j] for i in range(3) for j in range(3))
+    return float(conv.var())
+
+
+def sharpness(path, limit=8, size=None, box=None):
+    """Mean Laplacian variance; higher = sharper. size resizes, box measures one region."""
     if not _HAS_NUMPY_PIL:
         return None
     vals = []
     for a in _gray_frames(path, limit, size):
-        pad = np.pad(a, ((1, 1), (1, 1)), mode='edge')
-        k = ((0, 1, 0), (1, -4, 1), (0, 1, 0))
-        conv = sum(pad[i:i + a.shape[0], j:j + a.shape[1]] * k[i][j] for i in range(3) for j in range(3))
-        vals.append(float(conv.var()))
+        if box:
+            y0, y1, x0, x1 = box
+            a = a[y0:y1 + 1, x0:x1 + 1]
+        if a.size < 1024:
+            continue
+        vals.append(_laplacian_variance(a))
     return round(float(np.mean(vals)), 1) if vals else None
+
+
+def changed_bbox(a, b, threshold=6, limit=6):
+    """Bounding box where two videos differ (frame-accurate sampling), or None."""
+    if not _HAS_NUMPY_PIL:
+        return None
+
+    def grab(v):
+        d = Path(tempfile.mkdtemp(prefix='deas-acc-bbox-'))
+        sh(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-i', str(v), '-vf', 'fps=2', str(d / '%03d.png')])
+        from PIL import Image
+        return [np.asarray(Image.open(f).convert('RGB'), dtype=np.int16) for f in sorted(d.glob('*.png'))[:limit]]
+    A, B = grab(a), grab(b)
+    n = min(len(A), len(B))
+    if not n:
+        return None
+    acc = np.zeros(A[0].shape[:2], dtype=np.float64)
+    for x, y in zip(A[:n], B[:n]):
+        acc += np.abs(x - y).sum(axis=2)
+    acc /= n
+    ys, xs = np.where(acc > threshold)
+    return None if len(ys) < 64 else (int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max()))
 
 
 def temporal_diff(path, limit=8):
@@ -760,13 +829,23 @@ class MemoryWatch:
 class PreviewObserver:
     """Listen on /ws with the driver's clientId and count live-preview traffic.
 
-    DEAS's enhanced preview is a UI feature: the previews travel over the websocket
-    (b_preview + binary frames), so file listings prove nothing. This makes V-03 measurable.
+    DEAS's enhanced preview is a UI feature: the previews travel over the websocket, so file
+    listings prove nothing. Two transports matter and both are counted here:
+
+    - ComfyUI core: `b_preview` as a binary frame (base64 in a JSON envelope in some versions);
+    - KJNodes ModelPreviewOverrideKJ (what DEAS's enhanced preview installs): a JSON
+      `kj_preview_override` event whose data.image is a base64 JPEG. Counting only b_preview
+      silently reported 0 previews for a feature that was streaming them (measured 2026-11-19:
+      9 kj_preview_override events during an 8-step H3 run).
     """
+
+    PREVIEW_TYPES = ('b_preview', 'preview_with_metadata', 'kj_preview_override')
 
     def __init__(self, base, client_id='gpu-intent-driver'):
         self.ws_url = base.replace('http://', 'ws://') + f'/ws?clientId={client_id}'
-        self.counts, self.first_at, self._stop = {}, None, threading.Event()
+        self.counts, self._stop = {}, threading.Event()
+        self.previews, self.preview_bytes = 0, 0
+        self.first_at, self.last_at = None, None
         self._thread = None
         self.error = None
 
@@ -786,12 +865,21 @@ class PreviewObserver:
                         self.counts['binary_preview'] = self.counts.get('binary_preview', 0) + 1
                     else:
                         try:
-                            kind = json.loads(msg).get('type', '?')
+                            event = json.loads(msg)
                         except Exception:
-                            kind = '?'
+                            event = {}
+                        kind = event.get('type', '?')
                         self.counts[kind] = self.counts.get(kind, 0) + 1
-                        if kind in ('b_preview', 'preview_with_metadata') and self.first_at is None:
-                            self.first_at = round(time.time() - t0, 1)
+                        if kind in self.PREVIEW_TYPES:
+                            data = event.get('data')
+                            image = data.get('image') if isinstance(data, dict) else data
+                            payload = len(image) if isinstance(image, (bytes, bytearray, str)) else 0
+                            if payload:
+                                self.previews += 1
+                                self.preview_bytes += payload
+                                stamp = round(time.time() - t0, 1)
+                                self.first_at = stamp if self.first_at is None else self.first_at
+                                self.last_at = stamp
         except Exception as e:                   # observer must never fail a gate run
             self.error = f'{type(e).__name__}: {e}'
 
@@ -807,8 +895,9 @@ class PreviewObserver:
         return False
 
     def summary(self):
-        previews = self.counts.get('b_preview', 0) + self.counts.get('binary_preview', 0)
+        previews = self.previews or (self.counts.get('b_preview', 0) + self.counts.get('binary_preview', 0))
         return {'previews': previews, 'first_preview_seconds': self.first_at,
+                'last_preview_seconds': self.last_at, 'preview_base64_bytes': self.preview_bytes,
                 'messages': self.counts, 'error': self.error}
 
 
@@ -871,9 +960,27 @@ def run_checks(gate, files, ctx, logbuf):
     return checks
 
 
-def render_summary(results, logbuf):
+def session_notes(results, adapters_backup):
+    """What a reader must know to interpret this session at all."""
+    notes = []
+    if adapters_backup:
+        notes.append(f'backend adapters: {len(adapters_backup)} shipped adapter(s) were replaced by '
+                     'the repo sources for this run and restored afterwards '
+                     '(hashes in adapters/manifest.json) - the verdicts describe repo code, not the '
+                     'installed release')
+    else:
+        notes.append('backend adapters: the installed (released) copies ran unmodified')
+    if any('websocket' in (r or {}) for r in results):
+        notes.append('a /ws preview observer was attached; a zero count can mean either no '
+                     'previews or an observer problem, so check the recorded message types')
+    return notes
+
+
+def render_summary(results, logbuf, notes=()):
     lines = ['| gate | item | verdict | seconds | VRAM peak | RAM peak | files |',
              '|---|---|---|---|---|---|---|']
+    if notes:
+        lines += ['', '## Session notes', ''] + [f'- {note}' for note in notes]
     for r in results:
         verdict = r.get('verdict') or r.get('status')
         files = r.get('files', [])
@@ -953,6 +1060,75 @@ def replay(session_dir, logbuf):
     return results
 
 
+# The throwaway backend loads custom_nodes from the owned environment, which can trail the repo.
+# Syncing the adapter sources DEAS itself ships (backend.rs: src/<name>.py -> deas_<name>.py)
+# keeps a gate from silently testing released adapter code instead of the change under review -
+# that is what happened to the P-02 readback fix on 2026-11-19. Originals come back in every path.
+SHIPPED_ADAPTERS = ('h3_stream_video', 'image_prompting', 'image_postprocess', 'sam3_video_window',
+                    'lying_sigma', 'output_naming', 'running_interrupt')
+
+
+def _restore_pairs(pairs):
+    """Write installed adapter bytes back; consumes the list so a second call is a no-op."""
+    while pairs:
+        dest, original = pairs.pop(0)
+        try:
+            if original is None:
+                dest.unlink(missing_ok=True)
+            else:
+                dest.write_bytes(original)
+        except OSError as error:
+            print(f'WARNING: could not restore {dest}: {error}')
+
+
+def sync_adapters(logbuf, outdir, enabled=True):
+    """Stage the repo adapters into the backend before startup, keeping backups + hashes."""
+    import atexit
+    import hashlib
+    if not enabled:
+        return []
+    backup, manifest = [], []
+    keep = outdir / 'adapters'
+    keep.mkdir(parents=True, exist_ok=True)
+    for name in SHIPPED_ADAPTERS:
+        repo = SRC_TAURI / 'src' / f'{name}.py'
+        if not repo.is_file():
+            continue
+        dest = COMFY / 'custom_nodes' / f'deas_{name}.py'
+        repo_bytes = repo.read_bytes()
+        old = dest.read_bytes() if dest.is_file() else None
+        entry = {'node': f'deas_{name}.py', 'repo_sha256': hashlib.sha256(repo_bytes).hexdigest(),
+                 'installed_sha256': None if old is None else hashlib.sha256(old).hexdigest(),
+                 'synced': old != repo_bytes}
+        manifest.append(entry)
+        if entry['synced']:
+            (keep / f'deas_{name}.py').write_bytes(repo_bytes)
+            if old is not None:
+                (keep / f'deas_{name}.py.installed-backup').write_bytes(old)
+            dest.write_bytes(repo_bytes)
+            backup.append((dest, old))
+            log(logbuf, f"synced adapter deas_{name}.py: backend "
+                        f"{(entry['installed_sha256'] or 'absent')[:12]} -> repo "
+                        f"{entry['repo_sha256'][:12]} ({len(repo_bytes)} bytes)")
+    (keep / 'manifest.json').write_text(json.dumps(manifest, indent=1))
+    if backup:
+        atexit.register(_restore_pairs, backup)
+        log(logbuf, f'NOTE: {len(backup)} adapter(s) in the owned backend were replaced by repo '
+                    f'sources for this run (restored afterwards); evidence: {keep}/manifest.json')
+    return backup
+
+
+def restore_adapters(backup, logbuf):
+    if not backup:
+        return
+    count = len(backup)          # _restore_pairs consumes the list
+    _restore_pairs(backup)
+    try:
+        log(logbuf, f'restored {count} backend adapter(s) to their installed bytes')
+    except Exception:  # atexit can run after the log stream is gone
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--all', action='store_true')
@@ -962,6 +1138,9 @@ def main():
                     help='re-verify an existing artifacts/verification/gpu-acceptance-* session '
                          'with the current verifiers; starts nothing')
     ap.add_argument('--precheck', action='store_true', help='compile-only, does not touch the GPU')
+    ap.add_argument('--no-adapter-sync', action='store_true',
+                        help='run against the installed backend adapter copies instead of the '
+                             'repo sources')
     ap.add_argument('--keep-backend', action='store_true', help='leave the throwaway backend up for manual follow-ups')
     ap.add_argument('--max-util', type=int, default=25,
                     help='GPU utilization %% ceiling for the idle check (default 25)')
@@ -970,6 +1149,8 @@ def main():
                          '(default 1024; the compositor/browsers are always ignored)')
     ap.add_argument('--samples', type=int, default=3, help='utilization samples for the idle check')
     ap.add_argument('--force', action='store_true', help='start even if the GPU looks busy')
+    ap.add_argument('--face-image', help='portrait for the face-refinement gate (default: a '
+                                         'head-and-shoulders crop of --probe-image)')
     ap.add_argument('--probe-image', help='picture used as the H3 reference (default: the largest '
                                           'photo in the AI-Ressources input tree, second-largest as reference B)')
     ap.add_argument('--dry-run', action='store_true',
@@ -1086,10 +1267,26 @@ def main():
         stage(pool[0], 'acceptance-a.png')
         if len(pool) > 1:
             stage(pool[1], 'acceptance-b.png')
+        # Face-refinement gates need a real face: derive a head-and-shoulders crop from the first
+        # reference (or take --face-image). A full-body or landscape reference makes
+        # DEAS_H3FaceRefine lock onto a 48 px nothing, and the gate then proves nothing.
+        face_src = Path(args.face_image).expanduser() if args.face_image else pool[0]
+        try:
+            from PIL import Image
+            im = Image.open(face_src).convert('RGB')
+            w, h = im.size
+            crop = im.crop((int(w * 0.25), 0, int(w * 0.85), int(h * 0.5)))
+            crop = crop if crop.width >= 128 and crop.height >= 128 else im
+            crop.thumbnail((1024, 1024))
+            crop.save(scratch / 'input' / 'deas-inputs' / 'acceptance-face.png', 'PNG')
+            log(logbuf, f'staged acceptance-face.png from {face_src.name} ({crop.size[0]}x{crop.size[1]})')
+        except Exception as e:
+            log(logbuf, f'NOTE: no face probe ({type(e).__name__}: {e}); P-03 cannot run meaningfully')
         else:
             log(logbuf, 'NOTE: only one probe picture staged; the two-reference gate (V-02) needs a '
                         'second one — pass --probe-image and use --only without V-02, or add input photos')
 
+        adapters_backup = sync_adapters(logbuf, outdir, enabled=not args.no_adapter_sync)
         backend = subprocess.Popen(
             [str(VENV_PY), '-u', 'main.py'] + (['--cpu'] if args.dry_run else []) +
             ['--port', str(port), '--listen', '127.0.0.1',
@@ -1112,6 +1309,15 @@ def main():
             nodes = http_json(base, '/object_info')
             log(logbuf, f'dry run: backend answered /object_info with {len(nodes)} nodes; '
                         'no gate was submitted. Paths, port, scratch dirs and startup all work.')
+            backend.terminate()
+            try:
+                backend.wait(10)
+            except subprocess.TimeoutExpired:
+                backend.kill()
+            restore_adapters(adapters_backup, logbuf)
+            log(logbuf, 'dry run finished: throwaway backend stopped and adapters restored.')
+            (outdir / 'session.log').write_text('\n'.join(logbuf) + '\n')
+            return
 
     marker_path, marker_orig = install_marker_test()
     results = []
@@ -1229,7 +1435,7 @@ def main():
             for f in refmods.glob('deas-probe-*'):
                 f.unlink(missing_ok=True)
                 log(logbuf, f'cleaned {f.name}')
-        summary = render_summary(results, logbuf)
+        summary = render_summary(results, logbuf, notes=session_notes(results, adapters_backup))
         summary.append('\nDraft-gated items (check the intent shape against the PLAN item before trusting): '
                        + ', '.join(g['name'] for g in GATES if g['draft'] and g['name'] in wanted))
         (outdir / 'summary.md').write_text('\n'.join(summary) + '\n')
