@@ -165,11 +165,20 @@ deduplicates the selected paths, keeps four requests in flight, reports progress
 and errors through central Logs, and continues when switching views. It caches
 metadata and preview URLs beside each model. **Save preview locally** sits beside
 **Start fetch**, defaults to off, and applies to batch and individual metadata
-fetches. When enabled, Fetch saves a missing CivitAI still image next to the model,
-including thumbnails served through CivitAI’s blob CDN. Existing local previews
-are kept. If saving fails, the metadata and remote
+fetches. When enabled, Fetch saves a missing CivitAI image or MP4 next to the model,
+including previews served through CivitAI’s blob CDN. MP4 previews up to 32 MiB
+use the model’s base filename, such as `model.mp4` beside `model.safetensors`.
+Existing local previews are kept. If saving fails, the metadata and remote
 preview link are still available. Configured CivitAI credentials apply to metadata
 lookups. Closing DEAS stops in-flight work.
+
+Place a matching `model.mp4` beside a model and refresh the folder to discover it.
+Existing `.preview.mp4` names are also recognized. Hover a video cover on an installed Library card for muted
+playback, or open **Model details** for player controls.
+On the Linux desktop app, WebKit cannot play local video and each card video would
+start its own GStreamer pipeline, so cards and online-only video covers show the
+placeholder; **Model details** plays a saved `model.mp4` with the native player when the
+cover is not blurred.
 
 Completed batches patch the native index once per saved index, then reload the
 listing once for that batch. Library keeps the preview URLs for untouched cards.

@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { useI18n } from '../../i18n/I18nProvider';
 import { usePref } from '../../lib/preferences';
 import type { LocalModel } from '../../lib/models';
+import { backendModelNameKey } from '../../lib/modelLibrary';
 import { NumberField } from '../../components/NumberField';
 import './loraSets.css';
 export type SelectedLora={name:string;strength:number;enabled?:boolean};
@@ -19,12 +20,16 @@ export function LoraSetsDialog({root,selected,models,onChange,onClose,onBrowse,u
  const [details,setDetails]=useState<LocalModel|null>(null);
  const [chosen,setChosen]=useState('');const [name,setName]=useState('');const [error,setError]=useState(false);
  const saved=sets.find(s=>s.root===root&&s.id===chosen);
- const enabled=(l:SelectedLora)=>l.enabled!==false&&(!active||active.includes(l.name));
- const entries=selected.map(l=>({...l,path:models.find(m=>m.name===l.name)?.path??''}));
+ const activeNames=active&&new Set(active.map(backendModelNameKey));
+ const enabled=(l:SelectedLora)=>l.enabled!==false&&(!activeNames||activeNames.has(backendModelNameKey(l.name)));
+ const available=(l:SelectedLora&{path?:string})=>{
+  const key=backendModelNameKey(l.name);
+  return models.find(m=>backendModelNameKey(m.name)===key&&(!l.path||m.path===l.path));
+ };
+ const entries=selected.map(l=>({...l,path:available(l)?.path??''}));
  const validName=name.trim().length>0&&name.trim().length<=80;
  const unique=(except?:string)=>!sets.some(s=>s.root===root&&s.id!==except&&s.name.toLocaleLowerCase()===name.trim().toLocaleLowerCase());
  const canSave=selected.length>0&&entries.every(l=>l.enabled===false||!!l.path)&&validLoras(entries);
- const available=(l:SelectedLora&{path?:string})=>models.find(m=>m.name===l.name&&(!l.path||m.path===l.path));
  const thumbnail=(l:SelectedLora)=><button type="button" className="lora-set-preview" disabled={!available(l)} aria-label={t('loraDetails.open',{name:l.name})} onClick={()=>setDetails(available(l)??null)}><ModelPreview model={available(l)} fallback={<span aria-hidden="true">◆</span>}/></button>;
  const blocked=(l:SelectedLora&{path?:string})=>{if(l.enabled===false)return false;const model=available(l);return !model||!usable(model);};
  useEffect(()=>{const opener=document.activeElement as HTMLElement|null;const el=dialog.current!;el.showModal();return()=>{if(el.open)el.close();if(opener?.isConnected)opener.focus();};},[]);

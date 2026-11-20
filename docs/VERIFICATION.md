@@ -2,6 +2,25 @@
 
 ## Library preview downloads and note overwrites
 
+Chromium played the repository’s H.264 fixture in Model Details. Windows Library
+tests cover Civitai video selection, the local-save preference, preserving
+existing covers, and indexing both `model.mp4` and earlier preview filenames.
+
+Integration into 0.3.12 (PR #46 by AzuliarTHP, merged with fixes): the Linux
+desktop never renders a WebKit `<video>` cover (WebKitGTK cannot play `asset://`
+video, and every card video would start a GStreamer pipeline); Model Details plays
+an unblurred saved `model.mp4` through `NativeVideo` (libmpv), cards and online-only
+video covers keep the placeholder. `tools/verify_workspace_layout.py` now checks web
+playback in a Windows-UA context and the Linux-UA card without `<video>` (516 checks).
+Same tree, also landing: per-file download queue lines (`fileBytes`), resume of a
+partly finished group continuing after its placed files (regression test fails
+without the fix), and a scoped Library refresh after each finished download.
+Gates on this host: typecheck, `test:core`, `test:ui` 2406/2408 (two load-sensitive
+H3 Workbench fixtures, 94/94 alone), strict Linux and Windows-MSVC Clippy, serial
+`cargo test --lib` with a private `TMPDIR` 1140/1142 (two backend shutdown-timing
+tests, passing alone). Not run: native Linux libmpv playback of a Library cover,
+WebView2 playback on Windows (host unreachable).
+
 An unauthenticated request for a public CivitAI model-version thumbnail
 returned HTTP 301 from the image CDN and HTTP 200 with JPEG bytes from
 the blob CDN. Native fixtures cover the redirect host restrictions and

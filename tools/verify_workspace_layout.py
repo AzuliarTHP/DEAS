@@ -68,7 +68,11 @@ window.__TAURI_INTERNALS__.invoke=async(c,a)=>{
  const read={
   native_files_present:[true],native_install_open:{state:'succeeded',logs:[],error:null},
   native_download_status:{state:'idle',completed:0,total:0,bytesDownloaded:0,error:null,jobs:[]},
-  native_settings_read:{},native_models_scan:[],
+  native_settings_read:{},
+  native_model_scan_status:{state:'idle',id:'',total:0,completed:0,failed:0},
+  native_models_scan:[{name:'video-cover.safetensors',category:'loras',path:'/fixture/models/loras/video-cover.safetensors',
+    size:100,info:{civitai:{name:'Video cover fixture',version:'1',modelId:1,versionId:1,nsfw:false,trainedWords:[],
+      preview:'https://image.civitai.com/library-preview-fixture.mp4',previewKind:'video'}}}],
   native_theme_packs:{directory:'/fixture/env/themes',packs:[],warnings:[]},
   native_llm_read:{provider:'openai',baseUrl:'http://127.0.0.1:49312'},native_llm_models:{models:[{id:'openai:layout-fixture',provider:'openai',name:'Layout fixture'}],warnings:[]},
   native_forge_randomizer_list:[],native_forge_targets:{source:{commit:'layout-fixture'},creativity:['balanced'],targets:[{key:'illustrious',label:'Layout fixture',modes:[],defaultMode:null,optional:[],qualityPresets:[],styles:[],aspectRatios:null,hasNegative:true,tools:false,guidance:[]}]},
@@ -90,19 +94,55 @@ window.__TAURI_INTERNALS__.invoke=async(c,a)=>{
 '''
 
 
-def verify(browser, url, shots):
+def open_fixture(browser, url, user_agent=None):
     original = collection.FIXTURE
     collection.FIXTURE += FIXTURE
     try:
-        context, page, errors = collection.open_studio(browser, url, False)
+        return collection.open_studio(browser, url, False, user_agent=user_agent)
     finally:
         collection.FIXTURE = original
+
+
+def verify_web_video_cover(browser, url):
+    # WebView2 (Windows) path: the web <video> cover. The Linux desktop never renders it.
+    context, page, errors = open_fixture(browser, url, 'DEAS Windows Chromium fixture')
     try:
-        checks = []
+        clip = Path(__file__).resolve().parents[1] / 'src-tauri/test-data/preview/preview.mp4'
+        page.route('https://image.civitai.com/library-preview-fixture.mp4',
+                   lambda request: request.fulfill(path=clip, content_type='video/mp4'))
+        page.locator('[data-node="optional-downloads"]').click()
+        page.locator('[data-library-tab="installed"]').click()
+        card = page.get_by_role('button', name='video-cover.safetensors', exact=True)
+        expect(card.locator('video')).to_be_visible()
+        card.click()
+        player = page.locator('.library-video-cover video')
+        expect(player).to_have_js_property('controls', True)
+        player.evaluate("video => video.play()")
+        page.wait_for_function("document.querySelector('.library-video-cover video')?.currentTime > 0")
+        assert not errors, errors
+    finally:
+        context.close()
+
+
+def verify(browser, url, shots):
+    verify_web_video_cover(browser, url)
+    context, page, errors = open_fixture(browser, url)
+    try:
+        checks = ['Windows-UA installed model preview decodes and plays an MP4']
         picker = page.locator('[data-model-picker]')
         expect(picker).to_be_visible()
         assert picker.evaluate("e=>e.tagName==='SELECT'&&!e.multiple&&e.size===0")
         assert page.locator('[data-model-filter], [data-model-list]').count() == 0
+        page.locator('[data-node="optional-downloads"]').click()
+        page.locator('[data-library-tab="installed"]').click()
+        card = page.get_by_role('button', name='video-cover.safetensors', exact=True)
+        expect(card).to_be_visible()
+        linux = page.evaluate("/Linux/.test(navigator.userAgent)")
+        if linux:
+            # Linux desktop UA (simulated Tauri): no WebKit <video> card, the still placeholder instead.
+            assert card.locator('video').count() == 0
+            checks.append('Linux-UA library card renders no WebKit video')
+        page.locator('[data-studio-tab="generate"]').click()
         page.screenshot(path=str(shots/'checkpoint-native-desktop.png'))
         for width in (1440, 390):
             page.set_viewport_size({'width':width,'height':900})

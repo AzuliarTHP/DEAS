@@ -56,10 +56,15 @@ A quiet hover hint discloses a differing label; metadata can be incorrect.
 Folder/search/visibility filters only affect browsing; active, present LoRAs
 enter the generation intent. All selected entries remain visible in the LoRA count, including mismatches. New external
 files require explicit Reload or Library Refresh models; Library and Studio keep their own display filters.
-When the running backend already lists checkpoints, LoRAs or diffusion models that the index does not contain
-(typically files copied in by hand), the Models and LoRAs docks show a note with their number next to **Reload**;
-Reload adds them. The note compares names only and never starts a scan by itself. Backend files outside the configured
-model roots keep the note visible after Reload, because DEAS does not index them.
+When the backend lists checkpoints or diffusion models outside the index, the
+Models dock shows their count next to **Reload**. Reload checks the configured
+model folders and refreshes the backend model lists.
+
+Studio also shows Safetensors LoRAs reported by ComfyUI when they are outside the
+local index. These entries can be selected by their backend names. Their local
+metadata becomes available when Reload finds the files in a configured model
+folder. An existing selection survives the change from a backend entry to an
+indexed file.
 
 In Advanced Studio, the **Dials** settings button beside References and Continuity
 opens the steering controls for supported MiniMax H3 video pipelines. Files inside

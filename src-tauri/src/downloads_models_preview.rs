@@ -1,6 +1,7 @@
 use super::*;
 
-const MAX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
+const MAX_IMAGE_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
+const MAX_VIDEO_PREVIEW_BYTES: usize = 32 * 1024 * 1024;
 const MAX_PREVIEW_REDIRECTS: usize = 3;
 
 pub(super) fn cdn_url(value: &str) -> Result<Url, String> {
@@ -52,9 +53,54 @@ fn image_extension(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
+fn is_mp4(bytes: &[u8]) -> bool {
+    if bytes.get(4..8) != Some(b"ftyp") {
+        return false;
+    }
+    let box_size = u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize;
+    let Some(header) = bytes
+        .get(..box_size)
+        .filter(|header| (16..=4096).contains(&header.len()))
+    else {
+        return false;
+    };
+    // The major format and compatible formats occupy consecutive four-byte fields,
+    // with a minor-version number between them.
+    header[8..12] != *b"M4A "
+        && std::iter::once(&header[8..12])
+            .chain(header[16..].chunks_exact(4))
+            .any(|brand| {
+                matches!(
+                    brand,
+                    b"isom"
+                        | b"iso2"
+                        | b"iso4"
+                        | b"iso5"
+                        | b"iso6"
+                        | b"mp41"
+                        | b"mp42"
+                        | b"avc1"
+                        | b"M4V "
+                        | b"dash"
+                )
+            })
+}
+
+fn cover_from_bytes(bytes: Vec<u8>) -> Result<Cover, String> {
+    let extension = if is_mp4(&bytes) {
+        (bytes.len() <= MAX_VIDEO_PREVIEW_BYTES).then_some("mp4")
+    } else if bytes.len() <= MAX_IMAGE_PREVIEW_BYTES {
+        image_extension(&bytes)
+    } else {
+        None
+    }
+    .ok_or("Unsupported or oversized CivitAI preview")?;
+    Ok(Cover { extension, bytes })
+}
+
 pub(super) async fn download(url: &str) -> Result<Cover, String> {
     let mut url = cdn_url(url)?;
-    let timeout = Duration::from_secs(20);
+    let timeout = Duration::from_secs(30);
     let client = client_for(false, Some(timeout))?;
     tokio::time::timeout(timeout, async {
         for hop in 0..=MAX_PREVIEW_REDIRECTS {
@@ -88,23 +134,33 @@ async fn read_cover(mut response: reqwest::Response) -> Result<Cover, String> {
     if !response.status().is_success()
         || response
             .content_length()
-            .is_some_and(|len| len > MAX_PREVIEW_BYTES as u64)
+            .is_some_and(|len| len > MAX_VIDEO_PREVIEW_BYTES as u64)
     {
         return Err("CivitAI preview is unavailable or too large".into());
     }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| network_error())? {
-        if chunk.len() > MAX_PREVIEW_BYTES - bytes.len() {
+        if chunk.len() > MAX_VIDEO_PREVIEW_BYTES - bytes.len() {
             return Err("CivitAI preview is too large".into());
         }
         bytes.extend_from_slice(&chunk);
+        if bytes.len() > MAX_IMAGE_PREVIEW_BYTES && !is_mp4(&bytes) {
+            return Err("CivitAI image preview is too large".into());
+        }
     }
-    let extension = image_extension(&bytes).ok_or("Unsupported CivitAI preview image")?;
-    Ok(Cover { extension, bytes })
+    cover_from_bytes(bytes)
 }
 
 pub(super) fn publish(source: &Source, cover: Cover) -> Result<(), String> {
-    let name = format!("{}.preview.{}", source.name, cover.extension);
+    let name = if cover.extension == "mp4" {
+        let stem = Path::new(&source.name)
+            .file_stem()
+            .and_then(std::ffi::OsStr::to_str)
+            .ok_or("Invalid model filename for MP4 preview")?;
+        format!("{stem}.mp4")
+    } else {
+        format!("{}.preview.{}", source.name, cover.extension)
+    };
     publish_bytes(source, &name, &cover.bytes, false)
 }
 
@@ -243,5 +299,25 @@ mod tests {
         assert_eq!(index::find_local_preview(&path).as_deref(), image.to_str());
         assert!(publish(&source, cover()).is_err());
         assert_eq!(std::fs::read(image).unwrap(), bytes);
+    }
+
+    #[test]
+    fn fetched_mp4_is_saved_with_its_media_extension_and_discovered() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fixture.safetensors");
+        std::fs::write(&path, b"model").unwrap();
+        let source = Source::open(&path).unwrap();
+        let bytes = include_bytes!("../test-data/preview/preview.mp4");
+        let cover = || cover_from_bytes(bytes.to_vec()).unwrap();
+        assert!(cover_from_bytes(bytes[..12].to_vec()).is_err());
+        assert!(cover_from_bytes(b"<html>not a video</html>".to_vec()).is_err());
+        publish(&source, cover()).unwrap();
+        let video = path.with_file_name("fixture.mp4");
+        assert_eq!(index::find_local_preview(&path).as_deref(), video.to_str());
+        assert!(publish(&source, cover()).is_err());
+        assert_eq!(std::fs::read(&video).unwrap(), bytes);
+        let legacy = path.with_file_name("fixture.safetensors.preview.mp4");
+        std::fs::rename(video, &legacy).unwrap();
+        assert_eq!(index::find_local_preview(&path).as_deref(), legacy.to_str());
     }
 }

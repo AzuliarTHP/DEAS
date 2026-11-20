@@ -90,3 +90,12 @@ it('retains order, weights and enabled flags in saved sets and supports keyboard
  expect(screen.getByRole('button',{name:'Enable b.safetensors'}).getAttribute('aria-pressed')).toBe('false');
  fireEvent.click(screen.getByRole('button',{name:'Enable b.safetensors'}));expect(screen.getByLabelText('Strength of b.safetensors')).toHaveProperty('value','0.8');
 });
+
+it('keeps a backend-spelled selection active and saveable after the local file is indexed',()=>{
+ const name='styles\\a.safetensors';
+ const model={...a,name:'styles/a.safetensors',path:'/m/loras/styles/a.safetensors'};
+ render(<I18nProvider><LoraSetsDialog root="/m" models={[model]} selected={[{name,strength:.5}]} active={[model.name]} onChange={()=>{}} onClose={()=>{}} onBrowse={()=>{}} usable={()=>true}/></I18nProvider>);
+ expect(screen.getByRole('button',{name:`Disable ${name}`})).toHaveProperty('ariaPressed','true');
+ fireEvent.change(screen.getByLabelText('Set name'),{target:{value:'Styles'}});
+ expect(screen.getByRole('button',{name:'Save new set'})).toHaveProperty('disabled',false);
+});

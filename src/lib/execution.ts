@@ -11,6 +11,11 @@ import type { H3FaceRefineBlock } from './sam3.ts';
 /** Names `native_mask_upload` hands out (`deas-masks/<uuid>.png`): masks and flattened painted layers; object_info never lists that subfolder. */
 export const isUploadedMask = (name: string) => /^deas-masks\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.png$/u.test(name);
 
+// Same grammar as native `model_name`; backend IDs can use either path separator.
+const safeModel = (id: unknown): id is string => typeof id === 'string' && new TextEncoder().encode(id).length <= 255 && id.split('/').every(segment =>
+  segment.length > 0 && segment !== '.' && segment !== '..' && segment.trim() === segment && !/[\p{Cc}\\:%]/u.test(segment));
+export const safeComfyModel = (id: unknown): id is string => typeof id === 'string' && safeModel(id.replace(/\\/g, '/'));
+
 export interface DiagnosticImageIntentV1 {
   readonly recipeId: 'checkpoint-text-to-image-diagnostic';
   readonly version: 1;
@@ -190,11 +195,6 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
     const text = input[field];
     if (typeof text !== 'string' || text.length > 16384 || text.includes('\u0000')) invalid(field, 'Expected a prompt string of at most 16384 characters without NUL.', 'Supply a bounded prompt string; an empty prompt is permitted.');
   }
-  // Same grammar as native `model_name`: spaces and non-ASCII letters allowed; no traversal, host paths, URLs or control characters.
-  const safeModel = (id: unknown): id is string => typeof id === 'string' && new TextEncoder().encode(id).length <= 255 && id.split('/').every(segment =>
-    segment.length > 0 && segment !== '.' && segment !== '..' && segment.trim() === segment && !/[\p{Cc}\\:%]/u.test(segment));
-  // ComfyUI model IDs use native separators; validate both without rewriting submitted IDs.
-  const safeComfyModel = (id: unknown): id is string => typeof id === 'string' && safeModel(id.replace(/\\/g, '/'));
   if (!safeComfyModel(input.checkpoint)) invalid('checkpoint', 'Unsafe model identifier.', 'Use the exact verified relative identifier, never a host path or URL.');
   if (Object.hasOwn(input, 'inputImage') !== Object.hasOwn(input, 'denoise')) invalid('inputImage', 'inputImage and denoise must be given together.', 'Supply both for image-to-image or neither for text-to-image.');
   if (Object.hasOwn(input, 'inputImage') && !safeModel(input.inputImage)) invalid('inputImage', 'Unsafe input image identifier.', 'Use a file name from the backend input folder.');

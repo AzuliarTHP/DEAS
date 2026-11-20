@@ -23,3 +23,28 @@ it('retries a previously failed cover after explicit refresh without changing pr
  expect(view.container.querySelector('img')).toHaveProperty('src','asset:///previews/a.jpg?deas_preview=123');
  fireEvent.error(view.container.querySelector('img')!);expect(view.container.querySelector('img')).toHaveProperty('src','https://example.invalid/a.png');
 });
+it('prefers the local MP4 and falls back to a provider video with playback controls',()=>{
+ const clip={...model,localPreview:'/previews/a.MP4',info:{...model.info!,civitai:{...model.info!.civitai!,preview:'https://image.civitai.com/layout-fixture/video',previewKind:'video' as const}}};
+ const view=render(<ModelPreview model={clip} videoControls fallback={<span>No preview</span>}/>);
+ const video=()=>view.container.querySelector('video')!;
+ expect(video().getAttribute('src')).toBe('asset:///previews/a.MP4');
+ expect(video().controls).toBe(true);
+ expect(video().muted).toBe(true);
+ fireEvent.error(video());
+ expect(video().getAttribute('src')).toBe('https://image.civitai.com/layout-fixture/video');
+});
+
+it('never renders a WebKit video on the Linux desktop: native player for an unblurred local cover, fallback otherwise',async()=>{
+ const agent=vi.spyOn(navigator,'userAgent','get').mockReturnValue('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15');
+ try{
+  const { I18nProvider }=await import('../../i18n/I18nProvider');
+  const clip={...model,localPreview:'/previews/a.mp4',info:{...model.info!,civitai:{...model.info!.civitai!,preview:'https://image.civitai.com/layout-fixture/video.mp4',previewKind:'video' as const}}};
+  const card=render(<ModelPreview model={clip} fallback={<span>No preview</span>}/>);
+  expect(card.container.querySelector('video')).toBeNull();expect(screen.getByText('No preview')).toBeTruthy();card.unmount();
+  const remote=render(<ModelPreview model={{...clip,localPreview:undefined}} videoControls fallback={<span>No preview</span>}/>);
+  expect(remote.container.querySelector('video')).toBeNull();remote.unmount();
+  const detail=render(<I18nProvider><ModelPreview model={clip} videoControls fallback={<span>No preview</span>}/></I18nProvider>);
+  expect(detail.container.querySelector('video')).toBeNull();
+  expect(detail.container.querySelector('[data-native-video]')).toBeTruthy();
+ }finally{agent.mockRestore();}
+});

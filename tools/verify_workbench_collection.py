@@ -116,8 +116,9 @@ def no_automatic_stop(page):
     assert page.evaluate('__collection.calls.filter(c=>c.command==="native_workbench_stop").length') == 0
 
 
-def open_studio(browser, url, mixed, width=1440, rooted=False):
-    context = browser.new_context(viewport={'width': width, 'height': 960}, reduced_motion='reduce')
+def open_studio(browser, url, mixed, width=1440, rooted=False, user_agent=None):
+    context = browser.new_context(viewport={'width': width, 'height': 960}, reduced_motion='reduce',
+                                  **({'user_agent': user_agent} if user_agent else {}))
     page = context.new_page()
     page.set_default_timeout(8000)
     errors = []
