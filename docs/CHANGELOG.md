@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Enhanced Preview corrects stretched playback.** The preview clock, playback speed, and scrub bar follow the submitted video duration when a preview is encoded longer than the job.
+- **Enhanced Preview has playback controls.** Play, pause, and seek from the preview. Scrubbing shows the chosen time in the latest available sampling clip.
+- **Enhanced Preview keeps its video available between sampling steps.** Studio can open the last clip it was shown while the backend prepares newer previews.
+
 ## 0.3.13
 
 - **Backend-only LoRAs are an opt-in view.** The LoRAs dock shows indexed files by default again. Turn on **Backend-only LoRAs** to list only Safetensors LoRAs that ComfyUI reports outside the local index; those cards have a thin amber outline and a hover note. The switch changes browsing only: selected LoRAs and their strengths stay active while hidden, and a file Reload finds in a model folder moves to the indexed view with its selection. Found through global search (Ctrl+K). (PR #46 follow-up by @AzuliarTHP.)

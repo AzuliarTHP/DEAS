@@ -385,6 +385,7 @@ pub fn update(id: &str, action: Action) -> Result<Value, String> {
                 p.clear_crop()?;
                 p.command(&["seek", &seconds.to_string(), "absolute+exact"])?
             }
+            Action::Rate { rate } => p.command(&["set", "speed", &rate.to_string()])?,
             Action::Crop { start, end } => {
                 p.crop.set(true);
                 p.command(&["set", "pause", "yes"])?;
