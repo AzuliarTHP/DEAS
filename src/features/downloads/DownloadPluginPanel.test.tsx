@@ -4,7 +4,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { DownloadPanel, AuthPanel } from './DownloadPluginPanel';
 import { DownloadWorkspace } from './DownloadWorkspace';
-import { browseDownloads, planDownloads, setAuthToken, removeAuthToken } from '../../lib/downloads';
+import { browseDownloads, formatBytes, percentOf, planDownloads, setAuthToken, removeAuthToken } from '../../lib/downloads';
 import { clearInstalledListing } from './installedListing';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true)}));
 const resource={id:'file',label:'Remote file',kind:'file',url:'https://example.invalid/file',downloadable:true,size:23};
@@ -19,6 +19,7 @@ beforeEach(()=>{clearInstalledListing();localStorage.clear();localStorage.setIte
  if(c==='native_auth_verify')return {providerId:'huggingface',status:'unavailable'};
  if(c==='native_auth_status')return [{providerId:'huggingface',configured:false,persisted:false}];
  if(c==='native_auth_set'||c==='native_auth_remove')return {providerId:'huggingface',configured:c==='native_auth_set',persisted:false};
+ if(c==='native_download_status')return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};
  return {state:c==='native_download_cancel'?'cancelled':'running',completed:0,total:1,bytesDownloaded:12,error:null};
 });});
 afterEach(()=>{cleanup();vi.resetAllMocks();vi.useRealTimers();});
@@ -117,20 +118,21 @@ it('embedded targeted offer browses once, filters exact filename and waits for L
  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_download_plan'||c==='native_download_start')).toBe(false);
  fireEvent.click(screen.getByLabelText('wanted.safetensors'));
  fireEvent.click(screen.getByRole('button',{name:'Download all (1)'}));
- await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_download_start',{planId:'p',confirmed:true}));
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_download_start_queue',{planIds:['p'],confirmed:true}));
 });
 
-it('targeted Library recovers running downloads after close and supports cancellation or completion',async()=>{
+it('targeted Library recovers background downloads after close and supports cancellation or completion',async()=>{
  let state='idle';
  const onStatus=vi.fn();
- const status=()=>({state,completed:state==='succeeded'?1:0,total:1,bytesDownloaded:0,error:null});
+ const job=(s:string)=>({id:'q1',label:'Remote file',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'/parent',resources:[resource],state:s,completed:s==='succeeded'?1:0,bytesPlaced:s==='succeeded'?23:0,totalBytes:23,currentFile:null,error:null});
+ const status=()=>({state,completed:state==='succeeded'?1:0,total:1,bytesDownloaded:0,error:null,jobs:state==='idle'?[]:[job(state)]});
  vi.mocked(invoke).mockImplementation(async c=>{
   if(c==='native_download_catalog')return catalog;
   if(c==='native_auth_status')return [];
   if(c==='native_download_browse')return {resources:[resource],warnings:[],nextCursor:null};
   if(c==='native_files_present')return [false];
   if(c==='native_download_plan')return {id:'reopen',target:'/configured/models',resources:[resource],canExecute:true,warnings:[],totalKnownBytes:23,unknownSizeCount:0};
-  if(c==='native_download_start')state='running';
+  if(c==='native_download_start_queue')state='running';
   if(c==='native_download_cancel')state='cancelled';
   return status();
  });
@@ -152,7 +154,7 @@ it('targeted Library recovers running downloads after close and supports cancell
  view=render(panel());
  await screen.findByText('Succeeded');
  expect(onStatus).toHaveBeenLastCalledWith(expect.objectContaining({state:'succeeded'}));
- expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_download_start')).toHaveLength(1);
+ expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_download_start_queue')).toHaveLength(1);
  view.unmount();
 });
 
@@ -252,7 +254,7 @@ it('loads catalog only on explicit opening; browses curated sources and paginati
 it('plans and starts every selected file from one Download all click, locks edits and shows only real progress',async()=>{
  const start=screen.queryByRole('button',{name:'Download all (0)'});expect(start).toBeNull();
  await pick();expect((screen.getByRole('button',{name:'Download all (1)'}) as HTMLButtonElement).disabled).toBe(false);expect(within(screen.getByRole('region',{name:'Selected for download'})).getByText('Remote file')).toBeTruthy();
- click('Download all (1)');await screen.findByText('Running');expect(invoke).toHaveBeenCalledWith('native_download_plan',{request:{providerId:'fixture',resources:[resource],parentPath:'/parent',folderName:'new',authenticated:false}});expect(invoke).toHaveBeenCalledWith('native_download_start',{planId:'immutable',confirmed:true});expect((screen.getByLabelText('New subfolder') as HTMLInputElement).disabled).toBe(true);expect(screen.getByText('12')).toBeTruthy();click('Cancel download');await screen.findByText('Cancelled');
+ click('Download all (1)');await screen.findByText('Running');expect(invoke).toHaveBeenCalledWith('native_download_plan',{request:{providerId:'fixture',resources:[resource],parentPath:'/parent',folderName:'new',authenticated:false}});expect(invoke).toHaveBeenCalledWith('native_download_start_queue',{planIds:['immutable'],confirmed:true});expect(document.querySelector('[data-download-queue] [data-download-cancel]')).toBeTruthy();expect(screen.getByRole('tab',{name:'Queue'}).getAttribute('aria-selected')).toBe('true');expect(within(document.querySelector('[data-download-queue]') as HTMLElement).getByText(/12 B/)).toBeTruthy();expect(within(document.querySelector('[data-download-queue]') as HTMLElement).queryByText(/\b12 bytes\b|[0-9],/)).toBeNull();click('Cancel download');await screen.findByText('Cancelled');
 });
 it('supports masked session-only tokens, clears on success and never displays native secret errors',async()=>{
  mount(true);click('Provider authorization');await act(async()=>{});fireEvent.click(screen.getByLabelText('Persist in OS credential store (optional)'));const input=screen.getByLabelText('Token') as HTMLInputElement;expect(input.type).toBe('password');fireEvent.change(input,{target:{value:'PRIVATE'}});click('Save token');await screen.findByText('Token check unavailable; try again');expect(invoke).toHaveBeenCalledWith('native_auth_set',{providerId:'huggingface',token:'PRIVATE',persist:false});expect(input.value).toBe('');expect(JSON.stringify(localStorage)).not.toContain('PRIVATE');vi.mocked(invoke).mockRejectedValueOnce('PRIVATE');fireEvent.change(input,{target:{value:'PRIVATE'}});click('Save token');await screen.findByRole('alert');expect(document.body.textContent).not.toContain('PRIVATE');click('Remove token');await act(async()=>{});expect(invoke).toHaveBeenCalledWith('native_auth_remove',{providerId:'huggingface'});
@@ -315,6 +317,7 @@ it('shows catalog categories as cards with previews, opens an entry on click and
  expect(document.querySelector('.download-resource img')).toBeTruthy();expect(screen.getByText('/env/ComfyUI/user/default/workflows')).toBeTruthy();expect(screen.queryByRole('button',{name:'Choose existing parent folder'})).toBeNull();
  fireEvent.click(screen.getByLabelText('Remote file'));click('Download all (1)');await act(async()=>{});
  expect(invoke).toHaveBeenCalledWith('native_download_plan',{request:{providerId:'fixture',resources:[expect.objectContaining({id:'file'})],parentPath:'/env/ComfyUI/user/default/workflows',folderName:'',authenticated:true}});
+ tab('Catalog');
  fireEvent.change(screen.getByLabelText('Search catalog & CivitAI'),{target:{value:'found'}});click('Search');await screen.findByRole('button',{name:'Found · v1'});
  expect(invoke).toHaveBeenLastCalledWith('native_download_browse',{request:{providerId:'civitai',scope:'search',locator:'found',authenticated:true,nsfw:true}});
  click('Found · v1');await screen.findByLabelText('Remote file');expect(screen.getByText('/env/ComfyUI/models/checkpoints')).toBeTruthy();
@@ -333,20 +336,21 @@ it('always lists adult entries unblurred with their 18+ tag and browses everythi
  fireEvent.click(adult);await screen.findByLabelText('Remote file');
  expect(invoke).toHaveBeenLastCalledWith('native_download_browse',{request:{providerId:'fixture',scope:'index',locator:'https://example.invalid/a.json',authenticated:false,nsfw:true}});
 });
-it('keeps selections across cards and downloads one native plan per folder in sequence',async()=>{
+it('keeps selections across cards and queues one native plan per folder together',async()=>{
  const entries=[{...catalog.entries[0],id:'lora',label:'Lora card',locator:'https://example.invalid/l.json',target:'loras'},{...catalog.entries[0],id:'wf',label:'Workflow card',locator:'https://example.invalid/w.json',target:'loras'}];
- const plans:string[]=[];
- vi.mocked(invoke).mockImplementation(async(c,a)=>{const r=(a as {request:{locator:string;parentPath:string}}|undefined)?.request;
+ const plans:string[]=[];const planned:{id:string;resources:unknown[]}[]=[];
+ vi.mocked(invoke).mockImplementation(async(c,a)=>{const r=(a as {request:{locator:string;parentPath:string;resources:unknown[]}}|undefined)?.request;
   if(c==='native_download_catalog')return {...catalog,entries:[entries[0],{...entries[1],target:'workflows'}]};if(c==='native_auth_status')return [];
   if(c==='native_download_browse')return {resources:[{...resource,id:r!.locator,label:`File ${r!.locator.slice(-6)}`}],nextCursor:null,warnings:[]};
-  if(c==='native_download_plan'){plans.push(r!.parentPath);return {id:`p${plans.length}`,target:r!.parentPath,resources:[],totalKnownBytes:0,unknownSizeCount:0,warnings:[],canExecute:true};}
-  return {state:'succeeded',completed:1,total:1,bytesDownloaded:1,error:null};});
+  if(c==='native_download_plan'){plans.push(r!.parentPath);const id=`p${plans.length}`;planned.push({id,resources:r!.resources});return {id,target:r!.parentPath,resources:r!.resources,totalKnownBytes:0,unknownSizeCount:0,warnings:[],canExecute:true};}
+  if(c==='native_download_start_queue')return {state:'succeeded',completed:2,total:2,bytesDownloaded:1,error:null,jobs:planned.map(p=>({id:p.id,label:'group',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'',resources:p.resources,state:'succeeded',completed:1,bytesPlaced:1,totalBytes:1,currentFile:null,error:null}))};
+  return {state:'succeeded',completed:1,total:1,bytesDownloaded:1,error:null,jobs:planned.map(p=>({id:p.id,label:'group',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'',resources:p.resources,state:'succeeded',completed:1,bytesPlaced:1,totalBytes:1,currentFile:null,error:null}))};});
  render(<I18nProvider><DownloadPanel installTarget="/env"/></I18nProvider>);click('Library');
  fireEvent.click(await screen.findByRole('button',{name:'Lora card'}));fireEvent.click(await screen.findByLabelText('File l.json'));
  tab('Workflows');fireEvent.click(await screen.findByRole('button',{name:'Workflow card'}));fireEvent.click(await screen.findByLabelText('File w.json'));
  const basket=screen.getByRole('region',{name:'Selected for download'});expect(within(basket).getByText('loras')).toBeTruthy();expect(within(basket).getByText('workflows')).toBeTruthy();
  click('Download all (2)');await waitFor(()=>expect(screen.queryByRole('region',{name:'Selected for download'})).toBeNull());
- expect(plans).toEqual(['/env/ComfyUI/models/loras','/env/ComfyUI/user/default/workflows']);expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_download_start').map(([,a])=>a)).toEqual([{planId:'p1',confirmed:true},{planId:'p2',confirmed:true}]);
+ expect(plans).toEqual(['/env/ComfyUI/models/loras','/env/ComfyUI/user/default/workflows']);expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_download_start_queue').map(([,a])=>a)).toEqual([{planIds:['p1','p2'],confirmed:true}]);
 });
 it('narrows catalog cards live by the search text',async()=>{
  const entries=[{...catalog.entries[0],id:'a',label:'Wan Lightspeed'},{...catalog.entries[0],id:'b',label:'LTX Director'}];
@@ -671,4 +675,55 @@ it('installed companion navigation clears retained remote discovery without brow
  expect(screen.getByRole('button',{name:'qwen_3_600m encoder'})).toBeTruthy();
  expect(screen.queryByRole('button',{name:'Old discovery'})).toBeNull();
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_download_browse')).toHaveLength(1);
+});
+
+it('keeps the Library queue view alive across workspace tab switches without aborting the download',async()=>{
+ const job={id:'bg1',label:'Big model.safetensors',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'/configured/models',resources:[resource],state:'running',completed:0,bytesPlaced:500_000_000,totalBytes:2_000_000_000,currentFile:null,error:null};
+ let polls=0;
+ vi.mocked(invoke).mockImplementation(async c=>{
+  if(c==='native_download_catalog')return catalog;
+  if(c==='native_auth_status')return [];
+  if(c==='native_download_status'){polls++;return {state:'running',completed:0,total:1,bytesDownloaded:job.bytesPlaced,error:null,bytesPlaced:job.bytesPlaced,totalBytes:job.totalBytes,jobs:[job]};}
+  return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};
+ });
+ const view=render(<I18nProvider><DownloadWorkspace view="downloads" authRevision={0}/></I18nProvider>);
+ const queue=await screen.findByText('Big model.safetensors');
+ expect(within(document.querySelector('[data-download-queue]') as HTMLElement).getAllByText(/25%/).length).toBeGreaterThan(0);
+ view.rerender(<I18nProvider><DownloadWorkspace view={null} authRevision={0}/></I18nProvider>);
+ // The panel stays mounted (hidden): the native download is never aborted by the tab switch.
+ expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_download_cancel')).toBe(false);
+ await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1100));});
+ view.rerender(<I18nProvider><DownloadWorkspace view="downloads" authRevision={0}/></I18nProvider>);
+ await screen.findByText('Big model.safetensors');
+ expect((screen.getByRole('tab',{name:'Queue'}) as HTMLButtonElement).getAttribute('aria-selected')).toBe('true');
+ const polled=polls;
+ expect(polled).toBeGreaterThan(1); // polling continued while the Library tab was hidden
+});
+
+it('queues interrupted downloads in memory and resumes them from the queue view',async()=>{
+ const job={id:'r1',label:'Interrupted file',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'/parent',resources:[resource],state:'interrupted',completed:0,bytesPlaced:12,totalBytes:23,currentFile:null,error:null};
+ vi.mocked(invoke).mockImplementation(async c=>{
+  if(c==='native_download_catalog')return catalog;
+  if(c==='native_auth_status')return [];
+  if(c==='native_download_status')return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null,jobs:[job]};
+  if(c==='native_download_resume')return {state:'running',completed:0,total:1,bytesDownloaded:0,error:null,jobs:[{...job,state:'running'}]};
+  return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};
+ });
+ render(<I18nProvider><DownloadPanel embedded modelsDir="/configured"/></I18nProvider>);
+ // Restored queue entries reopen the queue view instead of a blank catalog.
+ await screen.findByText('Interrupted file');
+ expect(within(document.querySelector('[data-download-queue]') as HTMLElement).getByText('Interrupted')).toBeTruthy();
+ click('Resume interrupted downloads');
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_download_resume',{jobIds:null}));
+ await screen.findByText('Running');
+});
+
+it('formats download statistics in human-readable MB/GB and whole percentages',()=>{
+ expect(formatBytes(0)).toBe('0 B');
+ expect(formatBytes(12)).toBe('12 B');
+ expect(formatBytes(2048)).toBe('2 KB');
+ expect(formatBytes(1536*1024)).toBe('1.5 MB');
+ expect(formatBytes(13.5*1024*1024*1024)).toBe('13.5 GB');
+ expect(percentOf(1,3)).toBe(33);
+ expect(percentOf(5,0)).toBeNull();
 });

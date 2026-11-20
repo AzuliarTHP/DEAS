@@ -5,8 +5,8 @@ import { isTauri } from '@tauri-apps/api/core';
 import { NeuralBlob } from '../../components/neural/NeuralBlob';
 import { useI18n } from '../../i18n/I18nProvider';
 import { filesPresent } from '../../lib/settings';
-import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloads, cancelDownloads, pickDownloadParent, planDownloads, readAuthStatus, readDownloadCatalog, readDownloadStatus, removeAuthToken, setAuthToken, startDownloads, comfyFolder, openTokenPage } from '../../lib/downloads';
-import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
+import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloads, cancelDownloads, clearDownloadQueue, formatBytes, percentOf, pickDownloadParent, planDownloads, readAuthStatus, readDownloadCatalog, readDownloadStatus, removeAuthToken, resumeDownloads, setAuthToken, startDownloadsQueue, comfyFolder, openTokenPage } from '../../lib/downloads';
+import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadJob, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
 import { isString, oneOf, usePref } from '../../lib/preferences';
 import { changeModelFiles, editLibraryLora, fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
 import { loadInstalledListing, rememberInstalledListing } from './installedListing';
@@ -175,11 +175,13 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
    {listingBusy&&!scanError&&<p role="status">{t('library.loading')}</p>}{scanError&&<p role="alert">{t('downloads.installed.scanError')}</p>}
   </>}/>;
 }
-export interface DownloadPanelProps { installTarget?:string; modelsDir?:string; authRevision?:number; onStatus?:(status:DownloadStatus)=>void; embedded?:boolean; initialEntryId?:string; initialEntryIds?:string[]; initialCategory?:string; filenameFilter?:string|string[] }
+export interface DownloadPanelProps { installTarget?:string; modelsDir?:string; authRevision?:number; onStatus?:(status:DownloadStatus)=>void; embedded?:boolean; /** Keep the panel alive while an outer workspace tab is shown; the root element is hidden. */ hidden?:boolean; initialEntryId?:string; initialEntryIds?:string[]; initialCategory?:string; filenameFilter?:string|string[] }
 // Undated sources stay last; never infer publication dates from filenames or IDs.
 const published=(r:{publishedAt?:string})=>Date.parse(r.publishedAt??'')||0;
 const key=(r:DownloadResource)=>JSON.stringify([r.id,r.url,r.locator]);
-const views=['installed','catalog'] as const;
+const views=['installed','catalog','queue'] as const;
+// A queue entry a "Resume" would restart; kept partial files continue where they stopped.
+const resumable=(state:string)=>state==='cancelled'||state==='failed'||state==='interrupted';
 // The bundled DaSiWa catalog stays the default source; `civitai-creator-*` user entries add live creator listings.
 /** Brand name of the bundled catalog, not a translatable label. */
 const BUNDLED_SOURCE='DaSiWa';
@@ -187,7 +189,7 @@ const isCreatorSource=(e:CatalogEntry)=>e.id.startsWith('civitai-creator-')&&e.s
 /** A ticked file keeps the browse context it was picked in, so selections from many cards download together. */
 interface Picked {resource:DownloadResource;providerId:string;authenticated:boolean;folder:string}
 interface Group {request:PlanRequest;keys:string[]}
-export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,embedded=false,initialEntryId,initialEntryIds,initialCategory,filenameFilter}:DownloadPanelProps={}) {
+export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,embedded=false,hidden=false,initialEntryId,initialEntryIds,initialCategory,filenameFilter}:DownloadPanelProps={}) {
  const {t}=useI18n();const io=useNativeRequest();const [opened,setOpened]=useState(false);const open=embedded||opened;
  const suggested=useMemo(()=>initialEntryIds??(initialEntryId?[initialEntryId]:undefined),[initialEntryIds,initialEntryId]);
  const [catalogText,setCatalogText]=useState('');const [sort,setSort]=usePref<{by:'newest'|'name';dir:1|-1}>('library.sort',{by:'newest',dir:-1},validSort);
@@ -199,11 +201,11 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
  const [mediaFilter,setMediaFilter]=usePref('library.media','all',oneOf('all','image','video'));const [search,setSearch]=useState('');
  const [listing,setListing]=useState<DownloadListing|null>(null);const [basket,setBasket]=useState<Picked[]>([]);const [version,setVersion]=useState('');
  const [parentPath,setParentPath]=useState('');const [folderName,setFolderName]=useState('');const [blocked,setBlocked]=useState<DownloadPlan|null>(null);const [queue,setQueue]=useState<Group[]>([]);const [status,setStatus]=useState<DownloadStatus|null>(null);
- const [view,setView]=useState<'catalog'|'installed'>('catalog');const modelsRoot=installTarget?modelsDir??`${installTarget}/ComfyUI/models`:'';
- const selectView=(next:'catalog'|'installed')=>{if(next==='catalog'&&catalog){const tabs=categories(catalog);setCategory(c=>tabs.includes(c)?c:tabs[0]??'');}setView(next);};
+ const [view,setView]=useState<'catalog'|'installed'|'queue'>('catalog');const modelsRoot=installTarget?modelsDir??`${installTarget}/ComfyUI/models`:'';
+ const selectView=(next:'catalog'|'installed'|'queue')=>{if(next==='catalog'&&catalog){const tabs=categories(catalog);setCategory(c=>tabs.includes(c)?c:tabs[0]??'');}setView(next);};
  // Global search selects the Library view without touching any draft.
  const selectViewLive=useRef(selectView);selectViewLive.current=selectView;
- useEffect(()=>{const on=(e:Event)=>{const next=(e as CustomEvent).detail;if(next==='catalog'||next==='installed')selectViewLive.current(next);};window.addEventListener('deas:library-view',on);return()=>window.removeEventListener('deas:library-view',on);},[]);
+ useEffect(()=>{const on=(e:Event)=>{const next=(e as CustomEvent).detail;if((views as readonly string[]).includes(next))selectViewLive.current(next);};window.addEventListener('deas:library-view',on);return()=>window.removeEventListener('deas:library-view',on);},[]);
  const running=status?.state==='running';const executionLock=useRef(false);const locked=running||executionLock.current||!!suggested&&!status;
  const edit=()=>{io.invalidate();setBlocked(null);};
  const sourceEdit=()=>{edit();setListing(null);setVersion('');};
@@ -215,16 +217,23 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
  const [tokens,setTokens]=useState<Set<string>|null>(null);const needsLogin=(auth:boolean|undefined,id:string)=>!!auth&&!!tokens&&!tokens.has(id);
  useEffect(()=>{if(!io.native||!open)return;let alive=true;readAuthStatus().then(v=>{if(alive)setTokens(new Set(v.filter(m=>m.configured).map(m=>m.providerId)));},()=>{});return()=>{alive=false;};},[io.native,open,authRevision]);
  const provider=catalog?.providers.find(p=>p.id===providerId);
+ const queueJobs=status?.jobs??[];
+ const queuePending=queueJobs.filter(j=>j.state!=='succeeded').length;
+ // Every successful queue job releases its files from the selection basket.
+ const releaseBasket=useCallback((jobs:DownloadJob[])=>{const done=jobs.filter(j=>j.state==='succeeded');if(!done.length)return;setBasket(old=>old.filter(b=>!done.some(j=>j.resources.some(r=>key(r)===key(b.resource)))));},[]);
  const applyCatalog=(value:DownloadCatalog)=>{sourceEdit();setCatalog(value);setProviderId(value.providers[0]?.id??'');setScope(value.providers[0]?.scopes[0]??'index');setLocator('');setEntryId('');const first=categories(value)[0];setCategory(c=>initialCategory??(categories(value).includes(c)?c:first||''));};
  const load=()=>void io.request(readDownloadCatalog,applyCatalog);
- const publishStatus=useCallback((value:DownloadStatus)=>{executionLock.current=value.state==='running';setStatus(value);onStatus?.(value);},[onStatus]);
+ // onStatus is often an inline callback; report through a ref so publishing never re-runs the recovery effect.
+ const reportStatus=useRef(onStatus);reportStatus.current=onStatus;
+ const publishStatus=useCallback((value:DownloadStatus)=>{executionLock.current=value.state==='running';if(value.state!=='running')setQueue([]);setStatus(value);releaseBasket(value.jobs??[]);reportStatus.current?.(value);},[releaseBasket]);
  useEffect(()=>{
-  if(!suggested||!io.native)return;
+  if(!io.native||!embedded)return;
   let alive=true;
   // Catalog browsing invalidates io.request; recovery must survive that independent read.
-  readDownloadStatus().then(value=>{if(alive)publishStatus(value);},error=>{if(alive)void io.request(()=>Promise.reject(error),()=>{});});
+  // A background queue (running or resumable) reopens the queue view instead of a blank catalog.
+  readDownloadStatus().then(value=>{if(!alive||!value)return;publishStatus(value);if(value.state==='running'||(value.jobs??[]).some(j=>j.state!=='succeeded')||((value.jobs?.length??0)>0&&value.state!=='idle'))setView('queue');},error=>{if(alive)void io.request(()=>Promise.reject(error),()=>{});});
   return()=>{alive=false;};
- },[suggested,io.native]);
+ },[embedded,io.native,publishStatus]);
  useEffect(()=>{
   if(!io.native||!running)return;
   let alive=true;let timer:ReturnType<typeof setTimeout>;
@@ -276,10 +285,13 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
    g.request.resources.push(b.resource);g.keys.push(key(b.resource));}
   return out;};
  // The Download-all click is the explicit authorization; a plan the native side marks non-executable stops the run.
+ // Every folder group is planned up front and handed to the native background queue as one run;
+ // the queue survives tab switches and restarts and resumes kept partials.
  const startGroups=(next:Group[])=>{if(executionLock.current||!next.length)return;executionLock.current=true;setQueue(next);let published=false;
-  void io.request(async()=>{const plan=await planDownloads(next[0].request);return {plan,status:plan.canExecute?await startDownloads(plan.id):null};},({plan,status})=>{if(status){published=true;publishStatus(status);}else setBlocked(plan);}).finally(()=>{if(!published){executionLock.current=false;setQueue([]);}});};
- // A finished group hands over to the next; a failed or cancelled one ends the run and keeps its files selected.
- useEffect(()=>{if(!status||status.state==='running'||!queue.length)return;const [done,...rest]=queue;setQueue([]);if(status.state!=='succeeded')return;setBasket(b=>b.filter(x=>!done.keys.includes(key(x.resource))));startGroups(rest);},[status]); // eslint-disable-line react-hooks/exhaustive-deps
+  void io.request(async()=>{const plans:DownloadPlan[]=[];for(const group of next){const plan=await planDownloads(group.request);if(!plan.canExecute)return{plan,status:null as DownloadStatus|null};plans.push(plan);}return {plan:null as DownloadPlan|null,status:await startDownloadsQueue(plans.map(p=>p.id))};},({plan,status})=>{if(status){published=true;publishStatus(status);setView('queue');}else setBlocked(plan);}).finally(()=>{if(!published){executionLock.current=false;setQueue([]);}});};
+ // Transfer speed per queue job from consecutive status samples.
+ const speedSamples=useRef(new Map<string,{time:number;bytes:number}>());
+ const speedOf=(job:DownloadJob)=>{const now=Date.now();const previous=speedSamples.current.get(job.id);speedSamples.current.set(job.id,{time:now,bytes:job.bytesPlaced});if(job.state!=='running'||!previous||now<=previous.time||job.bytesPlaced<previous.bytes)return '';return ` · ${formatBytes(((job.bytesPlaced-previous.bytes)*1000)/(now-previous.time))}/s`;};
  const where=(b:Picked)=>{const d=placeOf(b.folder);return d?d.folderName||d.parentPath.split(/[\\/]/).pop():'';};
  const canStart=io.native&&!io.busy&&!running&&!queue.length&&basket.length>0&&basket.every(b=>placeOf(b.folder));
  const [present,setPresent]=useState<Set<string>>(new Set());
@@ -304,11 +316,11 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
     {listing?.nextCursor&&<button className="action-button" disabled={io.busy||running} onClick={()=>browse(current,listing.nextCursor!)}>{t('downloads.next')}</button>}
     {listing&&<p className="field-help">{t('downloads.more')}</p>}{listing?.warnings.map((w,i)=><p key={i}>{w}</p>)}
  </div>;
- return <section className={`feature-panel download-module${view==='installed'?' is-installed':' is-catalog'}`} aria-label={t('downloads.title')}>
+ return <section className={`feature-panel download-module${view==='installed'?' is-installed':' is-catalog'}`} aria-label={t('downloads.title')} {...(hidden?{hidden:true}:{})}>
   {!embedded&&<NeuralBlob id="optional-downloads" label={t('downloads.title')} description={t('downloads.bubble')} selected={open} onSelect={()=>{if(locked)return;setOpened(v=>!v);if(!open&&!catalog)load();}}/>}
   {open&&<div className="download-controls" aria-busy={io.busy}>
    <div className="download-head">
-    <div className="studio-tabs" role="tablist" aria-label={t('downloads.view')}>{views.map(v=><button key={v} role="tab" type="button" data-library-tab={v} aria-selected={view===v} disabled={locked||(v==='installed'&&!modelsRoot)} onClick={()=>selectView(v)}>{t(`downloads.view.${v}`)}</button>)}</div>
+    <div className="studio-tabs" role="tablist" aria-label={t('downloads.view')}>{views.filter(v=>v==='queue'?queueJobs.length>0||!!status&&status.state!=='idle':true).map(v=><button key={v} role="tab" type="button" data-library-tab={v} aria-selected={view===v} disabled={v==='queue'?false:locked||(v==='installed'&&!modelsRoot)} onClick={()=>selectView(v)}>{t(`downloads.view.${v}`)}{v==='queue'&&queuePending>0&&<small aria-hidden="true"> {queuePending}</small>}</button>)}</div>
    </div>
    {(view==='catalog'||!io.native)&&<p className="field-help">{t(io.native?'downloads.help':'downloads.browser')}</p>}
    {catalog&&<>
@@ -338,9 +350,33 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
     {parentPath&&<label>{t('downloads.subfolder')}<input aria-label={t('downloads.subfolder')} value={folderName} disabled={locked} onChange={e=>{edit();setFolderName(e.target.value);}}/></label>}
     </>}
    </>}
-   {view==='catalog'&&<>{blocked&&<div className="download-plan"><p role="alert">{t('downloads.blocked')}</p><p className="download-identity">{blocked.target}</p>{blocked.warnings.map((w,i)=><p key={i}>{w}</p>)}</div>}
-   <div className="aio-actions"><button className="action-button" disabled={!io.native||io.busy} onClick={()=>void io.request(readDownloadStatus,value=>{setBlocked(null);publishStatus(value);})}>{t('downloads.refresh')}</button>{running&&<button className="action-button" disabled={io.busy} onClick={()=>void io.request(cancelDownloads,publishStatus)}>{t('downloads.cancel')}</button>}</div>
-   {io.busy&&!browsingInline&&<p role="status">{t('downloads.pending')}</p>}{status&&<div><p role="status">{t(`downloads.state.${status.state}`)}</p><p>{t('downloads.bytes')}: <output>{status.bytesDownloaded}</output> · {status.completed}/{status.total}</p>{status.error&&<p role="alert">{t('downloads.error')}: {status.error}</p>}</div>}{io.error&&!browsingInline&&<p role="alert">{t('downloads.error')}: {io.error}</p>}</>}
+   {blocked&&<div className="download-plan"><p role="alert">{t('downloads.blocked')}</p><p className="download-identity">{blocked.target}</p>{blocked.warnings.map((w,i)=><p key={i}>{w}</p>)}</div>}
+   {view==='queue'&&<section className="download-queue" data-download-queue aria-label={t('downloads.view.queue')}>
+    <p className="field-help">{t('downloads.queue.help')}</p>
+    {!queueJobs.length&&!status&&<p role="status">{t('downloads.queue.empty')}</p>}
+    {status&&<div className="download-queue-summary" role="status">
+     {!queueJobs.length&&<strong>{t(`downloads.state.${status.state}`)}</strong>}
+     <span>{t('downloads.queue.summary',{done:status.completed,total:status.total||queueJobs.reduce((n,j)=>n+j.resources.length,0),placed:formatBytes(status.bytesPlaced??status.bytesDownloaded),totalBytes:status.totalBytes?formatBytes(status.totalBytes):t('downloads.unknown')})}</span>
+     {percentOf(status.bytesPlaced??status.bytesDownloaded,status.totalBytes??0)!==null&&<strong>{percentOf(status.bytesPlaced??status.bytesDownloaded,status.totalBytes??0)}%</strong>}
+    </div>}
+    {queueJobs.length>0&&<ul className="download-queue-list">{queueJobs.map(job=>{const pct=percentOf(job.bytesPlaced,job.totalBytes);return <li key={job.id} data-queue-job={job.id} className={`download-queue-item is-${job.state}`}>
+      <div className="download-queue-head"><strong>{job.label}</strong><em>{t(`downloads.state.${job.state}`)}</em><span className="download-queue-provider">{job.provider.label}</span></div>
+      <p className="download-identity">{job.target}</p>
+      <div className="download-queue-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(pct===null?{}:{'aria-valuenow':pct})}><span style={{width:`${pct??100}%`}}/></div>
+      <p>{t('downloads.queue.itemStats',{done:job.completed,total:job.resources.length,placed:formatBytes(job.bytesPlaced),totalBytes:job.totalBytes?formatBytes(job.totalBytes):t('downloads.unknown')})}{pct!==null&&<> · <strong>{pct}%</strong></>}{speedOf(job)}</p>
+      {job.currentFile&&<p>{t('downloads.queue.file')}: <span className="download-identity">{job.currentFile}</span></p>}
+      {job.error&&<p role="alert">{t('downloads.error')}: {job.error}</p>}
+      {resumable(job.state)&&<button type="button" className="action-button" data-download-resume={job.id} disabled={io.busy||running} aria-label={t('downloads.queue.resumeName',{name:job.label})} onClick={()=>void io.request(()=>resumeDownloads([job.id]),publishStatus)}>{t('downloads.queue.resume')}</button>}
+    </li>;})}</ul>}
+    <div className="aio-actions">
+      {running&&<button className="action-button" data-download-cancel disabled={io.busy} onClick={()=>void io.request(cancelDownloads,publishStatus)}>{t('downloads.cancel')}</button>}
+      {queueJobs.some(job=>resumable(job.state))&&<button className="action-button" data-download-resume-all disabled={io.busy||running} onClick={()=>void io.request(()=>resumeDownloads(),publishStatus)}>{t('downloads.queue.resumeAll')}</button>}
+      {queueJobs.some(job=>['succeeded','cancelled','failed'].includes(job.state))&&<button className="action-button" data-download-clear disabled={io.busy||running} onClick={()=>void io.request(clearDownloadQueue,publishStatus)}>{t('downloads.queue.clear')}</button>}
+     <button className="action-button" disabled={!io.native||io.busy} onClick={()=>void io.request(readDownloadStatus,value=>{setBlocked(null);publishStatus(value);})}>{t('downloads.refresh')}</button>
+    </div>
+    {io.error&&<p role="alert">{t('downloads.error')}: {io.error}</p>}
+   </section>}
+   {view==='catalog'&&<>{io.busy&&!browsingInline&&<p role="status">{t('downloads.pending')}</p>}{io.error&&!browsingInline&&<p role="alert">{t('downloads.error')}: {io.error}</p>}</>}
   </div>}
  </section>;
 }

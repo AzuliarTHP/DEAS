@@ -12,7 +12,7 @@ export interface SearchEntry {
   view: SearchView;
   studioTab?: SearchStudioTab;
   panel?: SearchPanel;
-  libraryView?: 'catalog' | 'installed';
+  libraryView?: 'catalog' | 'installed' | 'queue';
   /** Beginner page that must be selected before the target exists. */
   beginnerTab?: 'generate' | 'models' | 'collection';
   /** Studio bottom-dock tab that must be selected before the target exists. */
@@ -269,6 +269,10 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'search.section.filters', label: 'downloads.search', target: '[data-download-search]', aliases: ['find', 'model'] },
   { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'search.section.filters', label: 'downloads.catalogSource', target: '[data-download-source]', aliases: ['civitai'] },
   { view: 'downloads', libraryView: 'catalog', tab: 'downloads.title', section: 'downloads.view.catalog', label: 'downloads.view.catalog', target: '[data-library-tab="catalog"]' },
+  { view: 'downloads', libraryView: 'queue', tab: 'downloads.title', section: 'downloads.view.queue', label: 'downloads.view.queue', target: '[data-library-tab="queue"]', aliases: ['queue', 'background', 'progress'] },
+  { view: 'downloads', libraryView: 'queue', tab: 'downloads.title', section: 'downloads.view.queue', label: 'downloads.queue.resumeAll', target: '[data-download-resume-all]', aliases: ['resume', 'continue', 'retry'], reason: 'search.reason.queue' },
+  { view: 'downloads', libraryView: 'queue', tab: 'downloads.title', section: 'downloads.view.queue', label: 'downloads.cancel', target: '[data-download-cancel]', aliases: ['stop', 'abort'], reason: 'search.reason.queue' },
+  { view: 'downloads', libraryView: 'queue', tab: 'downloads.title', section: 'downloads.view.queue', label: 'downloads.queue.clear', target: '[data-download-clear]', aliases: ['remove', 'finished'], reason: 'search.reason.queue' },
   { view: 'downloads', libraryView: 'installed', tab: 'downloads.title', section: 'downloads.view.installed', label: 'downloads.view.installed', target: '[data-library-tab="installed"]', aliases: ['local'], reason: 'search.reason.installed' },
   { view: 'downloads', libraryView: 'installed', tab: 'downloads.title', section: 'downloads.view.installed', label: 'downloads.installed.scanAll', target: '[data-scan-files]', aliases: ['metadata', 'civitai'], reason: 'search.reason.installed' },
   { view: 'downloads', libraryView: 'installed', tab: 'downloads.title', section: 'downloads.view.installed', label: 'downloads.installed.scanScope', target: '[data-scan-scope]', aliases: ['scan', 'scope'], reason: 'search.reason.installed' },
@@ -332,7 +336,7 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: 'backend', tab: 'settings.button', section: 'settings.title', label: 'settings.input', target: '[data-folder="input"]', aliases: ['folder', 'directory'], reason: 'search.reason.installed' },
   { view: 'backend', tab: 'settings.button', section: 'settings.title', label: 'settings.output', target: '[data-folder="output"]', aliases: ['folder', 'directory'], reason: 'search.reason.installed' },
   { view: 'backend', tab: 'settings.button', section: 'settings.title', label: 'app.language', target: '#language-select', aliases: ['locale', 'translation'] },
-  { view: 'backend', tab: 'settings.button', section: 'settings.button', label: 'setup.upgrade', target: '[data-upgrade]', aliases: ['update'] },
+  { view: 'backend', tab: 'settings.button', section: 'settings.button', label: 'setup.upgrade', target: '[data-upgrade]', aliases: ['update', 'release', 'download'] },
   { view: 'backend', tab: 'settings.button', section: 'settings.button', label: 'setup.repair.action', target: '[data-env-repair-start]', aliases: ['repair', 're-provision', 'node pack'] },
   // Logs
   { view: 'logs', tab: 'logs.title', section: 'search.section.filters', label: 'logs.search', target: '.logs-search', aliases: ['find', 'filter'] },

@@ -44,7 +44,8 @@ pub use downloads::models::{
 };
 pub use downloads::{
     native_download_browse, native_download_cancel, native_download_catalog,
-    native_download_import_catalog, native_download_plan, native_download_start,
+    native_download_clear_queue, native_download_import_catalog, native_download_plan,
+    native_download_resume, native_download_start, native_download_start_queue,
     native_download_status,
 };
 pub mod api;
@@ -110,7 +111,7 @@ pub use token_page::{
     native_open_civitai_creator, native_open_civitai_model, native_open_token_page,
 };
 pub mod app_update;
-pub use app_update::{native_app_restart, native_app_update};
+pub use app_update::{cleanup_previous_update, native_app_restart, native_app_update};
 pub mod repo;
 pub use repo::{
     native_open_releases, native_open_repo, native_repo_star, native_repo_stars,

@@ -257,6 +257,85 @@ fn unsupported_platform_blocks_only_a_newer_release() {
     assert!(error.contains("v9.9.9") && error.contains("unsupported"));
 }
 
+fn pe() -> Vec<u8> {
+    let mut bytes = vec![0u8; 512];
+    bytes[..2].copy_from_slice(b"MZ");
+    bytes[60] = 0x80;
+    bytes[0x80..0x84].copy_from_slice(b"PE\0\0");
+    bytes[0x84..0x86].copy_from_slice(&0x8664u16.to_le_bytes());
+    bytes[0x96..0x98].copy_from_slice(&0x0022u16.to_le_bytes());
+    bytes[0x98..0x9a].copy_from_slice(&0x20bu16.to_le_bytes());
+    bytes
+}
+
+#[test]
+fn windows_asset_is_the_raw_pe32_plus_x64_exe() {
+    let exe = pe();
+    let mut file = tempfile::tempfile().unwrap();
+    file.write_all(&exe).unwrap();
+    assert!(validate_as(&mut file, exe.len() as u64, &asset(&exe), Format::Pe).is_ok());
+    // ELF must not pass as PE, nor PE as ELF.
+    assert!(validate_as(&mut file, exe.len() as u64, &asset(&exe), Format::Elf).is_err());
+    let elf = binary();
+    let mut file = tempfile::tempfile().unwrap();
+    file.write_all(&elf).unwrap();
+    assert!(validate_as(&mut file, elf.len() as u64, &asset(&elf), Format::Pe).is_err());
+    // Wrong signature, machine (ARM64), DLL flag, PE32 magic, out-of-range header offset.
+    for (offset, value) in [
+        (0x80, b'X'),
+        (0x84, 0x64),
+        (0x97, 0x20),
+        (0x99, 0x01),
+        (61, 0x40),
+    ] {
+        let mut wrong = exe.clone();
+        wrong[offset] = value;
+        if offset == 0x84 {
+            wrong[0x85] = 0xaa;
+        }
+        let mut file = tempfile::tempfile().unwrap();
+        file.write_all(&wrong).unwrap();
+        assert!(
+            validate_as(&mut file, wrong.len() as u64, &asset(&wrong), Format::Pe).is_err(),
+            "{offset:#x}"
+        );
+    }
+
+    let mut windows = asset(&exe);
+    windows.name = "deas.exe".into();
+    windows.browser_download_url =
+        "https://github.com/darksidewalker/DEAS/releases/download/v999.0.0/deas.exe".into();
+    let mut both = release();
+    both.assets.push(windows);
+    assert_eq!(
+        select_for(&both, "1.0.0", WINDOWS).unwrap().unwrap().name,
+        "deas.exe"
+    );
+    assert_eq!(
+        select(&both, "1.0.0").unwrap().unwrap().name,
+        "deas-linux-amd64"
+    );
+    assert!(select_for(&release(), "1.0.0", WINDOWS)
+        .err()
+        .unwrap()
+        .contains("Windows x86_64"));
+    let mut spoofed = both;
+    spoofed.assets[1].browser_download_url =
+        "https://github.com/darksidewalker/DEAS/releases/download/v999.0.0/deas-linux-amd64".into();
+    assert!(select_for(&spoofed, "1.0.0", WINDOWS).is_err());
+}
+
+#[test]
+fn self_update_support_matches_the_replacement_platform() {
+    if std::env::var_os("APPIMAGE").is_none() && std::env::var_os("APPDIR").is_none() {
+        assert_eq!(
+            self_update_supported(),
+            cfg!(all(target_os = "linux", target_arch = "x86_64"))
+                || cfg!(all(windows, target_arch = "x86_64"))
+        );
+    }
+}
+
 #[tokio::test]
 async fn streamed_transfer_checks_size_digest_status_and_redirects() {
     use std::{io::Read, net::TcpListener};

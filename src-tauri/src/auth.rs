@@ -3,7 +3,10 @@
 //! Native consumers must disable redirects and never log returned credential strings.
 use reqwest::{header::HeaderValue, Url};
 use serde::Serialize;
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 const UNKNOWN: &str = "Unknown authentication provider";
 const INVALID_ORIGIN: &str = "Authentication origin is not permitted";
@@ -75,9 +78,11 @@ struct Provider {
     token: Option<Token>,
     persisted: bool,
 }
+/// Clone shares the same state (Arc), it never copies credentials; still no Debug/Serialize.
+#[derive(Clone)]
 pub struct AuthState {
-    providers: Mutex<BTreeMap<String, Provider>>,
-    store: Box<dyn CredentialStore>,
+    providers: Arc<Mutex<BTreeMap<String, Provider>>>,
+    store: Arc<Box<dyn CredentialStore>>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -131,7 +136,7 @@ fn validate_custom(id: &str, exact_origin: &str) -> Result<(), String> {
 impl AuthState {
     fn with_store(store: Box<dyn CredentialStore>) -> Self {
         Self {
-            providers: Mutex::new(
+            providers: Arc::new(Mutex::new(
                 PROVIDERS
                     .into_iter()
                     .map(|(id, origin)| {
@@ -145,8 +150,8 @@ impl AuthState {
                         )
                     })
                     .collect(),
-            ),
-            store,
+            )),
+            store: Arc::new(store),
         }
     }
     /// Restore only DEAS's fixed provider/origin accounts; custom scopes remain explicit.

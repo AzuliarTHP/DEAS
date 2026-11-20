@@ -1,5 +1,56 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## llama-cpp-python AVX-512 wheels — *Windows Error 0xc000001d* (0.3.7)
+
+The reported error was `Prompt Forge h3: 422 Could not reach local at : [WinError -1073741795] Windows Error 0xc000001d`. That code is STATUS_ILLEGAL_INSTRUCTION, raised by ctypes out of `ggml-cpu.dll`.
+
+**Wheel scan.** For each abetlen wheel I range-read `ggml-cpu` and counted `zmm` registers in its `objdump -d` output:
+
+| Family / platform | AVX-512 (zmm > 0) | Clean (zmm = 0) |
+|---|---|---|
+| cu130 Windows | 0.3.29, 0.3.32–0.3.35, 0.3.37 | 0.3.26–0.3.28, 0.3.30, 0.3.31, 0.3.36 |
+| cu130 Linux | 0.3.29, 0.3.37 | 0.3.30–0.3.36 |
+| cu121 Linux | 0.3.30, 0.3.35, 0.3.36 | 0.3.29, 0.3.31–0.3.34, 0.3.37 |
+| cpu 0.3.36 (Windows and Linux) | — | clean |
+
+- The owner's own environment has 0.3.37 and works only because the Ryzen 7800X3D supports AVX-512.
+- `ggml_cpu_fp32_to_fp16`/`fp16_to_fp32` contain zmm in the AVX-512 builds (0.3.29 Windows DLL, 0.3.37 Linux .so), so the install probe really executes AVX-512 code when the library has it.
+
+**Pins.** With `llama-cpp-python>=0.3.26` plus the pin, `uv pip compile` resolves cpu/cu130 to 0.3.36 for both `x86_64-pc-windows-msvc` and `x86_64-manylinux_2_35`, and cu121 to 0.3.37 on Linux.
+
+**Probe.** It passes against the owner's 0.3.37 environment on this AVX-512 host. On Windows it passes with the 0.3.36 and 0.3.29 cu130 `ggml-cpu.dll` loaded via `add_dll_directory`. Both hosts have AVX-512, so nothing was run on a CPU without AVX-512: a probe failure and the fixed wheel have not been observed on the affected hardware (the reporter: GTX 1080 Ti, Windows).
+
+**Vulkan family (AMD plans, Windows Pascal).**
+- **Pin resolution:** `uv pip compile` with the AMD index first resolves the vulkan pin 0.3.36 for both Windows and Linux.
+- **AVX-512:** the `ggml-cpu` in the Vulkan 0.3.36 and 0.3.37 wheels has zmm = 0 on both platforms.
+- **Driver dependency:** `ggml-vulkan` needs only the driver's loader (`libvulkan.so.1` / `vulkan-1.dll`).
+- **Linux AMD:** the probe printed `VULKAN_DEVICES 2` (RTX 5090 and the 7800X3D's RDNA2 iGPU via RADV). Real inference on the AMD iGPU only (`GGML_VK_VISIBLE_DEVICES=1`; the busy NVIDIA card untouched) offloaded 37/37 layers of PromptForge-H3-4B Q8_0 to Vulkan0 (RADV RAPHAEL_MENDOCINO) and produced a correct sentence, at 4.3 tokens/s generation and 13.8 tokens/s prompt.
+- **Windows (SCARYMACHINE), Qwen2.5-0.5B-Instruct Q4_K_M, 25/25 layers offloaded, coherent output:**
+  - AMD Radeon iGPU (AMD proprietary driver): 34.5 tokens/s.
+  - NVIDIA RTX 4070 Ti SUPER via Vulkan: 214 tokens/s. This stands in for the NVIDIA-Vulkan path Windows Pascal now uses; no Pascal card was tested.
+- **Not covered:** none of this went through a DEAS-provisioned environment (wheel in a scratch target, the existing venv's Python), and no discrete Radeon or Pascal card was used.
+
+**Gates.** `install::tests` covering the pins and the every-profile pin check pass. Linux and Windows clippy (`-D warnings`) are clean. The full `cargo test --lib` run passed 1126 with 3 load-sensitive failures (2 backend Python-shutdown tests, `jobs::tests::concurrent_submit_reserves_job_before_any_network_await`); all 3 pass alone.
+
+## Issue #43 — Windows self-update (0.3.7, not native-accepted)
+
+What is proven:
+- **Linux `cargo test --lib`:** 22 `app_update` tests pass. That covers the platform-neutral Windows swap and rollback (missing or altered download → previous exe restored, `.old`/`.new` cleaned), scan-lock retry (sharing violation twice → success; NotFound → no retry; lock violation gives up within its budget), quarantine (Win32 225 → quarantine message), stale `.old`/`.new` cleanup, the blocked-folder/Controlled Folder Access wording, PE32+ x86-64 acceptance (ELF/PE swapped, ARM64, DLL, PE32 and an out-of-range header offset rejected) and `deas.exe` asset selection (a spoofed URL is rejected).
+- **Linux UI tests:** `OwnedBackendPanel.test.tsx` passes 39/39, including Restart now / Later (Later never calls `native_app_restart`), the unsupported-platform Everything path (backend updated, no `native_app_update`, **Open releases page**) and the releases button after a failed app step.
+- **Gates:** `cargo clippy --all-targets -D warnings` is clean on Linux, and `cargo xwin clippy --all-targets --target x86_64-pc-windows-msvc -D warnings` is clean on Windows. Typecheck and `test:core` pass.
+- **Full runs:** the full `cargo test --lib` run passed 1126 with 2 load-sensitive `backend::tests` Python-shutdown failures; both pass alone. The full UI run passed 2365 with 1 Workbench.part4 timeout; the file passes 88/88 alone.
+
+**Windows host (SCARYMACHINE, Win 11, Ryzen 7800X3D), cross-built lib test exe:**
+- The 16 regular `app_update::` tests pass. That includes the real `share_mode(0)` + `FILE_FLAG_DELETE_ON_CLOSE` lock refusing a second `prepare`.
+- The ignored live test passes in 3.9 s:
+  - it renamed a running scratch copy aside and installed the replacement while a simulated scanner held the download exclusively for 2 s (settled after 2,617 ms);
+  - the old process kept running, and `.old` stayed undeletable until it was killed;
+  - the lock file removed itself on close;
+  - an ICACLS-denied folder produced the permissions diagnosis.
+- `controlled_folder_access` read `false`: the Defender key is readable by a standard user, and `EnableControlledFolderAccess` is absent, i.e. never enabled. The first run printed `null` until "readable key without the value = off" was added.
+
+**Still open ([PLAN B-09](PLAN.md#b-09--issue-43--windows-self-update--native-acceptance)):** a real GUI click-through from a released build, and a host with Controlled Folder Access enabled. Enabling it needs admin rights and changes the owner's host policy.
+
 ## Release 0.3.5 (published)
 
 Published [v0.3.5](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.5) from source commit `c8f29f5134ec2c353ef8603d335bd529813227aa` (tree `148bc66e206af89a85f83ad2046ac42b5d09c5ba`; lightweight tag on both remotes). Change: host memory admission defaults to `off` (`DEAS_HOST_MEMORY_ADMISSION=warn|block` opts in). Local unsigned build (rustc 1.97.0, node v22.23.5), Linux glibc floor 2.39, `ldd` clean, current `dist/assets/index-G7LwnMnC.js` embedded in both binaries; assets re-downloaded from the release pass `sha256sum -c` and byte-match the staged set.
@@ -5262,3 +5313,12 @@ remains open.
 ### Owner-authorized phased follow-through (priority note; Replace wizard is now listed in PLAN §2)
 
 - **Owner-authorized phased follow-through.** Stop selected/all, image PP1a/b, clipboard intake (0.2.22) and the encoded-video PP1c slice (0.2.22) are implemented; PP1c2 latent-upscale ordering landed in 0.2.23 (§4.2); next in this sequence: the image Replace wizard (Dark Wizards tab, not started). Native/real-backend acceptance of each stays open. No commit/publication or external-service restart is authorized by this sequence.
+
+### Library background download queue and Queue view (0.3.8 — 2026-11-20)
+
+- **Implemented (CPU/native-fixture verified).** `Download all` now plans every provider/folder group up front and hands the plans to a persistent native queue: a worker thread runs one job at a time, survives Library/tab switches and app restarts, and re-presents started-but-unfinished transfers as **interrupted** on next start. Kept partials resume via HTTP Range only under the existing size + SHA-256 pinning; a fresh destination folder carries `deas-download-job.json` while its job is unfinished (proved ownership for the cross-restart resume, replaced by the normal manifest on success). `native_download_status` gained `bytesPlaced`/`totalBytes` and per-job `jobs[]`; new commands `native_download_start_queue`/`native_download_resume`/`native_download_clear_queue` are registered and allowed through `permissions/downloads.toml`. The Queue view shows per-job percent, MB/GB, kept/completed counts, current file, live rate and error; the Library workspace tab shows a live percentage; queue events land in Logs.
+- **Gates run on this tree:** `cargo test --lib` (serial): all 100 `downloads::` tests pass including the new restart-resume and ordered-queue fixtures, plus `backend`, `acl` (permissions updated) — 1117 passed. Full-suite failures below are host/pre-existing, reproduced identically in a detached `git worktree` at HEAD 1ec90b0d: 17 `settings::`/`install::` tests fail there too (`/tmp: requires a safe owned directory without group/world write` — this host's `/tmp` is 1777), and 2 `backend::` console-pipe tests fail only in loaded serial runs but pass in isolation. `cargo clippy --all-targets -- -D warnings` clean; typecheck clean.
+- **UI/IPC (vitest):** downloads+beginner suites 108 passed (new queue-persistence, resume and `formatBytes`/`percentOf` cases; Workbench offer/vision flows green). Full `vitest run`: 2365/2369 — the 4 failures are the heavy H3/LTX media fixture tests timing out **under full-suite load only** and pass when their two files run alone; HEAD's own full run is worse (21 failures, same fixture-timeout family), so this is a pre-existing load/timing gate-state item, not a regression from this change.
+- **Browser fixtures:** `tools/verify_downloads.py` rewritten where it had bit-rotted: it now answers the first-run experience welcome (via the new shared `dismiss_experience` in `deas_locale`), uses the current Catalog controls (Model type select, Catalog source reset), asserts the **Queue view** (`[data-download-queue]`, `Succeeded`, `23 B` human-readable), asserts `native_download_start_queue` ran, returns to Catalog and asserts the released basket (`Download all (0)` disabled); the browser-preview branch now asserts fail-closed (no native controls at all). Passes 1440/1024/768/390/320 × browser/native at all five widths. `verify_library_catalog.py`, `verify_library_gallery.py`, `verify_workspace_layout.py` (npm `test:layout`) and `verify_languages.py` pass. `verify_beginner_layout.py` had been **red at HEAD**: the tag-autocomplete button (`.wb-prompt-expand.wb-prompt-tags`) leaked into beginner mode because its two-class selector tied the beginner hiding in specificity and loaded later; fixed in `beginner.css` (equal-specificity rule) — suite green, and it stays product-faithful rather than fixture-loosened. Gallery needed one harness stability line (scroll the detail actions into view before comparing boxes at 1600×1000; also red at HEAD because the button sat below the fold and Playwright's click scrolled the modal).
+- **Test-harness environment fix:** an abandoned 252 GB `src-tauri/target` tree exhausted this host's inotify watches and made isolated-Vite browser suites time out (`ENOSPC ... watch ... dep-graph.bin`). The stale tree was removed and `vite.config.ts` now ignores `src-tauri/**` and `.target/**` for the dev watcher. Not a product change.
+- **Live acceptance stays open** (same posture as before for L-04): real CivitAI/Hugging Face large-file resume through the native UI, Windows restart-during-queue behaviour and multi-gigabyte progress UX are not proven by these fixtures; see PLAN L-04.

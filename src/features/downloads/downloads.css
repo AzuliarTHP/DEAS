@@ -102,3 +102,21 @@
  /* Keep both internal panes usable; the existing outer Library scroller carries the header. */
  .aio-setup[data-workspace-view="downloads"] .catalog-library { min-height:36rem; flex-shrink:0; }
 }
+/* Background download queue: one row per job, a progress bar and human-readable statistics. */
+
+.download-queue { display: grid; gap: .6rem; }
+.download-queue-summary { display: flex; flex-wrap: wrap; gap: .6rem; align-items: baseline; font-size: .85rem; }
+.download-queue-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.download-queue-item { display: grid; gap: .3rem; padding: .6rem .8rem; border: 1px solid rgb(var(--ink-rgb) / 0.122); border-inline-start: 3px solid var(--copper); border-radius: .7rem; font-size: .8rem; }
+.download-queue-item p { margin: 0; }
+.download-queue-item.is-succeeded { border-inline-start-color: var(--ok); }
+.download-queue-item.is-failed, .download-queue-item.is-cancelled, .download-queue-item.is-interrupted { border-inline-start-color: var(--danger); }
+.download-queue-head { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; }
+.download-queue-head em { color: var(--muted); font-style: normal; font-size: .75rem; }
+.download-queue-provider { margin-inline-start: auto; color: var(--muted); font-size: .7rem; }
+.download-queue-bar { height: .45rem; border-radius: 999px; background: var(--field); overflow: hidden; }
+.download-queue-bar > span { display: block; height: 100%; background: var(--copper); border-radius: 999px; transition: width .4s; }
+.download-queue-item.is-running .download-queue-bar > span { background: var(--ok); }
+.download-queue-item.is-succeeded .download-queue-bar > span { background: var(--ok); }
+.download-head .studio-tabs button small { opacity: .75; font-size: .7rem; }
+@media (max-width: 400px) { .download-queue-provider { margin-inline-start: 0; width: 100%; } }

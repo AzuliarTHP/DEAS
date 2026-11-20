@@ -57,6 +57,42 @@ const KJNODES: &str = "https://github.com/kijai/ComfyUI-KJNodes.git";
 const KJNODES_REVISION: &str = "d3cfe21625e5170126ce06fbfcfe1d88108688c3";
 #[path = "install_torch.rs"]
 pub(crate) mod torch_profile;
+/// Exact llama-cpp-python release per wheel-index family, chosen because its `ggml-cpu` library
+/// contains no AVX-512 code on any platform DEAS installs for (AVX2/FMA/F16C baseline). Upstream
+/// builds each release on whatever CI runner it gets with native CPU flags, so some releases need
+/// AVX-512 and fail on most desktop CPUs with *Windows Error 0xc000001d* (illegal instruction) or
+/// SIGILL; e.g. cu130 0.3.29, 0.3.32–0.3.35 (Windows) and 0.3.37 do, 0.3.36 does not. Re-check
+/// the disassembly of every wheel (Windows and Linux) before moving a pin.
+const LLAMA_PINS: [(&str, &str); 4] = [
+    ("cpu", "llama-cpp-python==0.3.36"),
+    ("cu121", "llama-cpp-python==0.3.37"),
+    ("cu130", "llama-cpp-python==0.3.36"),
+    ("vulkan", "llama-cpp-python==0.3.36"),
+];
+/// Executes ggml-cpu's vectorized fp16 conversion without loading CUDA or a model: a library built
+/// for instructions this CPU lacks fails here (Windows: OSError illegal instruction; Linux: SIGILL)
+/// instead of at the first Prompt Forge/Chat request.
+const LLAMA_CPU_PROBE: &str = r#"import ctypes,importlib.util,os,pathlib
+spec=importlib.util.find_spec('llama_cpp')
+lib=pathlib.Path(next(iter(spec.submodule_search_locations)))/'lib'
+if os.name=='nt':
+    os.add_dll_directory(str(lib));cpu=ctypes.CDLL(str(lib/'ggml-cpu.dll'))
+else:
+    cpu=ctypes.CDLL(str(lib/'libggml-cpu.so'))
+cpu.ggml_cpu_init.restype=None;cpu.ggml_cpu_init()
+n=256;src=(ctypes.c_float*n)(*[i*0.25 for i in range(n)]);half=(ctypes.c_uint16*n)();back=(ctypes.c_float*n)()
+for f in (cpu.ggml_cpu_fp32_to_fp16,cpu.ggml_cpu_fp16_to_fp32):f.restype=None;f.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int64]
+cpu.ggml_cpu_fp32_to_fp16(src,half,n);cpu.ggml_cpu_fp16_to_fp32(half,back,n)
+assert list(back)==list(src),'fp16 round trip mismatch'
+print('llama-cpp CPU library OK')
+vk=lib/('ggml-vulkan.dll' if os.name=='nt' else 'libggml-vulkan.so')
+if vk.is_file():
+    try:
+        v=ctypes.CDLL(str(vk));v.ggml_backend_vk_get_device_count.restype=ctypes.c_int
+        print('VULKAN_DEVICES',v.ggml_backend_vk_get_device_count())
+    except OSError as e:
+        print('VULKAN_UNAVAILABLE',e)
+"#;
 // --help exits before imports. Initialize actual core/nodes without binding a
 // listener, then assert the selected package registered its required nodes.
 const COMFY_PROBE: &str = r#"import sys,json
@@ -431,6 +467,13 @@ impl Engine {
             approved.plan(),
             Path::new(&approved.plan().request.storage_path),
         )?;
+        if let Some(warning) = llama_install_warning(
+            approved.plan(),
+            Path::new(&approved.plan().request.storage_path),
+            cpu_has_avx512(),
+        ) {
+            crate::logs::push(crate::logs::Source::Deas, &warning);
+        }
         self.backend.start(approved)
     }
     /// For the running owned GPU backend at `base`: whether Torch Compile's inductor can use Triton
@@ -2057,6 +2100,20 @@ fn constraint_lines(profile: &torch_profile::Torch) -> Vec<String> {
 
 // Match the reference installer's backend-specific llama wheels. Never silently
 // compile a CPU library for a CUDA plan or depend on a host CMake/toolchain.
+/// abetlen wheel family. AMD gets Vulkan (no ROCm/HIP wheels exist; Vulkan runs on the Radeon
+/// through the graphics driver). Windows Pascal (CUDA 12.1) also gets Vulkan: the cu121 family has
+/// no Windows wheel newer than 0.3.4, and Vulkan needs no CUDA runtime of a matching version.
+fn llama_family(profile: &torch_profile::Torch, windows: bool) -> String {
+    if profile.index_url == crate::amd::AMD_INDEX_URL {
+        return "vulkan".into();
+    }
+    match profile.cuda.as_deref() {
+        None => "cpu".into(),
+        Some("12.1") if windows => "vulkan".into(),
+        Some(cuda) => format!("cu{}", cuda.replace('.', "")),
+    }
+}
+
 fn node_wheel_args(requirements: &str, profile: &torch_profile::Torch) -> Vec<String> {
     let needs_llama = requirements.lines().any(|line| {
         let line = line.split('#').next().unwrap_or("").trim();
@@ -2070,16 +2127,101 @@ fn node_wheel_args(requirements: &str, profile: &torch_profile::Torch) -> Vec<St
     if !needs_llama {
         return Vec::new();
     }
-    let family = profile.cuda.as_ref().map_or_else(
-        || "cpu".to_owned(),
-        |cuda| format!("cu{}", cuda.replace('.', "")),
-    );
-    vec![
+    let family = llama_family(profile, cfg!(windows));
+    let mut args = vec![
         "--only-binary".into(),
         "llama-cpp-python".into(),
         "--index".into(),
         format!("https://abetlen.github.io/llama-cpp-python/whl/{family}"),
-    ]
+    ];
+    // Also replaces an AVX-512 build already in the venv, with or without --upgrade.
+    if let Some((_, pin)) = LLAMA_PINS.iter().find(|(f, _)| *f == family) {
+        args.push((*pin).into());
+    }
+    args
+}
+
+fn cpu_has_avx512() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx512f")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Installed llama-cpp-python: version from its dist-info folder and GPU backend from the libraries
+/// it ships (`vulkan`, `cuda` or `cpu`). `None` when the venv has none.
+fn installed_llama(root: &Path) -> Option<(String, &'static str)> {
+    let mut sites = vec![root.join("venv/Lib/site-packages")];
+    sites.extend(
+        std::fs::read_dir(root.join("venv/lib"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("python3"))
+            .map(|e| e.path().join("site-packages")),
+    );
+    sites.iter().find_map(|site| {
+        let version = std::fs::read_dir(site).ok()?.flatten().find_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.strip_prefix("llama_cpp_python-")?
+                .strip_suffix(".dist-info")
+                .map(str::to_owned)
+        })?;
+        let libs: Vec<String> = std::fs::read_dir(site.join("llama_cpp/lib"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
+            .collect();
+        let has = |part: &str| libs.iter().any(|n| n.contains(part));
+        let backend = if has("ggml-vulkan") {
+            "vulkan"
+        } else if has("ggml-cuda") {
+            "cuda"
+        } else {
+            "cpu"
+        };
+        Some((version, backend))
+    })
+}
+
+/// Backend start: an environment installed before the llama-cpp-python pins may hold an AVX-512
+/// build (fails on this CPU) or the CPU-only build on AMD/Windows-Pascal (no GPU). Warn, never block.
+fn llama_install_warning(plan: &Plan, root: &Path, avx512: bool) -> Option<String> {
+    let family = llama_family(plan.torch.as_ref()?, cfg!(windows));
+    let pin = LLAMA_PINS
+        .iter()
+        .find(|(f, _)| *f == family)?
+        .1
+        .strip_prefix("llama-cpp-python==")?;
+    let (version, backend) = installed_llama(root)?;
+    let expected = match family.as_str() {
+        "vulkan" => "vulkan",
+        "cpu" => "cpu",
+        _ => "cuda",
+    };
+    let fix = "run Backend → Upgrade → ComfyUI and node packs once";
+    if backend != expected {
+        return Some(format!("WARN: llama-cpp-python {version} is the {backend} build, but this environment should use the {expected} build {pin}; local GGUF models in Prompt Forge and Chat do not use the GPU until you {fix}"));
+    }
+    (version != pin && !avx512).then(|| format!("WARN: llama-cpp-python {version} may need AVX-512, which this processor lacks; if local GGUF models in Prompt Forge or Chat fail with Windows Error 0xc000001d (illegal instruction), {fix} to install {pin}"))
+}
+
+/// The self-test's Vulkan line: no loader/driver or no device means local GGUF runs on the CPU.
+fn vulkan_warning(probe: &str) -> Option<String> {
+    let line = probe.lines().find(|l| l.starts_with("VULKAN_"))?;
+    let fix = "install the GPU driver's Vulkan support (Linux: Mesa RADV / mesa-vulkan-drivers and libvulkan1; Windows: the current AMD/NVIDIA driver)";
+    if let Some(error) = line.strip_prefix("VULKAN_UNAVAILABLE") {
+        return Some(format!("WARN: llama-cpp-python found no Vulkan driver; local GGUF models in Prompt Forge and Chat run on the CPU until you {fix}:{error}"));
+    }
+    match line.strip_prefix("VULKAN_DEVICES ")?.trim().parse::<u32>() {
+        Ok(0) => Some(format!("WARN: llama-cpp-python found no Vulkan GPU; local GGUF models in Prompt Forge and Chat run on the CPU until you {fix}")),
+        _ => None,
+    }
 }
 
 fn prepare_dirs(root: &Path) -> Result<(), String> {
@@ -2543,6 +2685,28 @@ async fn packages(
             run(uv, &args, &node, root, inner, cancel)
                 .await
                 .map_err(|e| format!("Required node dependencies failed (llama-cpp-python requires a matching backend wheel; no source/CPU fallback): {e}"))?;
+            if !wheel_args.is_empty() {
+                // Only local GGUF Prompt Forge/Chat depend on it: warn, do not fail the install.
+                let probe = run_with_timeout(
+                    &python,
+                    &["-I", "-c", LLAMA_CPU_PROBE],
+                    &node,
+                    root,
+                    inner,
+                    cancel,
+                    Duration::from_secs(60),
+                )
+                .await;
+                cancelled(cancel)?;
+                match probe {
+                    Err(e) => log(inner, format!("WARN: llama-cpp-python's CPU library failed its self-test (usually a processor without AVX2/FMA/F16C); local GGUF models in Prompt Forge and Chat will not work, everything else does: {e}")),
+                    Ok(out) => {
+                        if let Some(warning) = vulkan_warning(&out) {
+                            log(inner, warning);
+                        }
+                    }
+                }
+            }
         }
     }
     step(inner, "verify");
@@ -3700,7 +3864,8 @@ mod tests {
                 "--only-binary",
                 "llama-cpp-python",
                 "--index",
-                "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+                "https://abetlen.github.io/llama-cpp-python/whl/cpu",
+                "llama-cpp-python==0.3.36"
             ]
         );
         let mut cuda = torch_profile::cpu();
@@ -3710,7 +3875,120 @@ mod tests {
             gpu[3],
             "https://abetlen.github.io/llama-cpp-python/whl/cu130"
         );
+        assert_eq!(gpu[4], "llama-cpp-python==0.3.36");
         assert!(node_wheel_args("# llama-cpp-python\nllama-cpp-python-extra\n", &cuda).is_empty());
+    }
+
+    #[test]
+    fn windows_pascal_and_amd_use_vulkan_llama_wheels() {
+        let hardware = |name: &str, cc: &str| torch_profile::Hardware {
+            vendor: "NVIDIA".into(),
+            name: name.into(),
+            uuid: "GPU-test".into(),
+            driver_version: "581.57".into(),
+            compute_capability: cc.into(),
+        };
+        let pascal = torch_profile::select(&hardware("NVIDIA GeForce GTX 1080 Ti", "6.1")).unwrap();
+        assert_eq!(llama_family(&pascal, true), "vulkan");
+        assert_eq!(llama_family(&pascal, false), "cu121");
+        let ada = torch_profile::select(&hardware("NVIDIA GeForce RTX 4070", "8.9")).unwrap();
+        assert_eq!(llama_family(&ada, true), "cu130");
+        assert_eq!(
+            llama_family(&torch_profile::amd("gfx1100"), false),
+            "vulkan"
+        );
+        assert_eq!(llama_family(&torch_profile::cpu(), true), "cpu");
+    }
+
+    #[test]
+    fn startup_warns_about_pre_pin_llama_installs() {
+        let root = tempfile::tempdir().unwrap();
+        let site = root.path().join("venv/lib/python3.12/site-packages");
+        let install = |version: &str, lib: &str| {
+            let _ = std::fs::remove_dir_all(&site);
+            std::fs::create_dir_all(site.join(format!("llama_cpp_python-{version}.dist-info")))
+                .unwrap();
+            std::fs::create_dir_all(site.join("llama_cpp/lib")).unwrap();
+            std::fs::write(site.join("llama_cpp/lib").join(lib), b"").unwrap();
+        };
+        let mut plan: Plan = serde_json::from_value(serde_json::json!({
+            "id": "p", "request": {"storagePath": "/x", "backend": "nvidia", "features": [],
+                "options": {"sage": false, "radial": false, "flash": false, "ffmpeg": false},
+                "comfyRef": "master"},
+            "steps": [], "warnings": [], "unsupportedOptions": [], "canExecute": true,
+            "hardware": null, "torch": null
+        }))
+        .unwrap();
+        let mut cuda = torch_profile::cpu();
+        cuda.cuda = Some("13.0".into());
+        plan.torch = Some(cuda);
+        assert_eq!(
+            llama_install_warning(&plan, root.path(), false),
+            None,
+            "no llama"
+        );
+        install("0.3.37", "libggml-cuda.so");
+        assert_eq!(
+            llama_install_warning(&plan, root.path(), true),
+            None,
+            "AVX-512 host"
+        );
+        let warning = llama_install_warning(&plan, root.path(), false).unwrap();
+        assert!(
+            warning.contains("0xc000001d") && warning.contains("0.3.36"),
+            "{warning}"
+        );
+        install("0.3.36", "libggml-cuda.so");
+        assert_eq!(llama_install_warning(&plan, root.path(), false), None);
+        plan.torch = Some(torch_profile::amd("gfx1100"));
+        install("0.3.36", "libggml-cpu.so");
+        let warning = llama_install_warning(&plan, root.path(), true).unwrap();
+        assert!(
+            warning.contains("cpu build") && warning.contains("vulkan"),
+            "{warning}"
+        );
+        install("0.3.36", "libggml-vulkan.so");
+        assert_eq!(llama_install_warning(&plan, root.path(), false), None);
+    }
+
+    #[test]
+    fn vulkan_self_test_warns_only_without_a_device_or_driver() {
+        assert_eq!(vulkan_warning("llama-cpp CPU library OK\n"), None);
+        assert_eq!(
+            vulkan_warning("llama-cpp CPU library OK\nVULKAN_DEVICES 1\n"),
+            None
+        );
+        assert!(vulkan_warning("VULKAN_DEVICES 0")
+            .unwrap()
+            .contains("no Vulkan GPU"));
+        let missing = vulkan_warning("VULKAN_UNAVAILABLE libvulkan.so.1: cannot open").unwrap();
+        assert!(missing.contains("no Vulkan driver") && missing.contains("libvulkan.so.1"));
+    }
+
+    /// Every profile DEAS can install pins an AVX-512-free llama-cpp-python (#0xc000001d reports).
+    #[test]
+    fn every_selectable_profile_pins_an_avx512_free_llama_wheel() {
+        let hardware = |name: &str, cc: &str| torch_profile::Hardware {
+            vendor: "NVIDIA".into(),
+            name: name.into(),
+            uuid: "GPU-test".into(),
+            driver_version: "590.10".into(),
+            compute_capability: cc.into(),
+        };
+        let profiles = [
+            torch_profile::cpu(),
+            torch_profile::amd("gfx1100"),
+            torch_profile::select(&hardware("NVIDIA GeForce GTX 1080", "6.1")).unwrap(),
+            torch_profile::select(&hardware("NVIDIA GeForce RTX 4070", "8.9")).unwrap(),
+        ];
+        for profile in profiles {
+            let args = node_wheel_args("llama-cpp-python>=0.3.26\n", &profile);
+            let pin = args.last().unwrap();
+            assert!(
+                pin.starts_with("llama-cpp-python=="),
+                "{profile:?}: {args:?}"
+            );
+        }
     }
 
     /// Full upstream baseline acceptance; only an owned temporary CPU environment.

@@ -25,14 +25,15 @@ fn constraint_lines_keep_amd_pins_exact_and_append_pytorch_family() {
 }
 
 #[test]
-fn amd_profile_selects_cpu_llama_wheel_family() {
-    // abetlen publishes no ROCm wheels; the CPU wheel is the honest fallback.
+fn amd_profile_selects_vulkan_llama_wheel_family() {
+    // abetlen publishes no ROCm/HIP wheels; Vulkan runs on the Radeon through the driver.
     let args = node_wheel_args("llama-cpp-python>=0.3.26\n", &torch_profile::amd("gfx1100"));
     assert!(args.windows(2).any(|w| w
         == [
             "--index",
-            "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+            "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
         ]));
+    assert_eq!(args.last().unwrap(), "llama-cpp-python==0.3.36");
 }
 
 #[test]

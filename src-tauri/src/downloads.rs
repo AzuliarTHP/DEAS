@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -469,6 +469,44 @@ struct StoredPlan {
     identity: (u64, u64),
     created: Instant,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DownloadJob {
+    pub id: String,
+    pub label: String,
+    pub provider: Provider,
+    pub authenticated: bool,
+    pub parent_path: String,
+    pub folder_name: String,
+    pub target: String,
+    pub resources: Vec<Resource>,
+    /// queued | running | succeeded | failed | cancelled | interrupted
+    pub state: String,
+    pub completed: usize,
+    /// Bytes already on disk for this job, including bytes kept by a resumed partial.
+    pub bytes_placed: u64,
+    /// Declared total size; 0 when no resource published a size.
+    pub total_bytes: u64,
+    #[serde(default)]
+    pub current_file: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PersistedQueue {
+    version: u32,
+    jobs: Vec<DownloadJob>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct JobMarker {
+    id: String,
+}
+/// Written into a newly created destination leaf; proves a later resume may reuse it.
+const JOB_MARKER: &str = "deas-download-job.json";
+/// Completed/terminal queue entries kept at most this long; bounded persistence file.
+const MAX_JOBS: usize = 64;
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadStatus {
@@ -477,6 +515,15 @@ pub struct DownloadStatus {
     pub total: usize,
     pub bytes_downloaded: u64,
     pub error: Option<String>,
+    /// Bytes on disk for the current batch (resumed partials included); percentage basis.
+    #[serde(default)]
+    pub bytes_placed: u64,
+    /// Declared total bytes of the current batch.
+    #[serde(default)]
+    pub total_bytes: u64,
+    /// The background download queue; persisted and resumable across restarts.
+    #[serde(default)]
+    pub jobs: Vec<DownloadJob>,
 }
 impl Default for DownloadStatus {
     fn default() -> Self {
@@ -486,6 +533,9 @@ impl Default for DownloadStatus {
             total: 0,
             bytes_downloaded: 0,
             error: None,
+            bytes_placed: 0,
+            total_bytes: 0,
+            jobs: Vec::new(),
         }
     }
 }
@@ -501,7 +551,21 @@ struct Inner {
     plans: HashMap<String, StoredPlan>,
     status: DownloadStatus,
     cancel: Arc<AtomicBool>,
+    jobs: Vec<DownloadJob>,
+    persist_path: Option<PathBuf>,
+    worker: bool,
+    last_persist: Instant,
 }
+
+/// Shared per-job transport context for one file transfer.
+struct TransferRun<'a> {
+    provider: &'a Provider,
+    client: &'a reqwest::Client,
+    header: Option<HeaderValue>,
+    cancel: &'a AtomicBool,
+    job_id: &'a str,
+}
+
 #[derive(Clone)]
 pub struct DownloadEngine {
     inner: Arc<Mutex<Inner>>,
@@ -516,6 +580,10 @@ impl Default for DownloadEngine {
                 plans: HashMap::new(),
                 status: DownloadStatus::default(),
                 cancel: Arc::new(AtomicBool::new(false)),
+                jobs: Vec::new(),
+                persist_path: None,
+                worker: false,
+                last_persist: Instant::now(),
             })),
         }
     }
@@ -723,6 +791,7 @@ impl DownloadEngine {
                 return Err("Resource identity or metadata changed".into());
             }
             if name.eq_ignore_ascii_case("deas-download-manifest.json")
+                || name.eq_ignore_ascii_case(JOB_MARKER)
                 || !names.insert(name.to_lowercase())
             {
                 return Err(
@@ -776,23 +845,165 @@ impl DownloadEngine {
         );
         Ok(view)
     }
+    /// Attach the persistence file of this installation; a queue saved by an earlier
+    /// run returns as resumable (a worker interrupted by the app exit becomes "interrupted").
+    pub fn attach(&self, dir: &Path) {
+        let path = dir.join("download-queue.json");
+        let Ok(mut i) = self.inner.lock() else { return };
+        i.persist_path = Some(path.clone());
+        let loaded = std::fs::read(&path).ok().filter(|text| text.len() <= MAX_JSON).and_then(|text| {
+            serde_json::from_str::<PersistedQueue>(&String::from_utf8_lossy(&text)).ok()
+        });
+        let mut restored = 0usize;
+        for mut job in loaded.map(|q| q.jobs).unwrap_or_default() {
+            if job.state == "running" {
+                job.state = "interrupted".into();
+            }
+            if !matches!(
+                job.state.as_str(),
+                "queued" | "interrupted" | "cancelled" | "failed" | "succeeded"
+            ) {
+                continue;
+            }
+            if job.state != "succeeded" {
+                restored += 1;
+            }
+            i.jobs.push(job);
+        }
+        if i.jobs.len() > MAX_JOBS {
+            let excess = i.jobs.len() - MAX_JOBS;
+            i.jobs.drain(0..excess);
+        }
+        if restored > 0 {
+            crate::logs::push(
+                crate::logs::Source::Deas,
+                &format!("Downloads: {restored} unfinished queue item(s) restored from a previous session; press Resume in the Library download queue to continue them.",),
+            );
+        }
+    }
+    /// Caller holds the lock; the file is small and writes are rare (transitions plus a
+    /// throttled snapshot while bytes stream).
+    fn persist(i: &mut Inner) {
+        i.last_persist = Instant::now();
+        let Some(path) = i.persist_path.clone() else { return };
+        let Ok(text) = serde_json::to_string(&PersistedQueue {
+            version: 1,
+            jobs: i.jobs.clone(),
+        }) else {
+            return;
+        };
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
+    }
+    fn status_of(i: &Inner) -> DownloadStatus {
+        let mut s = i.status.clone();
+        s.jobs = i.jobs.clone();
+        s
+    }
     pub fn status(&self) -> Result<DownloadStatus, String> {
-        Ok(self
+        let i = self
             .inner
             .lock()
-            .map_err(|_| "Download state unavailable")?
-            .status
-            .clone())
+            .map_err(|_| "Download state unavailable")?;
+        Ok(Self::status_of(&i))
     }
     pub fn cancel(&self) -> Result<DownloadStatus, String> {
         let i = self
             .inner
             .lock()
             .map_err(|_| "Download state unavailable")?;
-        if i.status.state == "running" {
+        if i.worker {
             i.cancel.store(true, Ordering::SeqCst);
         }
-        Ok(i.status.clone())
+        Ok(Self::status_of(&i))
+    }
+    /// Convert stored plans into queue jobs, validate their destinations exactly like a
+    /// single start did, and let the background worker run them one after another.
+    pub fn enqueue(
+        &self,
+        plan_ids: Vec<String>,
+        confirmed: bool,
+        auth: &AuthState,
+    ) -> Result<DownloadStatus, String> {
+        if !confirmed {
+            return Err("Explicit confirmation required".into());
+        }
+        if plan_ids.is_empty() || plan_ids.len() > MAX_FILES {
+            return Err("Queue accepts 1-16 plans per action".into());
+        }
+        let mut i = self
+            .inner
+            .lock()
+            .map_err(|_| "Download state unavailable")?;
+        let mut prepared = Vec::new();
+        for id in plan_ids {
+            let p = i.plans.remove(&id).ok_or("Unknown or consumed plan")?;
+            if p.created.elapsed() > Duration::from_secs(600) || !p.view.can_execute {
+                return Err("Plan expired or unsupported".into());
+            }
+            prepared.push(p);
+        }
+        for p in &prepared {
+            let parent = fs::Anchor::open(&p.parent)?;
+            if parent.identity() != Ok(p.identity) {
+                return Err("Parent changed since planning".into());
+            }
+            if p.subfolder.is_empty() {
+                parent.writable()?;
+            } else {
+                parent.absent(&p.subfolder)?;
+            }
+        }
+        if i.jobs.len() + prepared.len() > MAX_JOBS {
+            i.jobs.retain(|j| {
+                !matches!(j.state.as_str(), "succeeded" | "cancelled" | "failed")
+            });
+            if i.jobs.len() + prepared.len() > MAX_JOBS {
+                let excess = i.jobs.len() + prepared.len() - MAX_JOBS;
+                i.jobs.drain(0..excess);
+            }
+        }
+        for p in &prepared {
+            let label = match p.view.resources.len() {
+                1 => p.view.resources[0].label.clone(),
+                n => format!(
+                    "{} (+{} files)",
+                    p.view.resources[0].label.clone(),
+                    n - 1
+                ),
+            };
+            i.jobs.push(DownloadJob {
+                id: p.view.id.clone(),
+                label,
+                provider: p.provider.clone(),
+                authenticated: p.authenticated,
+                parent_path: p.parent.to_string_lossy().into_owned(),
+                folder_name: p.subfolder.clone(),
+                target: p.view.target.clone(),
+                resources: p.view.resources.clone(),
+                state: "queued".into(),
+                completed: 0,
+                bytes_placed: 0,
+                total_bytes: p.view.total_known_bytes,
+                current_file: None,
+                error: None,
+            });
+        }
+        Self::persist(&mut i);
+        let files: usize = prepared.iter().map(|p| p.view.resources.len()).sum();
+        let bytes: u64 = prepared.iter().map(|p| p.view.total_known_bytes).sum();
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            &format!(
+                "Downloads: queued {} folder group(s), {files} file(s), {} known bytes.",
+                prepared.len(),
+                bytes
+            ),
+        );
+        self.spawn_worker(&mut i, auth.clone())?;
+        Ok(Self::status_of(&i))
     }
     pub fn start(
         &self,
@@ -800,109 +1011,343 @@ impl DownloadEngine {
         confirmed: bool,
         auth: &AuthState,
     ) -> Result<DownloadStatus, String> {
-        if !confirmed {
-            return Err("Explicit confirmation required".into());
-        }
+        self.enqueue(vec![plan_id], confirmed, auth)
+    }
+    /// Re-queue interrupted, cancelled or failed jobs; kept partial files resume where they stopped.
+    pub fn resume(&self, job_ids: Option<Vec<String>>, auth: &AuthState) -> Result<DownloadStatus, String> {
         let mut i = self
             .inner
             .lock()
             .map_err(|_| "Download state unavailable")?;
-        if i.status.state == "running" {
-            return Err("Download already running".into());
+        let mut resumed = 0usize;
+        for j in &mut i.jobs {
+            if matches!(
+                j.state.as_str(),
+                "cancelled" | "failed" | "interrupted"
+            ) && job_ids
+                .as_ref()
+                .is_none_or(|ids| ids.iter().any(|id| id == &j.id))
+            {
+                j.state = "queued".into();
+                j.error = None;
+                resumed += 1;
+            }
         }
-        let p = i.plans.remove(&plan_id).ok_or("Unknown or consumed plan")?;
-        if p.created.elapsed() > Duration::from_secs(600) || !p.view.can_execute {
-            return Err("Plan expired or unsupported".into());
+        if resumed == 0 {
+            return Ok(Self::status_of(&i));
         }
-        let header = credential(auth, &p.provider, p.authenticated)?;
-        let parent = fs::Anchor::open(&p.parent)?;
-        if parent.identity() != Ok(p.identity) {
-            return Err("Parent changed since planning".into());
+        Self::persist(&mut i);
+        crate::logs::push(
+            crate::logs::Source::Deas,
+            &format!("Downloads: resuming {resumed} queue item(s); kept partial files continue where they stopped."),
+        );
+        self.spawn_worker(&mut i, auth.clone())?;
+        Ok(Self::status_of(&i))
+    }
+    /// Drop terminal queue entries (running/queued/interrupted stay).
+    pub fn clear_finished(&self) -> Result<DownloadStatus, String> {
+        let mut i = self
+            .inner
+            .lock()
+            .map_err(|_| "Download state unavailable")?;
+        i.jobs
+            .retain(|j| !matches!(j.state.as_str(), "succeeded" | "cancelled" | "failed"));
+        Self::persist(&mut i);
+        Ok(Self::status_of(&i))
+    }
+    /// Caller holds the lock. Starts the background worker when idle; the batch counters
+    /// aggregate every job currently queued.
+    fn spawn_worker(&self, i: &mut Inner, auth: AuthState) -> Result<(), String> {
+        if i.worker {
+            return Ok(());
         }
-        let target = if p.subfolder.is_empty() {
-            parent.writable()?;
-            parent
-        } else {
-            parent.absent(&p.subfolder)?;
-            parent.create(&p.subfolder)?
-        };
-        let cancel = Arc::new(AtomicBool::new(false));
-        i.cancel = cancel.clone();
         i.status = DownloadStatus {
             state: "running".into(),
-            total: p.view.resources.len(),
-            ..Default::default()
+            completed: i
+                .jobs
+                .iter()
+                .filter(|j| j.state == "queued")
+                .map(|j| j.completed)
+                .sum(),
+            total: i
+                .jobs
+                .iter()
+                .filter(|j| j.state == "queued")
+                .map(|j| j.resources.len())
+                .sum(),
+            bytes_downloaded: 0,
+            error: None,
+            bytes_placed: i
+                .jobs
+                .iter()
+                .filter(|j| j.state == "queued")
+                .map(|j| j.bytes_placed)
+                .sum(),
+            total_bytes: i
+                .jobs
+                .iter()
+                .filter(|j| j.state == "queued")
+                .map(|j| j.total_bytes)
+                .sum(),
+            jobs: i.jobs.clone(),
         };
+        i.cancel = Arc::new(AtomicBool::new(false));
+        let cancel = i.cancel.clone();
+        i.worker = true;
         let engine = self.clone();
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("deas-download".into())
-            .spawn(move || {
-                let result = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|_| "Cannot start network runtime".into())
-                    .and_then(|rt| rt.block_on(engine.run(&p, target, header, &cancel)));
-                if let Ok(mut i) = engine.inner.lock() {
-                    i.status.state = if result.is_ok() {
-                        "succeeded"
-                    } else if cancel.load(Ordering::SeqCst) {
-                        "cancelled"
-                    } else {
-                        "failed"
-                    }
-                    .into();
-                    i.status.error = result.err();
+            .spawn(move || engine.worker_loop(cancel, auth));
+        if spawned.is_err() {
+            i.worker = false;
+            i.status.state = "failed".into();
+            i.status.error = Some("Cannot start download worker".into());
+            for j in &mut i.jobs {
+                if j.state == "queued" {
+                    j.state = "interrupted".into();
                 }
-            })
-            .map_err(|_| {
-                i.status.state = "failed".into();
-                i.status.error = Some("Cannot start download worker".into());
-                "Cannot start download worker".to_string()
-            })?;
-        Ok(i.status.clone())
+            }
+            return Err("Cannot start download worker".to_string());
+        }
+        Ok(())
     }
-    async fn run(
+    fn worker_loop(&self, cancel: Arc<AtomicBool>, auth: AuthState) {
+        let mut outcome = "succeeded";
+        let mut failure: Option<String> = None;
+        loop {
+            let mut i = match self.inner.lock() {
+                Ok(i) => i,
+                Err(_) => return,
+            };
+            if cancel.load(Ordering::SeqCst) {
+                outcome = "cancelled";
+            }
+            let idx = i.jobs.iter().position(|j| j.state == "queued");
+            let Some(idx) = idx.filter(|_| outcome != "cancelled") else {
+                i.worker = false;
+                i.status.state = outcome.into();
+                i.status.error = failure.clone();
+                Self::persist(&mut i);
+                return;
+            };
+            let mut job = i.jobs[idx].clone();
+            job.state = "running".into();
+            job.error = None;
+            job.current_file = None;
+            // bytes_placed already reflects persisted progress (completed files and kept
+            // partial bytes); transfer() adds newly streamed bytes and removes truncated ones.
+            i.jobs[idx] = job.clone();
+            Self::persist(&mut i);
+            drop(i);
+            let target = match self.prepare_target(&job) {
+                Ok(t) => t,
+                Err(e) => {
+                    outcome = "failed";
+                    failure = Some(e.clone());
+                    if let Ok(mut i) = self.inner.lock() {
+                        if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job.id) {
+                            j.state = "failed".into();
+                            j.error = Some(e.clone());
+                        }
+                        Self::persist(&mut i);
+                    }
+                    crate::logs::push(
+                        crate::logs::Source::Deas,
+                        &format!("Downloads: {} could not start: {e}", job.label),
+                    );
+                    continue;
+                }
+            };
+            let header = match credential(&auth, &job.provider, job.authenticated) {
+                Ok(h) => h,
+                Err(e) => {
+                    outcome = "failed";
+                    failure = Some(e.clone());
+                    if let Ok(mut i) = self.inner.lock() {
+                        if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job.id) {
+                            j.state = "failed".into();
+                            j.error = Some(e.clone());
+                        }
+                        Self::persist(&mut i);
+                    }
+                    crate::logs::push(
+                        crate::logs::Source::Deas,
+                        &format!("Downloads: {} could not start: {e}", job.label),
+                    );
+                    continue;
+                }
+            };
+            crate::logs::push(
+                crate::logs::Source::Deas,
+                &format!(
+                    "Downloads: {} file(s) to {}",
+                    job.resources.len() - job.completed,
+                    job.target
+                ),
+            );
+            let result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| "Cannot start network runtime".to_string())
+                .and_then(|rt| rt.block_on(self.run_job(&job, &target, header, &cancel)));
+            let mut i = match self.inner.lock() {
+                Ok(i) => i,
+                Err(_) => return,
+            };
+            if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job.id) {
+                match &result {
+                    Ok(()) => {
+                        j.state = "succeeded".into();
+                        j.current_file = None;
+                        j.error = None;
+                    }
+                    Err(msg) => {
+                        if cancel.load(Ordering::SeqCst) {
+                            j.state = "cancelled".into();
+                            outcome = "cancelled";
+                        } else {
+                            j.state = "failed".into();
+                            j.error = Some(msg.clone());
+                            outcome = "failed";
+                            failure = Some(msg.clone());
+                        }
+                        j.current_file = None;
+                    }
+                }
+            }
+            Self::persist(&mut i);
+            drop(i);
+            match &result {
+                Ok(()) => crate::logs::push(
+                    crate::logs::Source::Deas,
+                    &format!("Downloads: {} finished.", job.label),
+                ),
+                Err(_) if cancel.load(Ordering::SeqCst) => crate::logs::push(
+                    crate::logs::Source::Deas,
+                    &format!("Downloads: {} cancelled; partial files kept for resume.", job.label),
+                ),
+                Err(msg) => crate::logs::push(
+                    crate::logs::Source::Deas,
+                    &format!("Downloads: {} failed: {msg}", job.label),
+                ),
+            }
+        }
+    }
+    /// Anchor the parent, re-check its identity and open or create the destination leaf.
+    /// A leaf that already exists is only reused when it carries this job's marker.
+    fn prepare_target(&self, job: &DownloadJob) -> Result<fs::Anchor, String> {
+        let parent = PathBuf::from(&job.parent_path);
+        let anchor = fs::Anchor::open(&parent)?;
+        if job.folder_name.is_empty() {
+            anchor.writable()?;
+            return Ok(anchor);
+        }
+        match anchor.absent(&job.folder_name) {
+            Ok(()) => {
+                let target = anchor.create(&job.folder_name)?;
+                let marker = serde_json::to_vec(&JobMarker { id: job.id.clone() })
+                    .map_err(|_| "Cannot write folder marker".to_string())?;
+                std::fs::write(parent.join(&job.folder_name).join(JOB_MARKER), marker)
+                    .map_err(|_| "Cannot write folder marker".to_string())?;
+                Ok(target)
+            }
+            Err(e) => {
+                let leaf = parent.join(&job.folder_name);
+                let owned = std::fs::read(leaf.join(JOB_MARKER))
+                    .ok()
+                    .and_then(|b| {
+                        serde_json::from_str::<JobMarker>(&String::from_utf8_lossy(&b)).ok()
+                    })
+                    .is_some_and(|m| m.id == job.id);
+                if !owned {
+                    return Err(e);
+                }
+                let open = fs::Anchor::open(&leaf)?;
+                open.writable()?;
+                Ok(open)
+            }
+        }
+    }
+    /// One queue job: every remaining resource, then the folder manifest.
+    async fn run_job(
         &self,
-        p: &StoredPlan,
-        target: fs::Anchor,
+        job: &DownloadJob,
+        target: &fs::Anchor,
         header: Option<HeaderValue>,
         cancel: &AtomicBool,
     ) -> Result<(), String> {
         let client = client_for(false, None)?;
-        for r in &p.view.resources {
-            self.transfer(r, &p.provider, &target, &client, header.clone(), cancel)
-                .await?;
+        for r in &job.resources {
+            self.transfer(
+                r,
+                target,
+                &TransferRun {
+                    provider: &job.provider,
+                    client: &client,
+                    header: header.clone(),
+                    cancel,
+                    job_id: &job.id,
+                },
+            )
+            .await?;
         }
         if cancel.load(Ordering::SeqCst) {
             return Err("Download cancelled".into());
         }
-        if p.subfolder.is_empty() {
+        if job.folder_name.is_empty() {
             return Ok(()); // shared model folders get no manifest, add per-file sidecars when provenance is needed
         }
         let name = format!("deas-{}.partial", uuid::Uuid::new_v4());
         let result = (|| {
             let mut file = target.partial(&name)?;
-            let manifest = serde_json::json!({"version":1,"providerId":p.provider.id,"sourceOrigin":p.provider.origin,"plan":p.view});
+            let manifest = serde_json::json!({"version":1,"providerId":job.provider.id,"sourceOrigin":job.provider.origin,"plan":{"id":job.id,"target":job.target,"resources":job.resources,"totalKnownBytes":job.total_bytes,"unknownSizeCount":job.resources.iter().filter(|r| r.size.is_none()).count(),"warnings":[],"canExecute":true}});
             serde_json::to_writer_pretty(&mut file, &manifest)
                 .map_err(|_| "Cannot write staged metadata")?;
             file.sync_all().map_err(|_| "Cannot sync staged metadata")?;
             target.publish(&name, "deas-download-manifest.json")
         })();
         target.remove_partial(&name);
-        result
+        result?;
+        let _ = std::fs::remove_file(
+            PathBuf::from(&job.parent_path)
+                .join(&job.folder_name)
+                .join(JOB_MARKER),
+        );
+        Ok(())
+    }
+    /// Small locked progress update for one queue job and the aggregate batch counters.
+    fn progress(&self, job_id: &str, placed: i64, transferred: i64) {
+        let Ok(mut i) = self.inner.lock() else { return };
+        i.status.bytes_downloaded = (i.status.bytes_downloaded as i64 + transferred).max(0) as u64;
+        i.status.bytes_placed = (i.status.bytes_placed as i64 + placed).max(0) as u64;
+        if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job_id) {
+            j.bytes_placed = (j.bytes_placed as i64 + placed).max(0) as u64;
+        }
+        if i.last_persist.elapsed() > Duration::from_secs(2) {
+            Self::persist(&mut i);
+        }
+    }
+    fn touch_job(&self, job_id: &str, current_file: Option<String>) {
+        if let Ok(mut i) = self.inner.lock() {
+            if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job_id) {
+                j.current_file = current_file;
+            }
+        }
     }
     /// One resource. A persisted partial resumes only when the catalog pins size and hash,
     /// so a changed remote file cannot be appended silently; verification decides the retry.
     async fn transfer(
         &self,
         r: &Resource,
-        provider: &Provider,
         target: &fs::Anchor,
-        client: &reqwest::Client,
-        header: Option<HeaderValue>,
-        cancel: &AtomicBool,
+        run: &TransferRun<'_>,
     ) -> Result<(), String> {
-        let name = format!("deas-{}.partial", providers::filename(r)?);
+        let provider = run.provider;
+        let client = run.client;
+        let cancel = run.cancel;
+        let job_id = run.job_id;
+        let file_name = providers::filename(r)?;
+        let name = format!("deas-{file_name}.partial");
         for attempt in 0..2 {
             let resumable = attempt == 0 && r.size.is_some() && r.sha256.is_some();
             let (mut file, mut count) = if resumable {
@@ -914,6 +1359,11 @@ impl DownloadEngine {
                 target.remove_partial(&name);
                 (target.partial(&name)?, 0)
             };
+            // Bytes kept by a resumed partial are already accounted for in job.bytes_placed
+            // (persisted while they streamed); a discarded or truncated partial must remove them.
+            let kept = count;
+            let mut attempt_placed = 0;
+            self.touch_job(job_id, Some(file_name.clone()));
             let mut digest = Sha256::new();
             // shortcut: a resume re-reads the kept bytes (a 25 GB file costs 1–2 min); persist a
             // rolling hash only when resumes get frequent.
@@ -936,7 +1386,7 @@ impl DownloadEngine {
                     client,
                     provider,
                     r.url.as_deref().ok_or("Missing download URL")?,
-                    header.clone(),
+                    run.header.clone(),
                     cancel,
                     (count > 0).then_some(count),
                 )
@@ -956,10 +1406,13 @@ impl DownloadEngine {
                         .and_then(|s| s.parse::<u64>().ok());
                     if from != Some(count) {
                         target.remove_partial(&name);
+                        self.progress(job_id, -((kept + attempt_placed) as i64), 0);
                         return Err("Resume range mismatch".into());
                     }
                 } else if count > 0 {
                     // 200: the server ignored Range and sent the whole file again.
+                    self.progress(job_id, -((kept + attempt_placed) as i64), 0);
+                    attempt_placed = 0;
                     file.set_len(0).map_err(|_| "Cannot reset partial")?;
                     std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))
                         .map_err(|_| "Cannot reset partial")?;
@@ -974,7 +1427,7 @@ impl DownloadEngine {
                     let Some(chunk) = chunk else { break };
                     count += chunk.len() as u64;
                     {
-                        let mut i = self
+                        let i = self
                             .inner
                             .lock()
                             .map_err(|_| "Download state unavailable")?;
@@ -983,8 +1436,9 @@ impl DownloadEngine {
                         {
                             return Err("Job exceeds the 256 GiB limit".into());
                         }
-                        i.status.bytes_downloaded += chunk.len() as u64;
                     }
+                    self.progress(job_id, chunk.len() as i64, chunk.len() as i64);
+                    attempt_placed += chunk.len() as u64;
                     if r.size.is_some_and(|n| count > n) {
                         return Err("Download exceeds declared size".into());
                     }
@@ -995,6 +1449,7 @@ impl DownloadEngine {
             }
             if r.size.is_some_and(|n| n != count) || length.is_some_and(|n| start + n != count) {
                 target.remove_partial(&name);
+                self.progress(job_id, -((kept + attempt_placed) as i64), 0);
                 // Only a resumed prefix can fail verification (the remote file changed): retry clean.
                 if start > 0 {
                     continue;
@@ -1007,6 +1462,7 @@ impl DownloadEngine {
                 .is_some_and(|s| !s.eq_ignore_ascii_case(&actual))
             {
                 target.remove_partial(&name);
+                self.progress(job_id, -((kept + attempt_placed) as i64), 0);
                 if start > 0 {
                     continue;
                 }
@@ -1016,12 +1472,16 @@ impl DownloadEngine {
                 return Err("Download cancelled".into());
             }
             file.sync_all().map_err(|_| "Cannot sync partial")?;
-            target.publish(&name, &providers::filename(r)?)?;
-            self.inner
+            target.publish(&name, &file_name)?;
+            let mut i = self
+                .inner
                 .lock()
-                .map_err(|_| "Download state unavailable")?
-                .status
-                .completed += 1;
+                .map_err(|_| "Download state unavailable")?;
+            i.status.completed += 1;
+            if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job_id) {
+                j.completed += 1;
+                j.current_file = None;
+            }
             return Ok(());
         }
         Ok(())
@@ -1200,6 +1660,34 @@ pub fn native_download_start(
 ) -> Result<DownloadStatus, String> {
     let _guard = operations.enter()?;
     engine.start(plan_id, confirmed, &auth)
+}
+/// Enqueue several planned folder groups as one background queue.
+#[tauri::command]
+pub fn native_download_start_queue(
+    engine: tauri::State<'_, DownloadEngine>,
+    auth: tauri::State<'_, AuthState>,
+    plan_ids: Vec<String>,
+    confirmed: bool,
+    operations: tauri::State<'_, crate::FolderOperations>,
+) -> Result<DownloadStatus, String> {
+    let _guard = operations.enter()?;
+    engine.enqueue(plan_ids, confirmed, &auth)
+}
+/// Resume interrupted, cancelled or failed queue jobs (None resumes every one).
+#[tauri::command]
+pub fn native_download_resume(
+    engine: tauri::State<'_, DownloadEngine>,
+    auth: tauri::State<'_, AuthState>,
+    job_ids: Option<Vec<String>>,
+) -> Result<DownloadStatus, String> {
+    engine.resume(job_ids, &auth)
+}
+/// Forget finished queue entries; running and resumable entries stay listed.
+#[tauri::command]
+pub fn native_download_clear_queue(
+    engine: tauri::State<'_, DownloadEngine>,
+) -> Result<DownloadStatus, String> {
+    engine.clear_finished()
 }
 #[tauri::command]
 pub fn native_download_status(

@@ -353,10 +353,13 @@ fn corrupt_digest_or_size_never_publishes() {
         let p = prepare(&e, r, &d);
         e.start(p.id, true, &AuthState::default()).unwrap();
         assert_eq!(finished(&e).state, "failed");
-        assert_eq!(
-            std::fs::read_dir(d.path().join("stage")).unwrap().count(),
-            0
-        );
+        // Nothing was published and no partial survives; only the folder marker remains.
+        let mut left: Vec<_> = std::fs::read_dir(d.path().join("stage"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.retain(|name| name != "deas-download-job.json");
+        assert_eq!(left.len(), 0, "{left:?}");
         server.join().unwrap();
     }
 }
@@ -416,13 +419,15 @@ fn cancellation_interrupts_stalled_stream_and_keeps_the_partial_for_resume() {
     rx.recv_timeout(Duration::from_secs(3)).unwrap();
     e.cancel().unwrap();
     assert_eq!(finished(&e).state, "cancelled");
-    // Cancelling keeps what arrived so the next run can resume it.
+    // Cancelling keeps what arrived so the next run can resume it; the folder marker
+    // proving the leaf belongs to this job stays beside the partial.
     let kept: Vec<_> = std::fs::read_dir(d.path().join("stage"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(kept.len(), 1, "{kept:?}");
-    assert!(kept[0].starts_with("deas-") && kept[0].ends_with(".partial"));
+    assert_eq!(kept.len(), 2, "{kept:?}");
+    assert!(kept.iter().any(|n| n.starts_with("deas-") && n.ends_with(".partial")));
+    assert!(kept.iter().any(|n| n == "deas-download-job.json"));
     task.join().unwrap();
 }
 #[cfg(any(target_os = "linux", windows))]
@@ -1094,4 +1099,146 @@ async fn live_civitai_checkpoint_lists_selectable_files() {
         files[0].label,
         files[0].version
     );
+}
+#[cfg(any(target_os = "linux", windows))]
+#[test]
+fn queued_folder_groups_run_in_order_as_one_background_batch() {
+    let bytes = b"queue fixture payload".to_vec();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let served = bytes.clone();
+    let server = thread::spawn(move || {
+        // Two queue jobs hit the same fixture origin; serve both requests.
+        for _ in 0..2 {
+            let (mut s, _) = listener.accept().unwrap();
+            request(&mut s);
+            write!(
+                s,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                served.len()
+            )
+            .unwrap();
+            s.write_all(&served).unwrap();
+        }
+    });
+    let p = provider(origin.clone());
+    let mut a = resource(&origin, None, Some(bytes.len() as u64));
+    a.id = "queue-a".into();
+    let mut b = resource(&origin, None, Some(bytes.len() as u64));
+    b.id = "queue-b".into();
+    let e = engine(p.clone(), &a);
+    {
+        let mut i = e.inner.lock().unwrap();
+        i.known
+            .insert((p.id.clone(), b.id.clone()), (b.clone(), "tiny.bin".into()));
+    }
+    let d = scratch();
+    let d2 = scratch();
+    let first = prepare(&e, a.clone(), &d);
+    let second = e
+        .plan(PlanRequest {
+            provider_id: "fixture".into(),
+            resources: vec![b.clone()],
+            parent_path: d2.path().to_str().unwrap().into(),
+            folder_name: "stage2".into(),
+            authenticated: false,
+        })
+        .unwrap();
+    e.enqueue(vec![first.id, second.id], true, &AuthState::default())
+        .unwrap();
+    let status = finished(&e);
+    assert_eq!(status.state, "succeeded", "{:?}", status.error);
+    assert_eq!(status.completed, 2);
+    assert_eq!(status.total, 2);
+    assert_eq!(status.bytes_downloaded, (bytes.len() * 2) as u64);
+    assert_eq!(status.jobs.len(), 2);
+    assert!(status.jobs.iter().all(|j| j.state == "succeeded"));
+    assert_eq!(std::fs::read(d.path().join("stage/tiny.bin")).unwrap(), bytes);
+    assert_eq!(
+        std::fs::read(d2.path().join("stage2/tiny.bin")).unwrap(),
+        bytes
+    );
+    server.join().unwrap();
+}
+#[cfg(any(target_os = "linux", windows))]
+#[test]
+fn cancelled_download_survives_app_restart_and_resumes_from_the_partial() {
+    let bytes = b"cross restart resume fixture payload!".to_vec();
+    let half = bytes.len() / 2;
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let served = bytes.clone();
+    let server = thread::spawn(move || {
+        // First attempt: half the file, then hold the stalled stream until the client cancels.
+        let (first, _) = listener.accept().unwrap();
+        let mut s = first;
+        request(&mut s);
+        write!(
+            s,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+            served.len()
+        )
+        .unwrap();
+        s.write_all(&served[..half]).unwrap();
+        s.flush().unwrap();
+        // The client cancels and its connection drops; only then answer the resume.
+        thread::sleep(Duration::from_millis(400));
+        drop(s);
+        // Second attempt (after the restart): answer the kept range.
+        let (mut s, _) = listener.accept().unwrap();
+        let req = request(&mut s);
+        let from = req
+            .rfind("bytes=")
+            .and_then(|i| req[i + 6..].split('-').next())
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        write!(
+            s,
+            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+            served.len() - from,
+            from,
+            served.len() - 1,
+            served.len()
+        )
+        .unwrap();
+        s.write_all(&served[from..]).unwrap();
+    });
+    let p = provider(origin.clone());
+    let r = resource(&origin, Some(hash), Some(bytes.len() as u64));
+    let state = scratch(); // persistence folder (the DEAS data folder stand-in)
+    let target = scratch(); // download destination
+    let e = engine(p.clone(), &r);
+    e.attach(state.path());
+    let plan = prepare(&e, r.clone(), &target);
+    e.start(plan.id, true, &AuthState::default()).unwrap();
+    let partial = target.path().join("stage/deas-tiny.bin.partial");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while std::fs::metadata(&partial).map(|m| m.len()).unwrap_or(0) < half as u64 {
+        assert!(Instant::now() < deadline, "partial never reached half");
+        thread::sleep(Duration::from_millis(20));
+    }
+    e.cancel().unwrap();
+    assert_eq!(finished(&e).state, "cancelled");
+    // App restart: a fresh engine restores the persisted queue as resumable.
+    let e2 = engine(p, &r);
+    e2.attach(state.path());
+    let restored = e2.status().unwrap();
+    assert_eq!(restored.jobs.len(), 1);
+    assert_eq!(restored.jobs[0].state, "cancelled");
+    assert_eq!(restored.jobs[0].bytes_placed, half as u64);
+    e2.resume(None, &AuthState::default()).unwrap();
+    let status = finished(&e2);
+    assert_eq!(status.state, "succeeded", "{:?}", status.error);
+    assert_eq!(
+        status.bytes_downloaded,
+        (bytes.len() - half) as u64,
+        "{:?}",
+        status.error
+    );
+    assert_eq!(
+        std::fs::read(target.path().join("stage/tiny.bin")).unwrap(),
+        bytes
+    );
+    server.join().unwrap();
 }

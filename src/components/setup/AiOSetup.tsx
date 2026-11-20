@@ -20,7 +20,8 @@ import { LanguageSetting } from '../../features/settings/LanguageSetting';
 import { LogsPanel } from '../../features/logs/LogsPanel';
 import { filesPresent, readFolders, type Folders } from '../../lib/settings';
 import { authProviders } from '../../features/downloads/DownloadPluginPanel';
-import { readAuthStatus, verifyAuthToken } from '../../lib/downloads';
+import { readAuthStatus, verifyAuthToken, percentOf } from '../../lib/downloads';
+import type { DownloadStatus } from '../../lib/downloads';
 import { forgetPref, isBoolean, isString, readPref, usePref, writePref } from '../../lib/preferences';
 import {ExperienceWelcome,type Experience,type BeginnerPage} from '../../features/beginner/Experience';
 // Root of the last successful install; restored on start only while its deas-install.json still exists.
@@ -143,11 +144,15 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  const succeeded=status?.state==='succeeded';const [confirmReinstall,setConfirmReinstall]=useState(false);
  // Native maintenance restores the previous lifecycle state; refresh without rerunning autostart.
  const updating=useRef(false);const [updates,setUpdates]=useState(0);
- const [available,setAvailable]=useState<{app:string|null;comfy:boolean;nodepack:boolean}|null>(null);
+ const [available,setAvailable]=useState<{app:string|null;comfy:boolean;nodepack:boolean;appSelfUpdate?:boolean;appRestartPrompt?:boolean}|null>(null);
+ // Windows/AppImage cannot replace the running binary: the app step becomes a manual download (issue #43).
+ const manualApp=available?.appSelfUpdate===false;const [manualAppTag,setManualAppTag]=useState('');
  const [confirmUpgrade,setConfirmUpgrade]=useState(false);
  // What the confirmed Update changes; the PyTorch choice is checked natively each time the dialog opens.
  const [upgradeScope,setUpgradeScope]=useState<UpdateScope>('all');const [torchUpdate,setTorchUpdate]=useState<TorchUpdate|'checking'|null>(null);
  const [appReplaced,setAppReplaced]=useState(false);
+ // Windows swaps the binary while DEAS runs: restart only after the user's OK; Later = next launch.
+ const restartPrompt=!!available?.appRestartPrompt;const [restartChoice,setRestartChoice]=useState<''|'now'|'later'>('');
  const [updateBlocked,setUpdateBlocked]=useState(false);
  // A finished update re-checks; a replaced binary still reports its old version until the restart.
  useEffect(()=>{if(!native)return;let alive=true;invoke<NonNullable<typeof available>>('native_update_check').then(value=>{if(alive)setAvailable(appReplaced?{...value,app:null}:value);},()=>{});return()=>{alive=false;};},[native,updates]);
@@ -172,6 +177,12 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  const planError=inBackend&&review&&!nativePlan&&!running&&!!technicalError;
  const connect=(baseUrl:string)=>{setView('studio');onConnectExisting(baseUrl,true);};
  const studioVisited=useRef(false);if(view==='studio')studioVisited.current=true;
+ // Once opened, the Library stays mounted (hidden): the catalog view and a running
+ // background download queue survive workspace tab switches; the tab shows live progress.
+ const libraryVisited=useRef(false);if(view==='downloads')libraryVisited.current=true;
+ const [downloadActivity,setDownloadActivity]=useState<DownloadStatus|null>(null);
+ const downloadQueuePending=(downloadActivity?.jobs??[]).filter(j=>j.state!=='succeeded'&&j.state!=='failed'&&j.state!=='cancelled');
+ const downloadProgress=percentOf(downloadActivity?.bytesPlaced??downloadActivity?.bytesDownloaded??0,downloadActivity?.totalBytes??0);
  // One read-only defaults request per mounted setup, also reused by StrictMode effect replay.
  useEffect(()=>{
   if(!native||!state.opened)return;
@@ -336,12 +347,15 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   invoke<TorchUpdate>('native_torch_update_check').then(v=>{if(alive)setTorchUpdate(v);},e=>{if(alive)setTorchUpdate({from:[],to:null,blocked:String(e)});});
   return()=>{alive=false;};
  },[confirmUpgrade,native,installed]);
+ const manualNotice=(tag:string)=><div className="aio-help" role="status" data-app-manual><p>{t('setup.appManualUpdate',{tag})}</p><button type="button" data-open-releases onClick={()=>void invoke('native_open_releases').catch(e=>setTechnicalError(String(e)))}>{t('setup.openReleases')}</button></div>;
  const update=async(reinstall:boolean,scope:UpdateScope='all')=>{
   setConfirmReinstall(false);setConfirmUpgrade(false);
   if(!native||operationLock.current||busy||running)return;
   operationLock.current=true;setBusy(true);setTechnicalError('');setUpdateBlocked(reinstall||(installed&&scope!=='app'));
   try{
-   if(!reinstall&&(scope==='all'||scope==='app')){const replaced=await invoke<boolean>('native_app_update',{confirmed:true});if(replaced){setAppReplaced(true);setAvailable(old=>old?{...old,app:null}:old);}}
+   setManualAppTag('');
+   if(!reinstall&&(scope==='all'||scope==='app')&&manualApp)setManualAppTag(available?.app??'');
+   else if(!reinstall&&(scope==='all'||scope==='app')){const replaced=await invoke<boolean>('native_app_update',{confirmed:true}).catch(e=>{if(available?.app)setManualAppTag(available.app);throw e;});if(replaced){setAppReplaced(true);setAvailable(old=>old?{...old,app:null}:old);}}
    if(reinstall||(installed&&scope!=='app')){const next=await invoke<NativeInstallStatus>('native_install_update',{reinstall,confirmed:true,...(scope==='torch'?{scope:'torch'}:{})});updating.current=true;setStatus(next);}
   }
   catch(e){setTechnicalError(String(e));}
@@ -349,7 +363,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  };
  useEffect(()=>{if(updating.current&&status&&status.state!=='running'){updating.current=false;setUpdateBlocked(status.state!=='succeeded');setUpdates(n=>n+1);}},[status,appReplaced]);
  useEffect(()=>{
-  if(!appReplaced||busy||running||updateBlocked)return;
+  if(!appReplaced||busy||running||updateBlocked||(restartPrompt&&restartChoice!=='now'))return;
   let active=true,inflight=false,requested=false;
   const restart=async()=>{
    if(inflight||requested||!window.dispatchEvent(new Event('deas:before-update-restart',{cancelable:true})))return;
@@ -365,7 +379,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   };
   void restart();const timer=window.setInterval(()=>void restart(),1000);
   return()=>{active=false;window.clearInterval(timer);};
- },[appReplaced,busy,running,updateBlocked]);
+ },[appReplaced,busy,running,updateBlocked,restartPrompt,restartChoice]);
  const cancel=async()=>{
   if(!native||!running||busy)return;setBusy(true);
   try{await invoke('native_install_cancel');setStatus(await invoke<NativeInstallStatus>('native_install_status'));}
@@ -374,7 +388,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  return <section className={`aio-setup${beginner?' is-beginner':''}${view==='comfy'?' is-comfy':''}${inBackend?' is-backend':''}`} aria-label={t('setup.region')} data-workspace-view={view}>
   <div className="aio-topbar">{beginner?<div className="aio-tabs" role="tablist" aria-label={t('beginner.navigation')}>{(['generate','models','collection'] as const).map(id=><button type="button" role="tab" key={id} className="aio-tab" disabled={folderPickerBusy} data-beginner-tab={id} aria-selected={view==='studio'&&beginnerPage===id} onClick={()=>{onStudioTab?.('generate');onBeginnerPage?.(id);setView('studio');}}>{t(`beginner.${id}`)}</button>)}</div>:<><div className="aio-tabs" role="tablist" aria-label={t('setup.decisions')}>
    <button type="button" role="tab" data-node="studio" className="aio-tab" disabled={folderPickerBusy} data-studio-tab="generate" aria-selected={view==='studio'&&studioTab==='generate'} onClick={()=>{onStudioTab?.('generate');setView('studio');}}>{t('setup.tab.studio')}</button>
-   <button type="button" role="tab" data-node="optional-downloads" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='downloads'} onClick={()=>setView('downloads')}>{t('downloads.title')}</button>
+   <button type="button" role="tab" data-node="optional-downloads" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='downloads'} onClick={()=>setView('downloads')}>{t('downloads.title')}{downloadActivity?.state==='running'&&<span data-download-progress aria-hidden="true"> · {downloadProgress??0}%</span>}{downloadActivity?.state!=='running'&&downloadQueuePending.length>0&&<span data-download-queued aria-hidden="true"> · {downloadQueuePending.length}</span>}</button>
    <button type="button" role="tab" data-studio-tab="forge" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='forge'} onClick={()=>{onStudioTab?.('forge');setView('studio');window.dispatchEvent(new Event('deas:forge-open'));}}>{t('studio.tab.forge')}</button>
    <button type="button" role="tab" data-studio-tab="chat" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='chat'} onClick={()=>{onStudioTab?.('chat');setView('studio');window.dispatchEvent(new Event('deas:forge-open'));}}>{t('studio.tab.chat')}</button>
    <button type="button" role="tab" data-studio-tab="analysis" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='analysis'} onClick={()=>{onStudioTab?.('analysis');setView('studio');}}>{t('studio.tab.analysis')}</button>
@@ -407,10 +421,12 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   {inBackend&&<LanguageSetting/>}
   {inBackend&&!installed&&repairTarget?.repair&&<section className="aio-detail aio-repair" aria-labelledby="env-repair-title" data-env-repair><h3 id="env-repair-title">{t('setup.repair.title')}</h3><p>{t('setup.repair.help')}</p><p className="aio-help" style={{overflowWrap:'anywhere'}}><code>{repairTarget.request.storagePath}</code></p><details><summary>{t('setup.repair.details')}</summary><p className="aio-help">{repairTarget.repair.reason}</p></details><button type="button" className="aio-confirm-button" data-env-repair-start title={t('setup.repair.actionHint')} disabled={!native||running||busy} onClick={()=>setConfirmRepair(true)}>{t('setup.repair.action')}</button></section>}
   {inBackend&&!installed&&<button type="button" data-upgrade disabled={!native||running||busy} onClick={()=>setConfirmUpgrade(true)}>{t('setup.upgrade')}</button>}
-  {appReplaced&&<p role="status">{t('setup.updateRestart')}</p>}
+  {appReplaced&&<p role="status">{t(restartPrompt&&restartChoice!=='now'?(restartChoice==='later'?'setup.updateInstalledLater':'setup.updateInstalledPending'):'setup.updateRestart')}</p>}
+  {appReplaced&&restartPrompt&&!restartChoice&&!busy&&!running&&!updateBlocked&&<div className="download-dialog" role="alertdialog" aria-modal="true" aria-labelledby="restart-title" onKeyDown={e=>{if(e.key==='Escape')setRestartChoice('later');}}><div className="download-dialog-card"><h3 id="restart-title">{t('setup.restartTitle')}</h3><p>{t('setup.restartText')}</p><div className="aio-actions"><button type="button" autoFocus onClick={()=>setRestartChoice('later')}>{t('setup.restartLater')}</button><button type="button" data-restart-now onClick={()=>setRestartChoice('now')}>{t('setup.restartNow')}</button></div></div></div>}
+  {manualAppTag&&!confirmUpgrade&&manualNotice(manualAppTag)}
   {inBackend&&<>{!installed&&<section className="aio-detail"><button type="button" className="download-switch backend-autostart" role="switch" aria-label={t('setup.backendAutostart')} aria-checked={autoStart} onClick={()=>{setResumeAfterUpdate('');setAutoStart(v=>!v);}}><span>{t('setup.backendAutostart')}</span><span className="download-switch-knob" aria-hidden="true"/><span>{t(autoStart?'setup.autostartOn':'setup.autostartOff')}</span></button></section>}{installedRoot&&<FoldersPanel root={installedRoot} disabled={running||busy||folderPickerBusy} onChange={setFolders} onRestart={()=>setRestartSignal(n=>n+1)}/>}</>}
   <div hidden={!inBackend}><BackendPanels llmSetupRequest={llmSetupRequest} panelRequest={searchPanel} root={installedRoot} modelsDir={folders.models} onRestart={()=>setRestartSignal(n=>n+1)} onAuthChange={()=>{setConfigured([]);setVerified([]);setAuthRevision(n=>n+1);}}/></div>
-  <DownloadWorkspace view={view==='downloads'?'downloads':null} authRevision={authRevision} installTarget={installedRoot||(plan?.route==='managed'?plan.storagePath:undefined)} modelsDir={installed?folders.models:folderDraft.models}/>
+  {libraryVisited.current&&<DownloadWorkspace view={view==='downloads'?'downloads':null} authRevision={authRevision} installTarget={installedRoot||(plan?.route==='managed'?plan.storagePath:undefined)} modelsDir={installed?folders.models:folderDraft.models} onStatus={setDownloadActivity}/>}
   {view!=='comfy'&&<>{error&&<p className="aio-error" role="alert">{t(error)}</p>}{technicalError&&!planError&&<p className="aio-error" role="alert">{t('setup.technicalError')}: {technicalError}</p>}</>}
   </div>
   {/* Kept mounted (hidden) after success so backend polling and the Studio handoff continue on other tabs. */}
@@ -462,9 +478,10 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   </div>
   {confirmRepair&&repairTarget?.repair&&<div className="download-dialog" role="alertdialog" aria-modal="true" aria-labelledby="repair-confirm-title" onKeyDown={e=>{if(e.key==='Escape')setConfirmRepair(false);}}><div className="download-dialog-card"><h3 id="repair-confirm-title">{t('setup.repair.confirmTitle')}</h3><p>{t('setup.repair.confirmText')}</p><p><code>{repairTarget.request.storagePath}</code></p><div className="aio-actions"><button type="button" autoFocus onClick={()=>setConfirmRepair(false)}>{t('setup.reinstallCancel')}</button><button type="button" data-env-repair-confirm onClick={()=>void repair()}>{t('setup.repair.confirm')}</button></div></div></div>}
   {confirmUpgrade&&<div className="download-dialog" role="alertdialog" aria-modal="true" aria-labelledby="upgrade-title" onKeyDown={e=>{if(e.key==='Escape')setConfirmUpgrade(false);}}><div className="download-dialog-card"><h3 id="upgrade-title">{t('setup.updateTitle')}</h3>
-   {!installed?<p>{t('setup.updateAppWarning')}</p>:<fieldset className="aio-update-scopes"><legend>{t('setup.update.choose')}</legend>
-    {updateScopes.map(scope=>{const torch=scope==='torch'?torchUpdate:null;const blocked=scope==='torch'&&(torch==='checking'||!torch?.to||!!torch.blocked);
-     const hint=scope!=='torch'?t(`setup.update.${scope}Hint`):torch==='checking'||!torch?t('setup.update.torchChecking'):torch.blocked?torch.blocked:torch.to?`${torch.from.join(', ')} → ${torch.to.join(', ')}. ${t('setup.update.torchHint')}`:t('setup.update.torchCurrent',{from:torch.from.join(', ')});
+   {manualApp&&available?.app&&manualNotice(available.app)}
+   {!installed?<p>{t(manualApp?'setup.update.appManualHint':'setup.updateAppWarning')}</p>:<fieldset className="aio-update-scopes"><legend>{t('setup.update.choose')}</legend>
+    {updateScopes.map(scope=>{const torch=scope==='torch'?torchUpdate:null;const blocked=(scope==='app'&&manualApp)||(scope==='torch'&&(torch==='checking'||!torch?.to||!!torch.blocked));
+     const hint=scope!=='torch'?t(`setup.update.${scope}${manualApp&&scope!=='comfy'?'Manual':''}Hint`):torch==='checking'||!torch?t('setup.update.torchChecking'):torch.blocked?torch.blocked:torch.to?`${torch.from.join(', ')} → ${torch.to.join(', ')}. ${t('setup.update.torchHint')}`:t('setup.update.torchCurrent',{from:torch.from.join(', ')});
      return <label key={scope} className="aio-update-scope"><input type="radio" name="update-scope" value={scope} checked={upgradeScope===scope} disabled={blocked} onChange={()=>setUpgradeScope(scope)}/><span><strong>{t(`setup.update.${scope}`)}</strong><small>{hint}</small></span></label>;})}
    </fieldset>}
    <div className="aio-actions"><button type="button" autoFocus onClick={()=>setConfirmUpgrade(false)}>{t('setup.reinstallCancel')}</button><button type="button" disabled={!native||running||busy||(upgradeScope==='torch'&&(torchUpdate==='checking'||!torchUpdate?.to||!!torchUpdate.blocked))} onClick={()=>void update(false,installed?upgradeScope:'all')}>{t('setup.updateConfirm')}</button></div></div></div>}

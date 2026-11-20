@@ -14,6 +14,11 @@ from playwright.sync_api import expect, sync_playwright
 
 
 def set_locale(page, locale, back):
+    try:
+        from deas_locale import dismiss_experience
+        dismiss_experience(page)
+    except Exception:
+        pass
     page.locator('[data-node="settings"]').click()
     page.locator('#language-select').select_option(locale)
     page.locator(back).click()

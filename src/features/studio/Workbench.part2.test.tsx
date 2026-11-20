@@ -123,7 +123,7 @@ test.each(['cancel','download'] as const)('missing latent model opens the actual
   if(c==='native_download_browse')return {resources:[file],warnings:[],nextCursor:null};
   if(c==='native_files_present')return [false];
   if(c==='native_download_plan')return {id:'consented',target:'/configured/latent_upscale_models',resources:[file],canExecute:true,warnings:[],totalKnownBytes:1,unknownSizeCount:0};
-  if(c==='native_download_start'){started=true;return {state:'running',completed:0,total:1,bytesDownloaded:0,error:null};}
+  if(c==='native_download_start_queue'){started=true;return {state:'running',completed:0,total:1,bytesDownloaded:0,error:null};}
   if(c==='native_download_status'){if(!started)return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};installed=true;return {state:'succeeded',completed:1,total:1,bytesDownloaded:1,error:null};}
   return {path:'/input',parent:'/',entries:[],truncated:false};
  });
@@ -982,7 +982,7 @@ test('vision offer card shows the hosting platform and downloads via the Library
   if(c==='native_download_browse')return {resources:[file],warnings:[],nextCursor:null};
   if(c==='native_files_present')return [installed];
   if(c==='native_download_plan')return {id:'cvplan',target:'/configured/clip_vision',resources:[file],canExecute:true,warnings:[],totalKnownBytes:1,unknownSizeCount:0};
-  if(c==='native_download_start'){started=true;return {state:'running',completed:0,total:1,bytesDownloaded:0,error:null};}
+  if(c==='native_download_start_queue'){started=true;return {state:'running',completed:0,total:1,bytesDownloaded:0,error:null};}
   if(c==='native_download_status'){if(!started)return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};installed=true;return {state:'succeeded',completed:1,total:1,bytesDownloaded:1,error:null};}
   return {path:'/input',parent:'/',entries:[],truncated:false};
  });

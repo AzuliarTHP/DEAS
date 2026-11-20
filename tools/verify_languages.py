@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 import sys
 from playwright.sync_api import sync_playwright
-from deas_locale import set_locale
+from deas_locale import set_locale, dismiss_experience
 root=Path(__file__).resolve().parents[1]
 url=sys.argv[1] if len(sys.argv)>1 else 'http://127.0.0.1:1420'
 names={'de':'Deutsch','en':'English','fr':'Français','ja':'日本語','tr':'Türkçe','zh':'中文'}
@@ -22,6 +22,7 @@ with sync_playwright() as p:
   page.goto(url,wait_until='networkidle')
   # No stored choice: the system language (de-DE) is detected and nothing is persisted.
   assert page.locator('html').get_attribute('lang')=='de' and page.evaluate("localStorage.getItem('deas.locale.v1')") is None
+  dismiss_experience(page)  # first-run experience choice; the locale stays unpersisted by this choice
   page.locator('[data-node="settings"]').click()
   select=page.locator('#language-select')
   assert select.locator('option').count()==7 and select.input_value()==''
@@ -36,7 +37,7 @@ with sync_playwright() as p:
    assert page.get_by_label(t['setup.feature.director.label'],exact=True).is_checked()
    page.get_by_role('tab',name=t['downloads.title'],exact=True).click()
    assert page.get_by_role('region',name=t['downloads.title'],exact=True).get_by_text(t['downloads.browser'],exact=True).count()==1
-   assert page.get_by_role('button',name=t['downloads.startAll'].replace('{count}','0'),exact=True).is_disabled()
+   assert page.locator('.download-start-all').count()==0  # browser mode fails closed: the translated native controls never render here (parity is checked by tests/i18n.test.ts)
    assert not page.evaluate('document.documentElement.scrollWidth>innerWidth')
    page.mouse.move(0,0);page.evaluate('document.activeElement?.blur()')
    if width==320 and locale in ('tr','fr','zh','ja'):page.screenshot(path=str(root/'assets'/f'deas-language-{locale}-320.png'),full_page=True)

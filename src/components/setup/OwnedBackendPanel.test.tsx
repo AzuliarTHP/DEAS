@@ -1,6 +1,6 @@
 import { readAuthStatus } from '../../lib/downloads';
 import { StrictMode } from 'react';
-import { fireEvent, render, screen, waitFor, cleanup, act } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, cleanup, act, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { I18nProvider } from '../../i18n/I18nProvider';
@@ -316,6 +316,56 @@ describe('AiO integration — mock installation/IPC fixtures only',()=>{
   torch={from:['torch==2.14.1'],to:null,blocked:null};
   expect((await choose('PyTorch only')).closest('label')!.textContent).toContain('Already on the newest');
   expect(updates()).toEqual([]);
+ });
+ it('skips the app step where self-update is unsupported and still updates the backend (issue #43)',async()=>{
+  await installFixture('succeeded',()=>({app:'v9.9.9',comfy:true,nodepack:false,appSelfUpdate:false}));
+  const base=vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async(command,args)=>command==='native_app_update'?Promise.reject(new Error('must not run')):command==='native_open_releases'?undefined:command==='native_torch_update_check'?{from:[],to:null,blocked:null}:command==='native_install_update'?{state:'succeeded',stepId:null,logs:[],error:null}:base(command,args));
+  fireEvent.click(screen.getByRole('tab',{name:'Backend'}));
+  await waitFor(()=>expect((screen.getByRole('button',{name:'Upgrade'}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Upgrade'}));
+  const app=await screen.findByRole('radio',{name:/^DEAS app only/}) as HTMLInputElement;
+  expect(app.disabled).toBe(true);expect(app.closest('label')!.textContent).toContain('Self-update is not supported');
+  expect(screen.getByRole('alertdialog').textContent).toContain('DEAS v9.9.9 is available');
+  fireEvent.click(screen.getByRole('button',{name:'Update now'}));
+  await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_install_update',{reinstall:false,confirmed:true}));
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_app_update')).toBe(false);
+  expect(screen.queryByRole('alert')).toBeNull();
+  fireEvent.click(await screen.findByRole('button',{name:'Open releases page'}));
+  await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_open_releases'));
+ });
+ it.each(['later','now'] as const)('asks before restarting into a binary swapped on Windows (%s)',async choice=>{
+  await installFixture('succeeded',()=>({app:'v9.9.9',comfy:true,nodepack:false,appSelfUpdate:true,appRestartPrompt:true}));
+  const base=vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async(command,args)=>command==='native_app_update'?true:command==='native_app_restart'?true:command==='native_backend_status'?{state:'stopped'}:command==='native_torch_update_check'?{from:[],to:null,blocked:null}:command==='native_install_update'?{state:'succeeded',stepId:null,logs:[],error:null}:base(command,args));
+  fireEvent.click(screen.getByRole('tab',{name:'Backend'}));
+  await waitFor(()=>expect((screen.getByRole('button',{name:'Upgrade'}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Upgrade'}));
+  expect((await screen.findByRole('radio',{name:/^DEAS app only/}) as HTMLInputElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button',{name:'Update now'}));
+  await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_install_update',{reinstall:false,confirmed:true}));
+  const prompt=await screen.findByRole('alertdialog',{name:'Restart DEAS now?'});
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_app_restart')).toBe(false);
+  fireEvent.click(within(prompt).getByRole('button',{name:choice==='now'?'Restart now':'Later'}));
+  if(choice==='now')await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_app_restart'));
+  else{
+   expect(screen.getByText('DEAS update installed. The new version starts the next time you open DEAS.')).toBeTruthy();
+   await new Promise(r=>setTimeout(r,1200));
+   expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_app_restart')).toBe(false);
+  }
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+ });
+ it('offers the releases page when the app step fails',async()=>{
+  await installFixture('succeeded',()=>({app:'v9.9.9',comfy:false,nodepack:false,appSelfUpdate:true,appRestartPrompt:true}));
+  const base=vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async(command,args)=>{if(command==='native_app_update')throw new Error('Windows Controlled Folder Access (ransomware protection) blocks DEAS');return command==='native_torch_update_check'?{from:[],to:null,blocked:null}:base(command,args);});
+  fireEvent.click(screen.getByRole('tab',{name:'Backend'}));
+  await waitFor(()=>expect((screen.getByRole('button',{name:'Upgrade'}) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button',{name:'Upgrade'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Update now'}));
+  expect((await screen.findByRole('alert')).textContent).toContain('Controlled Folder Access');
+  expect(screen.getByRole('button',{name:'Open releases page'})).toBeTruthy();
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_install_update')).toBe(false);
  });
  it.each([true,'download failed'] as const)('checks the app binary before touching the backend (%s)',async result=>{
   await installFixture('succeeded');

@@ -36,6 +36,10 @@ pub struct Updates {
     app: Option<String>,
     comfy: bool,
     nodepack: bool,
+    /// False on Windows, AppImage and other platforms: a newer release is a manual download.
+    app_self_update: bool,
+    /// Windows: ask before restarting into a replaced binary instead of restarting automatically.
+    app_restart_prompt: bool,
 }
 
 async fn git(git: &Path, dir: &Path, args: &[&str]) -> Option<String> {
@@ -109,6 +113,8 @@ pub async fn native_update_check(
 ) -> Result<Updates, String> {
     let mut updates = Updates {
         app: newer_release(&auth).await.ok().flatten(),
+        app_self_update: crate::app_update::self_update_supported(),
+        app_restart_prompt: crate::app_update::restart_prompt(),
         ..Updates::default()
     };
     if let (Some(plan), Some(exe)) = (engine.approved_plan(), crate::install::git_path()) {

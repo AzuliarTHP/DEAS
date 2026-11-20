@@ -139,6 +139,7 @@ def verify(browser, url, shots):
         page.locator('.library-card-main').first.click()
         expect(page.get_by_role('dialog',name='Model details',exact=True)).to_be_visible()
         actions=page.locator('.library-detail-actions button')
+        page.locator('.library-detail-actions').scroll_into_view_if_needed()  # the click must not scroll the dialog (fixture stability, 1600x1000)
         action_boxes=[button.bounding_box() for button in actions.all()]
         page.get_by_role('button',name='Add to Studio LoRAs',exact=True).click()
         expect(page.get_by_role('dialog').get_by_role('status')).to_contain_text('LoRA added')

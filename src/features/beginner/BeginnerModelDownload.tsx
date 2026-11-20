@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {invoke} from '@tauri-apps/api/core';
 import {useI18n} from '../../i18n/I18nProvider';
-import {browseDownloads,cancelDownloads,comfyFolder,planDownloads,readAuthStatus,readDownloadStatus,startDownloads,type DownloadPlan,type DownloadResource,type DownloadStatus} from '../../lib/downloads';
+import {browseDownloads,cancelDownloads,comfyFolder,formatBytes,percentOf,planDownloads,readAuthStatus,readDownloadStatus,startDownloads,type DownloadPlan,type DownloadResource,type DownloadStatus} from '../../lib/downloads';
 import type {ModelGuide} from './modelGuides';
 
 /** Beginner-only presentation of the existing native browse / plan / confirm flow.
@@ -38,7 +38,7 @@ export function BeginnerModelDownload({guide,root,modelsDir,onStatus}:{guide:Pic
   <button type="button" disabled={busy||running||!resource||(!root&&!modelsDir)} onClick={()=>void request(()=>planDownloads({providerId:'huggingface',resources:[resource!],parentPath:comfyFolder(root??'',guide.target,modelsDir),folderName:'',authenticated}),setPlan)}>{t('beginner.downloadReview')}</button>
   {plan&&<div className="beginner-download-plan"><strong>{t('beginner.downloadPlanTitle')}</strong><p>{plan.target}</p><p>{plan.totalKnownBytes?(plan.totalKnownBytes/1073741824).toFixed(2)+' GiB':t('beginner.downloadSizeUnknown')}</p>{plan.warnings.map((warning,i)=><p key={i}>{warning}</p>)}<button type="button" className="aio-confirm-button" disabled={busy||running||!plan.canExecute||status?.state==='succeeded'} onClick={()=>void request(()=>startDownloads(plan.id),update)}>{t('beginner.downloadConfirm')}</button></div>}
   {busy&&<p role="status">{t('beginner.loading')}</p>}
-  {status&&<p role="status">{status.state}{status.total?' · '+status.completed+' / '+status.total:''}</p>}
+  {status&&<p role="status" data-beginner-download-status>{status.state}{status.total?' · '+status.completed+' / '+status.total:''}{status.totalBytes?` · ${formatBytes(status.bytesPlaced??status.bytesDownloaded)} / ${formatBytes(status.totalBytes)}`:''}{(()=>{const pct=percentOf(status.bytesPlaced??status.bytesDownloaded,status.totalBytes??0);return pct===null?'':` · ${pct}%`;})()}</p>}
   {running&&<button type="button" disabled={busy} onClick={()=>void request(cancelDownloads,update)}>{t('beginner.downloadCancel')}</button>}
   {error&&<p role="alert">{t('beginner.downloadError')}</p>}
  </section>;

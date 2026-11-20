@@ -51,6 +51,7 @@ const layoutInvoke=window.__TAURI_INTERNALS__.invoke;
 window.__TAURI_INTERNALS__.invoke=async(c,a)=>{
  const read={
   native_files_present:[true],native_install_open:{state:'succeeded',logs:[],error:null},
+  native_download_status:{state:'idle',completed:0,total:0,bytesDownloaded:0,error:null,jobs:[]},
   native_settings_read:{},native_models_scan:[],
   native_theme_packs:{directory:'/fixture/env/themes',packs:[],warnings:[]},
   native_llm_read:{provider:'openai',baseUrl:'http://127.0.0.1:49312'},native_llm_models:{models:[{id:'openai:layout-fixture',provider:'openai',name:'Layout fixture'}],warnings:[]},

@@ -5,7 +5,7 @@ import { version } from "./package.json";
 export default defineConfig({
   plugins: [react()],
   define: { __APP_VERSION__: JSON.stringify(version) },
-  server: { port: 1420, strictPort: true, host: "127.0.0.1" },
+  server: { port: 1420, strictPort: true, host: "127.0.0.1", watch: { ignored: ["**/src-tauri/**", "**/.target/**"] } },
   clearScreen: false,
   test: {
     environment: "jsdom",

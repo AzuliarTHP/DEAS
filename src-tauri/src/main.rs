@@ -16,8 +16,12 @@ fn main() {
             // The shared Engine Arc is the only authority admissions may consult for owned
             // backends and environments.
             deas::bind_resource_authority(app.state::<deas::install::Engine>().inner().clone());
+            deas::cleanup_previous_update();
             match app.path().app_data_dir() {
-                Ok(path) => app.state::<deas::jobs::Jobs>().initialize_history(&path),
+                Ok(path) => {
+                    app.state::<deas::jobs::Jobs>().initialize_history(&path);
+                    app.state::<deas::downloads::DownloadEngine>().attach(&path);
+                }
                 Err(_) => app
                     .state::<deas::jobs::Jobs>()
                     .initialize_history_unavailable(),
@@ -105,6 +109,9 @@ fn main() {
             deas::native_download_browse,
             deas::native_download_plan,
             deas::native_download_start,
+            deas::native_download_start_queue,
+            deas::native_download_resume,
+            deas::native_download_clear_queue,
             deas::native_download_status,
             deas::native_download_cancel,
             deas::native_models_scan,

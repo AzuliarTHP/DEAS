@@ -1,25 +1,57 @@
 //! Explicit application-only update. No environment, backend or process lifecycle changes.
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 use reqwest::Url;
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 use serde::Deserialize;
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 use std::time::Duration;
 use tauri::Manager;
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 const API: &str = "https://api.github.com/repos/darksidewalker/DEAS/releases/latest";
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 const MAX_BINARY: u64 = 256 * 1024 * 1024;
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 const MAX_METADATA: u64 = 1024 * 1024;
 static UPDATING: AtomicBool = AtomicBool::new(false);
 static RESTART_READY: AtomicBool = AtomicBool::new(false);
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 #[derive(Deserialize)]
 struct Release {
     tag_name: String,
@@ -27,7 +59,11 @@ struct Release {
     prerelease: bool,
     assets: Vec<Asset>,
 }
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 #[derive(Deserialize)]
 struct Asset {
     id: u64,
@@ -56,8 +92,55 @@ pub(crate) fn version(tag: &str) -> Option<(u64, u64, u64)> {
     ))
 }
 
+/// The one raw release executable a platform may replace itself with.
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
+#[derive(Clone, Copy)]
+struct Platform {
+    asset: &'static str,
+    label: &'static str,
+}
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Format {
+    #[cfg_attr(all(windows, not(test)), allow(dead_code))]
+    Elf,
+    #[cfg_attr(not(any(windows, test)), allow(dead_code))]
+    Pe,
+}
+#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+const LINUX: Platform = Platform {
+    asset: "deas-linux-amd64",
+    label: "Linux x86_64",
+};
+#[cfg(any(test, all(windows, target_arch = "x86_64")))]
+const WINDOWS: Platform = Platform {
+    asset: "deas.exe",
+    label: "Windows x86_64",
+};
+
 #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 fn select<'a>(release: &'a Release, current: &str) -> Result<Option<&'a Asset>, String> {
+    select_for(release, current, LINUX)
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
+fn select_for<'a>(
+    release: &'a Release,
+    current: &str,
+    platform: Platform,
+) -> Result<Option<&'a Asset>, String> {
     let latest = version(&release.tag_name).ok_or("Invalid release version")?;
     if release.draft || release.prerelease {
         return Err("Expected a published stable release".into());
@@ -66,19 +149,19 @@ fn select<'a>(release: &'a Release, current: &str) -> Result<Option<&'a Asset>, 
         return Ok(None);
     }
     // Only the published raw executable is supported: never unpack release archives/installers.
-    let mut matching = release
-        .assets
-        .iter()
-        .filter(|a| a.name == "deas-linux-amd64");
-    let asset = matching
-        .next()
-        .ok_or("Latest release has no Linux x86_64 raw executable; install manually")?;
+    let mut matching = release.assets.iter().filter(|a| a.name == platform.asset);
+    let asset = matching.next().ok_or_else(|| {
+        format!(
+            "Latest release has no {} raw executable; install manually",
+            platform.label
+        )
+    })?;
     if matching.next().is_some() || asset.size < 64 || asset.size > MAX_BINARY {
         return Err("Invalid or ambiguous release asset size/selection".into());
     }
     let expected = format!(
-        "https://github.com/darksidewalker/DEAS/releases/download/{}/deas-linux-amd64",
-        release.tag_name
+        "https://github.com/darksidewalker/DEAS/releases/download/{}/{}",
+        release.tag_name, platform.asset
     );
     if asset.browser_download_url != expected
         || asset.id == 0
@@ -107,7 +190,11 @@ fn log(level: &str, message: &str) {
     eprintln!("[DEAS] {text}");
 }
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 fn allowed_url(url: &Url) -> bool {
     url.scheme() == "https"
         && url.username().is_empty()
@@ -124,7 +211,11 @@ fn allowed_url(url: &Url) -> bool {
         )
 }
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .no_proxy()
@@ -136,7 +227,11 @@ fn client() -> Result<reqwest::Client, String> {
         .map_err(|_| "Cannot create update client".into())
 }
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 async fn response(
     client: &reqwest::Client,
     url: &str,
@@ -197,7 +292,11 @@ async fn response(
     Err("Excessive update redirects".into())
 }
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
 async fn latest(
     client: &reqwest::Client,
     auth: &crate::auth::AuthState,
@@ -228,8 +327,22 @@ async fn latest(
     serde_json::from_slice(&bytes).map_err(|_| "Invalid release metadata".into())
 }
 
-#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
+#[cfg(test)]
 fn validate_binary(file: &mut std::fs::File, size: u64, asset: &Asset) -> Result<(), String> {
+    validate_as(file, size, asset, Format::Elf)
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
+fn validate_as(
+    file: &mut std::fs::File,
+    size: u64,
+    asset: &Asset,
+    format: Format,
+) -> Result<(), String> {
     use std::io::{Read, Seek, SeekFrom};
     if size != asset.size {
         return Err("Update binary size mismatch".into());
@@ -258,6 +371,9 @@ fn validate_binary(file: &mut std::fs::File, size: u64, asset: &Asset) -> Result
     {
         return Err("Update binary SHA-256 mismatch".into());
     }
+    if format == Format::Pe {
+        return pe_x86_64(file, &header);
+    }
     // ELF64 little-endian x86_64 executable/shared PIE; archives and other architectures fail closed.
     if &header[..7] != b"\x7fELF\x02\x01\x01"
         || !matches!(u16::from_le_bytes([header[16], header[17]]), 2 | 3)
@@ -268,12 +384,60 @@ fn validate_binary(file: &mut std::fs::File, size: u64, asset: &Asset) -> Result
     Ok(())
 }
 
+/// PE32+ x86-64 executable image (not a DLL); installers/archives and other machines fail closed.
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
+fn pe_x86_64(file: &mut std::fs::File, header: &[u8; 64]) -> Result<(), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    const NOT_PE: &str = "Release asset is not a Windows x86-64 executable";
+    if &header[..2] != b"MZ" {
+        return Err(NOT_PE.into());
+    }
+    let offset = u32::from_le_bytes([header[60], header[61], header[62], header[63]]);
+    if !(64..=4096).contains(&offset) {
+        return Err(NOT_PE.into());
+    }
+    // Signature, COFF header (20 bytes) and the optional-header magic.
+    let mut pe = [0u8; 26];
+    file.seek(SeekFrom::Start(offset.into()))
+        .and_then(|_| file.read_exact(&mut pe))
+        .map_err(|_| NOT_PE)?;
+    let characteristics = u16::from_le_bytes([pe[22], pe[23]]);
+    if &pe[..4] != b"PE\0\0"
+        || u16::from_le_bytes([pe[4], pe[5]]) != 0x8664
+        || characteristics & 0x0002 == 0
+        || characteristics & 0x2000 != 0
+        || u16::from_le_bytes([pe[24], pe[25]]) != 0x20b
+    {
+        return Err(NOT_PE.into());
+    }
+    Ok(())
+}
+
 #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 async fn download(
     client: &reqwest::Client,
     asset: &Asset,
     staged: &mut std::fs::File,
     auth: &crate::auth::AuthState,
+) -> Result<(), String> {
+    download_as(client, asset, staged, auth, Format::Elf).await
+}
+
+#[cfg(any(
+    test,
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(windows, target_arch = "x86_64")
+))]
+async fn download_as(
+    client: &reqwest::Client,
+    asset: &Asset,
+    staged: &mut std::fs::File,
+    auth: &crate::auth::AuthState,
+    format: Format,
 ) -> Result<(), String> {
     use std::io::Write;
     let mut response = response(
@@ -303,7 +467,7 @@ async fn download(
             .write_all(&chunk)
             .map_err(|_| "Cannot write staged update")?;
     }
-    validate_binary(staged, size, asset)
+    validate_as(staged, size, asset, format)
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -478,14 +642,54 @@ async fn run(confirmed: bool, _auth: &crate::auth::AuthState) -> Result<bool, St
             .await
             .map_err(|_| "Application update timed out; original retained".to_string())?
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    {
+        tokio::time::timeout(Duration::from_secs(300), windows::update(_auth))
+            .await
+            .map_err(|_| "Application update timed out; original retained".to_string())?
+    }
+    #[cfg(not(any(
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(windows, target_arch = "x86_64")
+    )))]
     {
         unsupported(crate::repo::newer_release(_auth).await?)
     }
 }
 
+#[cfg(any(test, all(windows, target_arch = "x86_64")))]
+#[path = "app_update_windows.rs"]
+mod windows;
+
+/// Startup: remove the executable a Windows self-update renamed aside. No-op elsewhere.
+pub fn cleanup_previous_update() {
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    windows::cleanup_previous();
+}
+
+/// Whether this build can replace its own executable: the raw Linux x86_64 binary (not an
+/// AppImage) or the Windows x86_64 exe (rename swap). The update dialog skips the app step where
+/// this is false instead of failing "Everything".
+pub(crate) fn self_update_supported() -> bool {
+    cfg!(all(windows, target_arch = "x86_64"))
+        || (cfg!(all(target_os = "linux", target_arch = "x86_64"))
+            && std::env::var_os("APPIMAGE").is_none()
+            && std::env::var_os("APPDIR").is_none())
+}
+
+/// Windows swaps the binary while DEAS runs, so the user picks when to restart (OK / Later).
+pub(crate) fn restart_prompt() -> bool {
+    cfg!(windows)
+}
+
 /// No replacement here, but an up-to-date build must not block ComfyUI/node-pack updates.
-#[cfg(any(test, not(all(target_os = "linux", target_arch = "x86_64"))))]
+#[cfg(any(
+    test,
+    not(any(
+        all(target_os = "linux", target_arch = "x86_64"),
+        all(windows, target_arch = "x86_64")
+    ))
+))]
 fn unsupported(newer: Option<String>) -> Result<bool, String> {
     match newer {
         None => Ok(false),
