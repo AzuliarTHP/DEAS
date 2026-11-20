@@ -727,3 +727,13 @@ it('formats download statistics in human-readable MB/GB and whole percentages',(
  expect(percentOf(1,3)).toBe(33);
  expect(percentOf(5,0)).toBeNull();
 });
+
+it('a wizard search request fills the catalog search and selects Catalog without browsing, searching remotely or downloading',async()=>{
+ const view=render(<I18nProvider><DownloadPanel embedded installTarget="/env"/></I18nProvider>);
+ await screen.findByLabelText('Catalog source');
+ fireEvent.click(within(screen.getByRole('tablist',{name:'Library view'})).getByRole('tab',{name:'Installed'}));
+ view.rerender(<I18nProvider><DownloadPanel embedded installTarget="/env" searchRequest={{query:'Qwen Image 2.1',n:1}}/></I18nProvider>);
+ expect((await screen.findByLabelText('Search catalog & CivitAI') as HTMLInputElement).value).toBe('Qwen Image 2.1');
+ expect(within(screen.getByRole('tablist',{name:'Library view'})).getByRole('tab',{name:'Catalog'}).getAttribute('aria-selected')).toBe('true');
+ expect(vi.mocked(invoke).mock.calls.some(([c])=>['native_download_browse','native_download_plan','native_download_start','native_download_start_queue'].includes(c as string))).toBe(false);
+});

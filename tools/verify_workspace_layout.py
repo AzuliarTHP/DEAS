@@ -35,7 +35,7 @@ def assert_viewport(page, label):
         utility = page.locator('.aio-utility-tabs')
         assert utility.locator('[role="tab"]').evaluate_all('(es)=>es.map(e=>e.dataset.studioTab||e.dataset.node)') == ['monitor','map','settings','logs'], label
         creative = page.locator('.aio-topbar > .aio-tabs').first
-        assert creative.locator('[role="tab"]').evaluate_all('(es)=>es.map(e=>e.dataset.studioTab||e.dataset.node)')[:7] == ['generate','optional-downloads','forge','chat','analysis','tve','comfy'], label
+        assert creative.locator('[role="tab"]').evaluate_all('(es)=>es.map(e=>e.dataset.studioTab||e.dataset.node)')[:8] == ['generate','optional-downloads','forge','chat','analysis','wizards','tve','comfy'], label
         if g['width'] >= 1440:
             left, right = creative.bounding_box(), utility.bounding_box()
             assert left['x']+left['width'] <= right['x']+1, (label,'utility group is not right of creative tabs')

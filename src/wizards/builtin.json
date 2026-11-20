@@ -1,0 +1,51 @@
+[
+  {
+    "id": "replace",
+    "media": "image",
+    "object": true,
+    "fields": [
+      "target",
+      "replacement"
+    ],
+    "strategies": [
+      {
+        "id": "reference",
+        "families": [
+          "qwen-image-2.1",
+          "qwen-image-2.1-turbo"
+        ],
+        "objectFamilies": [
+          "qwen-image-2.1",
+          "qwen-image-2.1-turbo"
+        ],
+        "pipeline": "t2i",
+        "source": "reference",
+        "positive": "Replace {target} with {replacement}. Keep everything else in the picture unchanged.",
+        "objectPositive": "Replace {target} in image 1 with {replacement|the main object} from image 2. Keep everything else in image 1 unchanged and match its lighting and perspective.",
+        "needsMask": false
+      },
+      {
+        "id": "inpaint",
+        "families": [
+          "qwen-image-2.1",
+          "qwen-image-2.1-turbo",
+          "flux2",
+          "z-image",
+          "flux",
+          "sdxl"
+        ],
+        "objectFamilies": [
+          "qwen-image-2.1",
+          "qwen-image-2.1-turbo"
+        ],
+        "pipeline": "i2i",
+        "source": "edit",
+        "edit": "inpaint",
+        "positive": "{replacement}",
+        "objectPositive": "Replace the masked area of image 1 ({target|the marked part}) with {replacement|the main object} from image 2. Keep everything outside the mask unchanged and match the lighting and perspective of image 1.",
+        "needsMask": true
+      }
+    ],
+    "library": "Qwen Image 2.1"
+  }
+]

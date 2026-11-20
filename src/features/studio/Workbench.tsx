@@ -96,6 +96,7 @@ import { ForgeButton, HammerIcon } from '../forge/ForgeButton';
 import { applyRefPrefill, nextShot, promptStructure, refPrefill } from '../../lib/h3Prompt';
 import { dialectOf, labelCharacters, nativeTarget } from '../../lib/forge';
 import { chatRenderSize, type ChatRenderOutcome, type ChatRenderRequest, type ChatStudio } from '../../lib/chat';
+import type { WizardHandoff } from '../../lib/wizards';
 import { PresetPanel } from '../presets/PresetPanel';
 import { WildcardPanel } from '../wildcards/WildcardPanel';
 import { defaultWildcard, isWildcardRules, wildcardNode, parseWildcardLibrary, flattenCategories, mergeVariableLibrary, parsePins, parseVariableLibrary, prunePins, scanVariables, variablePick, type WildcardLibrary } from '../../lib/wildcard';
@@ -170,13 +171,13 @@ const isMusicGeneration=inBounds<MusicGenerationSettings>(musicBounds.generation
 const isMusicDuration=(v:unknown):v is {t2m:number;cover:number}=>!!v&&typeof v==='object'&&(['t2m','cover'] as const).every(k=>{const n=(v as Record<string,unknown>)[k];return typeof n==='number'&&n>=musicMaxDuration.step&&n<=musicMaxDuration.limit;});
 /** Edits of the shown image: plain image-to-image (`resample`) or inpaint; refine/upscale live in the Post-Processing tab. */
 const editModes=['resample','inpaint'] as const;
-export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void }
+export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void; /** A Dark Wizards draft to prepare here (never run); `n` changes per hand-over. */ wizard?:WizardHandoff; onWizardApplied?:(n:number,error?:string)=>void }
 /** Text-to-image workbench: settings left, preview over the prompts, queue right, bottom dock with Media · Models · LoRAs tabs. */
 export function Workbench(props:WorkbenchProps){
  const [project,setProject]=useState<ProjectSnapshot|null>(null);
  return <PreferencePersistenceContext.Provider value={!project&&!props.beginner}><WorkbenchContent {...props} project={project} onProject={setProject}/></PreferencePersistenceContext.Provider>;
 }
-function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage,endpoint,ownedBackend=false,roots={},root,incoming,onCanvasContext,chatRender,onChatRender,onChatStudio,onAnalyze,onFrameActions,onOpenVideoPost,forgeHost,forgeActive=true,onOpenPromptForge,onH3ForgeAvailable,planVisible=false,project,onProject}:WorkbenchProps&{project:ProjectSnapshot|null;onProject:(project:ProjectSnapshot|null)=>void}){
+function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage,endpoint,ownedBackend=false,roots={},root,incoming,onCanvasContext,chatRender,onChatRender,onChatStudio,onAnalyze,onFrameActions,onWizardApplied,wizard,onOpenVideoPost,forgeHost,forgeActive=true,onOpenPromptForge,onH3ForgeAvailable,planVisible=false,project,onProject}:WorkbenchProps&{project:ProjectSnapshot|null;onProject:(project:ProjectSnapshot|null)=>void}){
  const {t,locale}=useI18n();const native=isTauri();const linuxVideo=nativeVideo();const modelsDir=roots.models;const outputDir=roots.output;const extraModelsKey=(roots.extraModels??[]).join('\n');
  const [media,setMedia]=useState<MediaItem|null>(null);
  const [browsed,setBrowsed]=useState<MediaItem|null>(null);
@@ -1796,6 +1797,25 @@ const promptTools=forgeContext&&<>
   setBrowsed(null);setSelectedJob('');
  };
  const pickModel=(m:LocalModel)=>switchDraft(pipeline,m,true,false,true);
+ // Dark Wizards: prepare an ordinary draft (model, picture, prompt, size) and leave Run to the user. Applied once per hand-over, after models are listed.
+ const wizardApplied=useRef(0);
+ useEffect(()=>{
+  if(!wizard||wizardApplied.current===wizard.n||models===null)return;
+  wizardApplied.current=wizard.n;
+  const fail=(key:string)=>{setError(t(key));onWizardApplied?.(wizard.n,t(key));};
+  if(beginner){fail('wizards.handoff.beginner');return;}
+  const m=allModels.find(x=>x.path===wizard.model.path)??allModels.find(x=>x.name===wizard.model.name);
+  if(!m||blocked(m,wizard.pipeline)){fail('wizards.handoff.model');return;}
+  switchDraft(wizard.pipeline,m,true);
+  setHistoryDraft(null);setLoras([]);
+  sourceEpoch.current++;setEditorSnapshot(undefined);setLayers([]);setMasked(false);setMediaSize(null);setBrowsed(null);setSelectedJob('');
+  const picture:MediaItem={name:wizard.picture.name,path:wizard.picture.path,src:wizard.picture.src,media:'image'};
+  const references=(wizard.references??[]).map(r=>({item:{name:r.name,path:r.path,src:r.src,media:'image' as const},strength:0.6}));
+  if(wizard.source==='reference'){setMedia(null);setImageRefs([{item:picture,strength:0.6},...references]);}
+  else {setImageRefs(references);setMedia(picture);if(wizard.edit)setEdit(wizard.edit);}
+  if(wizard.size){setWidth(wizard.size.width);setHeight(wizard.size.height);setResolution('fixed');}
+  setPositive(wizard.positive);setError('');onWizardApplied?.(wizard.n);
+ },[wizard?.n,models===null]); // eslint-disable-line react-hooks/exhaustive-deps
  const beginnerTarget=(m:LocalModel)=>familyOf(m)?.defaults||m.family==='yue2'||aceMusicProfile(m.family)?pipelines.find(p=>!blocked(m,p)):undefined;
  const beginnerUse=(m:LocalModel)=>{const target=beginnerTarget(m);if(!target)return;
   const next=!blocked(m,pipeline)?pipeline:target;

@@ -1,0 +1,209 @@
+import { useEffect, useRef, useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { useI18n } from '../../i18n/I18nProvider';
+import { pickMedia } from '../../lib/analysis';
+import { describeMedia, dropCssPoint, itemFromEntry, pastedPaths, pastedPictures, pasteToInput } from '../../lib/media';
+import { scanModels } from '../../lib/models';
+import { builtinWizards, editGrid, findInLibrary, preferredChoice, strategyPrompt, usesObject, wizardCanvas, wizardChoices, wizardReady, type WizardField, type WizardHandoff, type WizardModel, type WizardPicture } from '../../lib/wizards';
+import './darkWizards.css';
+
+const IMAGE = /\.(png|jpe?g|webp)$/i;
+/** `target` is the picture to change (reference 1 / picture to edit); `object` the optional picture whose content goes in (reference 2). */
+type Slot = 'target' | 'object';
+export interface DarkWizardsProps {
+  active?: boolean;
+  roots?: { models?: string; extraModels?: string[]; input?: string };
+  /** Hands an ordinary draft to Generate; Generate replies through `outcome` with the same number. */
+  onPrepare: (handoff: Omit<WizardHandoff, 'n'>) => void;
+  outcome?: { n: number; error?: string };
+  /** Number of the last hand-over, so the outcome of an older one is not shown as current. */
+  handoff?: number;
+}
+
+/** Dark Wizards: preset-driven helpers that pick model, pipeline and prompt, then prepare Generate. They never run anything themselves. */
+export function DarkWizards({ active = false, roots, onPrepare, outcome, handoff }: DarkWizardsProps) {
+  const { t } = useI18n();
+  const native = isTauri();
+  const [wizardId, setWizardId] = useState(builtinWizards[0]?.id ?? '');
+  const wizard = builtinWizards.find(w => w.id === wizardId) ?? builtinWizards[0];
+  const [models, setModels] = useState<WizardModel[] | null>(null);
+  const [scanError, setScanError] = useState('');
+  const [pictures, setPictures] = useState<Record<Slot, WizardPicture | null>>({ target: null, object: null });
+  const [slot, setSlot] = useState<Slot>('target');
+  const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({});
+  const [fields, setFields] = useState<Partial<Record<WizardField, string>>>({});
+  const [strategyId, setStrategyId] = useState('');
+  const [modelPath, setModelPath] = useState('');
+  const [error, setError] = useState('');
+  const [over, setOver] = useState<Slot | null>(null);
+  const tab = useRef<HTMLElement>(null), scan = useRef(0);
+  const zones = useRef<Record<Slot, HTMLDivElement | null>>({ target: null, object: null });
+
+  const modelsRoot = roots?.models, extraKey = (roots?.extraModels ?? []).join('\n');
+  const look = async (refresh = false) => {
+    if (!native || !modelsRoot) { setModels([]); return; }
+    const mine = ++scan.current; setScanError('');
+    try { const list = await scanModels(modelsRoot, extraKey ? extraKey.split('\n') : [], refresh); if (mine === scan.current) setModels(list); }
+    catch (e) { if (mine === scan.current) { setModels([]); setScanError(e instanceof Error ? e.message : String(e)); } }
+  };
+  // Read-only scan of the models folders (the native index); nothing is hashed, fetched or downloaded.
+  useEffect(() => { if (active || models === null) void look(); }, [active, modelsRoot, extraKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const slots: Slot[] = wizard?.object ? ['target', 'object'] : ['target'];
+  const picture = pictures.target, object = wizard?.object ? pictures.object : null;
+  const choices = wizard && models ? wizardChoices(wizard, models) : [];
+  const chosen = choices.find(c => c.strategy.id === strategyId && c.models.length) ?? preferredChoice(choices);
+  const model = chosen?.models.find(m => m.path === modelPath) ?? chosen?.models[0];
+  const withObject = !!chosen && usesObject(chosen.strategy, model?.family, !!object);
+  const pictureSize = picture ? sizes[picture.src] : undefined;
+  const ready = !!picture && !!chosen && !!model && wizardReady(chosen.strategy, fields, withObject) && (chosen.strategy.source !== 'reference' || !!pictureSize);
+  const pending = !!handoff && outcome?.n !== handoff;
+  // Inpaint keeps the source size, so a picture off the model's grid is first resampled in Generate; say so before the hand-over.
+  const grid = chosen?.strategy.source === 'edit' && model?.family ? editGrid(model.family, withObject) : 0;
+  const offGrid = !!grid && !!pictureSize && (pictureSize.width % grid !== 0 || pictureSize.height % grid !== 0);
+
+  const place = (into: Slot, value: WizardPicture | null) => {
+    setPictures(p => ({ ...p, [into]: value }));
+    // After the picture to change, the next paste or drop-free Choose goes to the empty object slot.
+    if (value && into === 'target' && wizard?.object && !pictures.object) setSlot('object'); else setSlot(into);
+  };
+  const fromPath = async (path: string, into: Slot) => {
+    setError('');
+    try {
+      const item = (await describeMedia([path])).map(itemFromEntry).find(Boolean);
+      if (item?.media === 'image' && item.path) place(into, { name: item.name, path: item.path, src: item.src });
+      else setError(t('wizards.picture.unsupported'));
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const choose = async (into: Slot) => {
+    setSlot(into);
+    try { const path = await pickMedia(t('wizards.picture.chooseTitle')); if (path) await fromPath(path, into); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const live = useRef({ fromPath, slot }); live.current = { fromPath, slot };
+  // Ctrl+V on the visible tab fills the highlighted slot: a copied file by its path, copied picture data saved to the Input folder first. Text fields keep their paste.
+  useEffect(() => {
+    if (!native) return;
+    const paste = (e: ClipboardEvent) => {
+      const el = tab.current, target = e.target;
+      if (e.defaultPrevented || !el || el.closest('[hidden]')) return;
+      if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"]')) return;
+      const modal = document.querySelector('dialog[open], [aria-modal="true"]');
+      if (modal && !modal.contains(el)) return;
+      const into = live.current.slot;
+      const path = pastedPaths(e.clipboardData).find(p => IMAGE.test(p));
+      if (path) { e.preventDefault(); void live.current.fromPath(path, into); return; }
+      const copied = pastedPictures(e);
+      if (!copied.length) return;
+      e.preventDefault();
+      if (!roots?.input) { setError(t('wizards.picture.noInput')); return; }
+      void pasteToInput(copied.slice(0, 1)).then(([saved]) => { if (saved) void live.current.fromPath(saved, into); }, err => setError(String(err)));
+    };
+    document.addEventListener('paste', paste); return () => document.removeEventListener('paste', paste);
+  }, [native, roots?.input]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Native webviews deliver OS file drops as paths for the whole window; the zone under the pointer receives it.
+  useEffect(() => {
+    if (!native || !active) return;
+    let alive = true, unlisten: (() => void) | undefined;
+    const under = (p: { x: number; y: number }): Slot | null => {
+      const { x, y } = dropCssPoint(p);
+      for (const s of ['target', 'object'] as Slot[]) { const r = zones.current[s]?.getBoundingClientRect(); if (r && r.width > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return s; }
+      return null;
+    };
+    try {
+      void getCurrentWebview().onDragDropEvent(e => {
+        if (e.payload.type === 'leave') { setOver(null); return; }
+        const hit = under(e.payload.position); setOver(e.payload.type !== 'drop' ? hit : null);
+        if (e.payload.type !== 'drop' || !hit || !alive) return;
+        const path = e.payload.paths[0];
+        if (path && IMAGE.test(path)) void live.current.fromPath(path, hit); else setError(t('wizards.picture.unsupported'));
+      }).then(stop => { if (alive) unlisten = stop; else stop(); }, () => {});
+    } catch { /* partial runtime: Choose and paste still work */ }
+    return () => { alive = false; unlisten?.(); };
+  }, [native, active]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const prepare = () => {
+    if (!wizard || !chosen || !model || !picture || !ready) return;
+    const s = chosen.strategy, family = model.family ?? '';
+    const canvas = s.source === 'reference' && pictureSize ? wizardCanvas(family, pictureSize) : undefined;
+    if (s.source === 'reference' && !canvas) { setError(t('wizards.picture.size')); return; }
+    setError('');
+    onPrepare({ wizard: wizard.id, strategy: s.id, pipeline: s.pipeline, source: s.source, ...(s.edit ? { edit: s.edit } : {}),
+      model: { name: model.name, path: model.path }, picture,
+      // Reference edits make the picture reference 1 themselves; a masked edit lists it explicitly so the prompt's `image 1` exists there too.
+      ...(withObject && object ? { references: s.source === 'reference' ? [object] : [picture, object] } : {}),
+      positive: strategyPrompt(s, fields, withObject), ...(canvas ? { size: canvas } : {}) });
+  };
+
+  if (!wizard) return null;
+  const field = (key: WizardField) => <label className="forge-field" key={key}>
+    <span>{t(`wizards.${wizard.id}.${key}`)}</span>
+    <input type="text" data-wizard-field={key} value={fields[key] ?? ''} maxLength={300} placeholder={t(`wizards.${wizard.id}.${key}${key === 'replacement' && object ? 'ObjectPlaceholder' : 'Placeholder'}`)}
+      onChange={e => setFields(f => ({ ...f, [key]: e.target.value }))}/>
+  </label>;
+  const zone = (s: Slot) => {
+    const shown = pictures[s], size = shown ? sizes[shown.src] : undefined;
+    return <div className="wizards-step" key={s} data-wizard-slot={s}>
+      <div className="wizards-step-head"><span className="forge-note">{t(`wizards.picture.${s}`)}</span>
+        <span className="wizards-row">
+          {shown && <button type="button" className="forge-ghost" data-wizard-remove={s} onClick={() => place(s, null)}>{t('wizards.picture.remove')}</button>}
+          <button type="button" className="forge-ghost" data-wizard-choose={s} aria-label={t(`wizards.picture.choose.${s}`)} disabled={!native} onClick={() => void choose(s)}>{t('wizards.picture.choose')}</button>
+        </span></div>
+      <div ref={el => { zones.current[s] = el; }} className={`wizards-drop${over === s ? ' over' : ''}${shown ? ' filled' : ''}${slots.length > 1 && slot === s ? ' is-active' : ''}`}
+        data-wizard-picture={s} tabIndex={0} role="group" aria-label={t(`wizards.picture.${s}`)} onFocus={() => setSlot(s)} onPointerDown={() => setSlot(s)}>
+        {shown ? <img src={shown.src} alt={shown.name} onLoad={e => { const img = e.currentTarget; if (img.naturalWidth > 0 && img.naturalHeight > 0) setSizes(m => ({ ...m, [shown.src]: { width: img.naturalWidth, height: img.naturalHeight } })); }}/>
+          : <div className="forge-empty"><strong>{t('wizards.picture.empty')}</strong><span>{t(s === 'object' ? 'wizards.picture.objectBody' : 'wizards.picture.emptyBody')}</span></div>}
+      </div>
+      {shown && <p className="forge-note wizards-name" title={shown.path}>{shown.name}{size ? ` · ${size.width}×${size.height}` : ''}</p>}
+    </div>;
+  };
+  const hint = chosen ? `wizards.${wizard.id}.hint.${chosen.strategy.id}${withObject ? 'Object' : ''}` : '';
+  return <section ref={tab} className="wizards-tab" aria-label={t('wizards.title')}>
+    <nav className="forge-card wizards-list" aria-label={t('wizards.list')}>
+      <h2 className="forge-card-title">{t('wizards.title')}</h2>
+      <p className="forge-note">{t('wizards.intro')}</p>
+      {builtinWizards.map(w => <button type="button" key={w.id} className="forge-ghost wizards-pick" data-wizard={w.id} aria-pressed={w.id === wizard.id} onClick={() => setWizardId(w.id)}>
+        <strong>{t(`wizards.${w.id}.name`)}</strong><span>{t(`wizards.${w.id}.summary`)}</span>
+      </button>)}
+    </nav>
+    <div className="forge-card wizards-form" data-wizard-form={wizard.id}>
+      <div className="forge-card-head"><h3 className="forge-card-title">{t(`wizards.${wizard.id}.name`)}</h3></div>
+      <div className={`wizards-pictures${slots.length > 1 ? ' is-pair' : ''}`}>{slots.map(zone)}</div>
+      <div className="wizards-step wizards-fields">{wizard.fields.map(field)}</div>
+      <div className="wizards-step">
+        <span className="forge-note">{t('wizards.method.title')}</span>
+        {models === null ? <p className="forge-note" role="status">{t('wizards.models.loading')}</p> : <>
+          <div className="wizards-methods" role="group" aria-label={t('wizards.method.title')}>
+            {choices.map(c => <button type="button" key={c.strategy.id} className="forge-ghost" data-wizard-strategy={c.strategy.id} aria-pressed={chosen?.strategy.id === c.strategy.id}
+              disabled={!c.models.length} title={c.models.length ? undefined : t('wizards.method.noModel')} onClick={() => setStrategyId(c.strategy.id)}>
+              {t(`wizards.${wizard.id}.method.${c.strategy.id}`)}</button>)}
+          </div>
+          {chosen && model && <>
+            <label className="forge-field"><span>{t('wizards.model')}</span>
+              <select data-wizard-model value={model.path} onChange={e => setModelPath(e.target.value)}>
+                {chosen.models.map(m => <option key={m.path} value={m.path}>{m.name}</option>)}
+              </select></label>
+            <p className="forge-note" data-wizard-hint>{t(hint)}</p>
+            {object && !withObject && <p className="forge-note" data-wizard-object-unused>{t('wizards.picture.objectUnused')}</p>}
+            {offGrid && pictureSize && <p className="forge-note" data-wizard-off-grid>{t('wizards.picture.offGrid', { size: `${pictureSize.width}×${pictureSize.height}`, grid: String(grid) })}</p>}
+          </>}
+          {!chosen && <div className="wizards-missing" data-wizard-missing>
+            <p className="forge-note">{t('wizards.models.missing', { name: wizard.library })}</p>
+            <div className="wizards-row">
+              <button type="button" className="forge-ghost" data-wizard-library onClick={() => findInLibrary(wizard.library)}>{t('wizards.models.library')}</button>
+              <button type="button" className="forge-ghost" data-wizard-rescan onClick={() => void look(true)}>{t('wizards.models.rescan')}</button>
+            </div>
+          </div>}
+          {scanError && <p className="error-message" role="alert">{scanError}</p>}
+        </>}
+      </div>
+      <div className="wizards-row wizards-actions">
+        <button type="button" className="action-button" data-wizard-prepare disabled={!ready || pending} onClick={prepare}>{t('wizards.prepare')}</button>
+        <span className="forge-note">{t('wizards.prepareNote')}</span>
+      </div>
+      {error && <p className="error-message" role="alert">{error}</p>}
+      {outcome?.error && outcome.n === handoff && <p className="error-message" role="alert" data-wizard-outcome>{outcome.error}</p>}
+    </div>
+  </section>;
+}

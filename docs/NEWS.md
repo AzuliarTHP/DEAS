@@ -1,5 +1,15 @@
 # News
 
+## 0.3.11
+
+### Dark Wizards: Replace
+
+A new **Dark Wizards** tab prepares Generate for common jobs. The first wizard, **Replace**, takes the picture to change,
+optionally a second picture with the object that should go in, and two short texts (*the red car* → *the dog*). With a
+Qwen Image 2.1 model it sets up a reference edit, or opens the picture in Inpaint on the same model so you can paint
+exactly where the object goes; without Qwen it inpaints from the text with another installed model. You always check the
+draft and press Run in Generate yourself. When no fitting model is installed, **Find in Library** shows it in the catalog.
+
 ## 0.3.10
 
 ### Image editor: eyedropper and undo

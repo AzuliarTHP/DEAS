@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom';
  * Search only reads; navigation is the tab band's own switch (no setting is written, nothing is submitted).
  */
 export type SearchView = 'studio' | 'downloads' | 'comfy' | 'backend' | 'logs';
-export type SearchStudioTab = 'generate' | 'forge' | 'chat' | 'analysis' | 'tve' | 'monitor' | 'map';
+export type SearchStudioTab = 'generate' | 'forge' | 'chat' | 'analysis' | 'wizards' | 'tve' | 'monitor' | 'map';
 export type SearchPanel = 'startup' | 'llm' | 'auth';
 
 export interface SearchEntry {
@@ -197,6 +197,17 @@ export const searchIndex: readonly SearchEntry[] = [
   // Chat
   { view: studio, studioTab: 'chat', tab: 'studio.tab.chat', section: 'studio.tab.chat', label: 'chat.message', target: '[data-chat-input]', aliases: ['prompt', 'ask'] },
   // Media Analysis
+  // Dark Wizards
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.list', label: 'wizards.replace.name', target: '[data-wizard="replace"]', aliases: ['wizard', 'replace', 'swap', 'object', 'person', 'edit', 'qwen'] },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.picture.target', label: 'wizards.picture.choose', target: '[data-wizard-choose="target"]', aliases: ['wizard', 'picture', 'open', 'file', 'paste', 'image B', 'target'] },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.picture.object', label: 'wizards.picture.object', target: '[data-wizard-choose="object"]', aliases: ['wizard', 'object', 'reference', 'image A', 'second picture', 'insert'] },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.replace.target', target: '[data-wizard-field="target"]', aliases: ['wizard', 'replace', 'what', 'object'] },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.replace.replacement', target: '[data-wizard-field="replacement"]', aliases: ['wizard', 'replace', 'with', 'new'] },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.method.title', label: 'wizards.method.title', target: '[data-wizard-strategy]', aliases: ['wizard', 'method', 'inpaint', 'reference', 'qwen'] },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.method.title', label: 'wizards.model', target: '[data-wizard-model]', aliases: ['wizard', 'model', 'checkpoint'], reason: 'wizards.search.installedOnly' },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.method.title', label: 'wizards.models.library', target: '[data-wizard-library]', aliases: ['wizard', 'download', 'library', 'missing model'], reason: 'wizards.search.missingOnly' },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.method.title', label: 'wizards.models.rescan', target: '[data-wizard-rescan]', aliases: ['wizard', 'rescan', 'reload', 'models'], reason: 'wizards.search.missingOnly' },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.prepare', target: '[data-wizard-prepare]', aliases: ['wizard', 'prepare', 'generate', 'run'] },
   { view: studio, studioTab: 'analysis', tab: 'studio.tab.analysis', section: 'analysis.picture', label: 'analysis.choose', target: '[data-analysis-choose], [data-analysis-file]', aliases: ['open', 'file', 'picture', 'video', 'browse', 'import'] },
   { view: studio, studioTab: 'analysis', tab: 'studio.tab.analysis', section: 'analysis.tags', label: 'analysis.setup', target: '[data-analysis-setup-run]', aliases: ['install', 'runtime', 'tagger', 'onnx'], reason: 'analysis.search.setupOnly' },
   { view: studio, studioTab: 'analysis', tab: 'studio.tab.analysis', section: 'analysis.tags', label: 'analysis.search.download', target: '[data-analysis-download]', aliases: ['download', 'WD', 'EVA02', 'tagger', 'install'], reason: 'analysis.search.setupOnly' },

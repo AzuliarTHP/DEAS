@@ -1,0 +1,25 @@
+/* Layout only; cards, buttons, fields and notes use the shared forge/action skins. */
+.wizards-tab { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 12px; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
+@media (max-width: 900px) { .wizards-tab { grid-template-columns: minmax(0, 1fr); overflow-y: auto; } }
+.wizards-list, .wizards-form { display: flex; flex-direction: column; gap: 10px; min-height: 0; min-width: 0; overflow-y: auto; }
+.wizards-pick { display: grid; gap: 2px; text-align: left; padding: 8px 10px; }
+.wizards-pick span { font-size: 12px; opacity: 0.8; }
+.wizards-step { display: grid; gap: 6px; min-width: 0; align-content: start; }
+.wizards-step-head, .wizards-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wizards-step-head { justify-content: space-between; }
+.wizards-fields { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.wizards-fields input { width: 100%; box-sizing: border-box; }
+.wizards-drop { min-height: 220px; display: grid; place-items: center; border: 1px dashed rgb(var(--ink-rgb) / 0.2); border-radius: 8px; overflow: hidden; background: var(--deep); }
+.wizards-drop.over { border-color: var(--blue); background: rgb(var(--blue-rgb) / 0.1); }
+.wizards-drop.filled { border-style: solid; }
+.wizards-drop.is-active { border-color: var(--blue); }
+.wizards-pictures { display: grid; gap: 10px; min-width: 0; }
+.wizards-pictures.is-pair { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.wizards-pictures.is-pair .wizards-drop { height: 260px; min-height: 0; }
+.wizards-pictures.is-pair .wizards-drop img { max-height: 100%; }
+.wizards-drop img { max-width: 100%; max-height: 42vh; object-fit: contain; }
+.wizards-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.wizards-methods { display: flex; flex-wrap: wrap; gap: 6px; }
+.wizards-form select { max-width: 100%; }
+.wizards-missing { display: grid; gap: 6px; }
+.wizards-actions { margin-top: auto; padding-top: 6px; }

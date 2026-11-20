@@ -13,6 +13,8 @@ import { Monitoring } from './features/monitoring/Monitoring';
 import { PromptForge } from './features/forge/PromptForge';
 import { Chat } from './features/chat/Chat';
 import { Analysis } from './features/analysis/Analysis';
+import { DarkWizards } from './features/wizards/DarkWizards';
+import type { WizardHandoff } from './lib/wizards';
 import type { MediaItem } from './lib/media';
 import type { MediaAction } from './features/media/MediaLibrary';
 import type { Folders } from './lib/settings';
@@ -20,7 +22,7 @@ import type { ChatRenderOutcome, ChatRenderRequest, ChatStudio } from './lib/cha
 import type { ForgeCanvasContext, ForgeSendCanvas } from './lib/forgeCanvas';
 import { oneOf, usePref } from './lib/preferences';
 import {type Experience,type BeginnerPage} from './features/beginner/Experience';
-const studioTabs=['generate','forge','chat','analysis','tve','monitor','map'] as const;
+const studioTabs=['generate','forge','chat','analysis','wizards','tve','monitor','map'] as const;
 const presentation: Record<string,{column:number;order:number}>={engine:{column:0,order:0},director:{column:1,order:0},plugins:{column:1,order:1},forge:{column:2,order:0},refmods:{column:2,order:1},continuity:{column:2,order:2},output:{column:2,order:3}};
 interface DirectorDraft {direction:string;framing:string;mood:string}
 const defaultDraft:DirectorDraft={direction:'',framing:'wide',mood:'natural'};
@@ -76,6 +78,12 @@ export default function App(){
  // The frame picker's sends are whatever Generate would do with a picture right now.
  const frameActions=useRef<((item:MediaItem)=>MediaAction[])|undefined>(undefined);
  const tveOpened=useRef(false);if(tab==='tve')tveOpened.current=true;
+ // Dark Wizards prepare an ordinary Generate draft; Generate answers by hand-over number and only then becomes visible.
+ const wizardsOpened=useRef(false);if(tab==='wizards')wizardsOpened.current=true;
+ const [wizardHandoff,setWizardHandoff]=useState<WizardHandoff>();
+ const [wizardOutcome,setWizardOutcome]=useState<{n:number;error?:string}>();
+ const prepareWizard=useCallback((handoff:Omit<WizardHandoff,'n'>)=>setWizardHandoff(previous=>({...handoff,n:(previous?.n??0)+1})),[]);
+ const wizardApplied=useCallback((n:number,error?:string)=>{setWizardOutcome({n,...(error?{error}:{})});if(!error)setTab('generate');},[setTab]);
  const monitorOpened=useRef(false);if(tab==='monitor')monitorOpened.current=true;
  const [forgeHost,setForgeHost]=useState<HTMLDivElement|null>(null);
  const [h3ForgeAvailable,setH3ForgeAvailable]=useState(false);
@@ -120,8 +128,9 @@ export default function App(){
    <AiOSetup experience={experience} onExperience={setExperience} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} studioTab={tab} onStudioTab={setTab} onStudioActiveChange={setStudioActive} onConnectExisting={connectExisting} onEnvironment={setEnvironment} studio={<div id="studio-workspace" className="studio-workspace">
     <div className="studio-columns">
     <div className="studio-main">
-    <div className="studio-generate-host" hidden={tab==='forge'||tab==='chat'||tab==='analysis'||tab==='tve'||tab==='monitor'}><Workbench beginner={beginner} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} planVisible={tab==='map'} endpoint={endpoint} ownedBackend={endpoint===ownedEndpoint} roots={roots} root={environment?.root} incoming={sent} onCanvasContext={setForgeCanvasContext} onOpenVideoPost={()=>setTab('tve')} forgeHost={forgeHost} forgeActive={studioActive&&tab==='forge'} onOpenPromptForge={()=>setTab('forge')} onH3ForgeAvailable={setH3ForgeAvailable} chatRender={chatRender} onChatRender={chatRendered} onChatStudio={setChatStudio} onAnalyze={analyze} onFrameActions={fn=>{frameActions.current=fn;}}/></div>
+    <div className="studio-generate-host" hidden={tab==='forge'||tab==='chat'||tab==='analysis'||tab==='wizards'||tab==='tve'||tab==='monitor'}><Workbench beginner={beginner} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} planVisible={tab==='map'} endpoint={endpoint} ownedBackend={endpoint===ownedEndpoint} roots={roots} root={environment?.root} incoming={sent} onCanvasContext={setForgeCanvasContext} onOpenVideoPost={()=>setTab('tve')} forgeHost={forgeHost} forgeActive={studioActive&&tab==='forge'} onOpenPromptForge={()=>setTab('forge')} onH3ForgeAvailable={setH3ForgeAvailable} chatRender={chatRender} onChatRender={chatRendered} onChatStudio={setChatStudio} onAnalyze={analyze} onFrameActions={fn=>{frameActions.current=fn;}} wizard={wizardHandoff} onWizardApplied={wizardApplied}/></div>
     {analysisOpened.current&&<div className="studio-generate-host" hidden={tab!=='analysis'}><Analysis active={studioActive&&tab==='analysis'} endpoint={endpoint} frameActions={item=>frameActions.current?.(item)??[]} roots={roots} root={environment?.root} incoming={toAnalyze} onSend={sendToGenerate}/></div>}
+    {wizardsOpened.current&&<div className="studio-generate-host" hidden={tab!=='wizards'}><DarkWizards active={studioActive&&tab==='wizards'} roots={roots} onPrepare={prepareWizard} outcome={wizardOutcome} handoff={wizardHandoff?.n}/></div>}
     {tveOpened.current&&<div className="studio-generate-host" hidden={tab!=='tve'}><TrueVideoEnhancer endpoint={endpoint} roots={roots}/></div>}
     {monitorOpened.current&&<div className="studio-generate-host" hidden={tab!=='monitor'}><Monitoring active={studioActive&&tab==='monitor'} root={environment?.root}/></div>}
     {forgeOpened.current&&<div className="studio-generate-host" hidden={tab!=='forge'}>{canvasSendError&&<p className="error-message" role="alert">{t(canvasSendError)}</p>}<div ref={setForgeHost} hidden={!h3ForgeAvailable}/><div hidden={h3ForgeAvailable}><PromptForge active={studioActive&&tab==='forge'&&!h3ForgeAvailable} endpoint={endpoint} root={environment?.root} inputDir={roots?.input} outputDir={roots?.output} onSend={sendToGenerate} canvasContext={forgeCanvasContext}/></div></div>}

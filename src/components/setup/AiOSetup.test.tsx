@@ -94,7 +94,7 @@ describe('automatic-first installation — read-only mock IPC fixtures',()=>{
  });
  it('puts Backend/Logs after Comfy and directly exposes backend settings and provider authorization',()=>{
   mount();
-  expect([...document.querySelectorAll('.aio-tabs > [role="tab"]')].map(el=>el.textContent)).toEqual(['Studio','Library','Prompt Forge','Chat','Media Analysis','TVE','Comfy','Monitoring','Run Plan','Backend','Logs']);
+  expect([...document.querySelectorAll('.aio-tabs > [role="tab"]')].map(el=>el.textContent)).toEqual(['Studio','Library','Prompt Forge','Chat','Media Analysis','Dark Wizards','TVE','Comfy','Monitoring','Run Plan','Backend','Logs']);
   fireEvent.click(screen.getByRole('tab',{name:'Backend'}));
   expect(screen.getByLabelText('Language')).toBeTruthy();
   expect(screen.getByRole('region',{name:'Provider authorization'})).toBeTruthy();
@@ -102,11 +102,19 @@ describe('automatic-first installation — read-only mock IPC fixtures',()=>{
   expect(screen.queryByRole('button',{name:'Provider authorization'})).toBeNull();
   expect(screen.queryByRole('button',{name:'Settings'})).toBeNull();
  });
+ it('a wizard\'s Find in Library opens Library and keeps Studio mounted, without starting anything',async()=>{
+  render(<I18nProvider><AiOSetup studio={<input aria-label="Studio draft" defaultValue="keep me"/>} onConnectExisting={vi.fn()}/></I18nProvider>);
+  fireEvent.click(screen.getByRole('tab',{name:'Dark Wizards'}));
+  act(()=>{window.dispatchEvent(new CustomEvent('deas:library-search',{detail:'Qwen Image 2.1'}));});
+  await waitFor(()=>expect(screen.getByRole('tab',{name:'Library'}).getAttribute('aria-selected')).toBe('true'));
+  expect((screen.getByLabelText('Studio draft') as HTMLInputElement).value).toBe('keep me');
+  expect(vi.mocked(invoke).mock.calls.some(([c])=>['native_install_start','native_backend_start','native_download_start','native_download_start_queue','native_download_plan'].includes(c as string))).toBe(false);
+ });
  it('opens Comfy beside Library without starting a backend and preserves Studio',()=>{
   render(<I18nProvider><AiOSetup studio={<input aria-label="Studio draft" defaultValue="keep me"/>} onConnectExisting={vi.fn()}/></I18nProvider>);
   fireEvent.click(screen.getByRole('tab',{name:'Studio'}));
   const draft=screen.getByLabelText('Studio draft');
-  const tabs=screen.getAllByRole('tab');expect(tabs.map(x=>x.textContent)).toEqual(['Studio','Library','Prompt Forge','Chat','Media Analysis','TVE','Comfy','Monitoring','Run Plan','Backend','Logs']);
+  const tabs=screen.getAllByRole('tab');expect(tabs.map(x=>x.textContent)).toEqual(['Studio','Library','Prompt Forge','Chat','Media Analysis','Dark Wizards','TVE','Comfy','Monitoring','Run Plan','Backend','Logs']);
   expect([...document.querySelectorAll('.aio-utility-tabs > [role="tab"]')].map(el=>el.textContent)).toEqual(['Monitoring','Run Plan','Backend','Logs']);
   fireEvent.click(screen.getByRole('tab',{name:'Comfy'}));
   expect(document.querySelector('.comfy-loading')?.textContent).toContain('Waiting for backend');

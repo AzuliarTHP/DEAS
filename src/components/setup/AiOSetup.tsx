@@ -10,6 +10,7 @@ import { OpenComfyWorkflow, sendComfyWorkflow, type ComfyWorkflow } from '../../
 import { OwnedBackendPanel } from './OwnedBackendPanel';
 import { BackendPanels } from './BackendPanels';
 import { llmSetupEvent } from '../../lib/llm';
+import { librarySearchEvent } from '../../lib/wizards';
 import { RepoLinks } from './RepoLinks';
 import { GlobalSearch } from './GlobalSearch';
 import type { SearchEntry } from '../../lib/search';
@@ -35,7 +36,7 @@ type UpdateScope=typeof updateScopes[number];
 type TorchUpdate={from:string[];to:string[]|null;blocked:string|null};
 type SavedEnvironment={plan:NativeInstallPlan;status:NativeInstallStatus;folders:Folders}|{repair:NativeInstallPlan};
 /** Keeps the studio/backend alive while top-level views change. */
-export interface AiOSetupProps { experience?:Experience; onExperience?:(value:Experience)=>void; beginnerPage?:BeginnerPage; onBeginnerPage?:(value:BeginnerPage)=>void; /** `inspect` is true for the explicit Connect button, false for the owned backend's automatic handoff. */ onConnectExisting: (baseUrl: string, inspect?: boolean) => void; onInstalled?: (features: readonly FeatureId[]) => void; /** Installed environment root plus its saved folder settings, for the Studio media roots. */ onEnvironment?: (environment: { root: string; folders: Folders } | null) => void; studio?: ReactNode; footer?: ReactNode; studioTab?: 'generate'|'forge'|'chat'|'analysis'|'tve'|'monitor'|'map'; onStudioTab?: (tab:'generate'|'forge'|'chat'|'analysis'|'tve'|'monitor'|'map')=>void; onStudioActiveChange?: (active:boolean)=>void }
+export interface AiOSetupProps { experience?:Experience; onExperience?:(value:Experience)=>void; beginnerPage?:BeginnerPage; onBeginnerPage?:(value:BeginnerPage)=>void; /** `inspect` is true for the explicit Connect button, false for the owned backend's automatic handoff. */ onConnectExisting: (baseUrl: string, inspect?: boolean) => void; onInstalled?: (features: readonly FeatureId[]) => void; /** Installed environment root plus its saved folder settings, for the Studio media roots. */ onEnvironment?: (environment: { root: string; folders: Folders } | null) => void; studio?: ReactNode; footer?: ReactNode; studioTab?: 'generate'|'forge'|'chat'|'analysis'|'wizards'|'tve'|'monitor'|'map'; onStudioTab?: (tab:'generate'|'forge'|'chat'|'analysis'|'wizards'|'tve'|'monitor'|'map')=>void; onStudioActiveChange?: (active:boolean)=>void }
 /** Automatic-only setup: folder + Director, the rest recommended; Start install is the single authorization. */
 export function AiOSetup({ experience='advanced',onExperience,beginnerPage='generate',onBeginnerPage, onConnectExisting, onInstalled, onEnvironment, studio, footer, studioTab='generate', onStudioTab, onStudioActiveChange }: AiOSetupProps) {
  const {t}=useI18n();
@@ -88,6 +89,8 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
  useLayoutEffect(()=>{onStudioActiveChange?.(view==='studio');},[view,onStudioActiveChange]);
  const [llmSetupRequest,setLlmSetupRequest]=useState(0);
  useEffect(()=>{const open=()=>{setLlmSetupRequest(n=>n+1);setView('backend');};window.addEventListener(llmSetupEvent,open);return()=>window.removeEventListener(llmSetupEvent,open);},[]);
+ const [librarySearch,setLibrarySearch]=useState<{query:string;n:number}>();
+ useEffect(()=>{const open=(e:Event)=>{const query=(e as CustomEvent).detail;if(typeof query!=='string'||!query.trim())return;setLibrarySearch(s=>({query:query.trim().slice(0,200),n:(s?.n??0)+1}));setView('downloads');};window.addEventListener(librarySearchEvent,open);return()=>window.removeEventListener(librarySearchEvent,open);},[]);
  const [backendStatus,setBackendStatus]=useState<NativeBackendStatus|null>(null);
  const [backendStartedNotice,setBackendStartedNotice]=useState(false);
  useEffect(()=>{
@@ -392,6 +395,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
    <button type="button" role="tab" data-studio-tab="forge" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='forge'} onClick={()=>{onStudioTab?.('forge');setView('studio');window.dispatchEvent(new Event('deas:forge-open'));}}>{t('studio.tab.forge')}</button>
    <button type="button" role="tab" data-studio-tab="chat" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='chat'} onClick={()=>{onStudioTab?.('chat');setView('studio');window.dispatchEvent(new Event('deas:forge-open'));}}>{t('studio.tab.chat')}</button>
    <button type="button" role="tab" data-studio-tab="analysis" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='analysis'} onClick={()=>{onStudioTab?.('analysis');setView('studio');}}>{t('studio.tab.analysis')}</button>
+   <button type="button" role="tab" data-studio-tab="wizards" className="aio-tab" title={t('wizards.tabTitle')} disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='wizards'} onClick={()=>{onStudioTab?.('wizards');setView('studio');}}>{t('wizards.title')}</button>
    <button type="button" role="tab" data-studio-tab="tve" className="aio-tab" title={t('studio.tve.title')} disabled={folderPickerBusy} aria-selected={view==='studio'&&studioTab==='tve'} onClick={()=>{onStudioTab?.('tve');setView('studio');}}>{t('studio.tab.tve')}</button>
    <button type="button" role="tab" data-node="comfy" className="aio-tab" disabled={folderPickerBusy} aria-selected={view==='comfy'} onClick={()=>setView('comfy')}>{t('setup.tab.comfy')}</button>
   </div><div className="aio-tabs aio-utility-tabs" role="tablist" aria-label={t('studio.tab.utilities')}>
@@ -426,7 +430,7 @@ export function AiOSetup({ experience='advanced',onExperience,beginnerPage='gene
   {manualAppTag&&!confirmUpgrade&&manualNotice(manualAppTag)}
   {inBackend&&<>{!installed&&<section className="aio-detail"><button type="button" className="download-switch backend-autostart" role="switch" aria-label={t('setup.backendAutostart')} aria-checked={autoStart} onClick={()=>{setResumeAfterUpdate('');setAutoStart(v=>!v);}}><span>{t('setup.backendAutostart')}</span><span className="download-switch-knob" aria-hidden="true"/><span>{t(autoStart?'setup.autostartOn':'setup.autostartOff')}</span></button></section>}{installedRoot&&<FoldersPanel root={installedRoot} disabled={running||busy||folderPickerBusy} onChange={setFolders} onRestart={()=>setRestartSignal(n=>n+1)}/>}</>}
   <div hidden={!inBackend}><BackendPanels llmSetupRequest={llmSetupRequest} panelRequest={searchPanel} root={installedRoot} modelsDir={folders.models} onRestart={()=>setRestartSignal(n=>n+1)} onAuthChange={()=>{setConfigured([]);setVerified([]);setAuthRevision(n=>n+1);}}/></div>
-  {libraryVisited.current&&<DownloadWorkspace view={view==='downloads'?'downloads':null} authRevision={authRevision} installTarget={installedRoot||(plan?.route==='managed'?plan.storagePath:undefined)} modelsDir={installed?folders.models:folderDraft.models} onStatus={setDownloadActivity}/>}
+  {libraryVisited.current&&<DownloadWorkspace view={view==='downloads'?'downloads':null} authRevision={authRevision} installTarget={installedRoot||(plan?.route==='managed'?plan.storagePath:undefined)} modelsDir={installed?folders.models:folderDraft.models} onStatus={setDownloadActivity} searchRequest={librarySearch}/>}
   {view!=='comfy'&&<>{error&&<p className="aio-error" role="alert">{t(error)}</p>}{technicalError&&!planError&&<p className="aio-error" role="alert">{t('setup.technicalError')}: {technicalError}</p>}</>}
   </div>
   {/* Kept mounted (hidden) after success so backend polling and the Studio handoff continue on other tabs. */}

@@ -175,7 +175,7 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
    {listingBusy&&!scanError&&<p role="status">{t('library.loading')}</p>}{scanError&&<p role="alert">{t('downloads.installed.scanError')}</p>}
   </>}/>;
 }
-export interface DownloadPanelProps { installTarget?:string; modelsDir?:string; authRevision?:number; onStatus?:(status:DownloadStatus)=>void; embedded?:boolean; /** Keep the panel alive while an outer workspace tab is shown; the root element is hidden. */ hidden?:boolean; initialEntryId?:string; initialEntryIds?:string[]; initialCategory?:string; filenameFilter?:string|string[] }
+export interface DownloadPanelProps { installTarget?:string; modelsDir?:string; authRevision?:number; onStatus?:(status:DownloadStatus)=>void; embedded?:boolean; /** Keep the panel alive while an outer workspace tab is shown; the root element is hidden. */ hidden?:boolean; initialEntryId?:string; initialEntryIds?:string[]; initialCategory?:string; filenameFilter?:string|string[]; /** Another tab asks the bundled catalog to show cards matching this text (never downloads); `n` changes per ask. */ searchRequest?:{query:string;n:number} }
 // Undated sources stay last; never infer publication dates from filenames or IDs.
 const published=(r:{publishedAt?:string})=>Date.parse(r.publishedAt??'')||0;
 const key=(r:DownloadResource)=>JSON.stringify([r.id,r.url,r.locator]);
@@ -189,7 +189,7 @@ const isCreatorSource=(e:CatalogEntry)=>e.id.startsWith('civitai-creator-')&&e.s
 /** A ticked file keeps the browse context it was picked in, so selections from many cards download together. */
 interface Picked {resource:DownloadResource;providerId:string;authenticated:boolean;folder:string}
 interface Group {request:PlanRequest;keys:string[]}
-export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,embedded=false,hidden=false,initialEntryId,initialEntryIds,initialCategory,filenameFilter}:DownloadPanelProps={}) {
+export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,embedded=false,hidden=false,initialEntryId,initialEntryIds,initialCategory,filenameFilter,searchRequest}:DownloadPanelProps={}) {
  const {t}=useI18n();const io=useNativeRequest();const [opened,setOpened]=useState(false);const open=embedded||opened;
  const suggested=useMemo(()=>initialEntryIds??(initialEntryId?[initialEntryId]:undefined),[initialEntryIds,initialEntryId]);
  const [catalogText,setCatalogText]=useState('');const [sort,setSort]=usePref<{by:'newest'|'name';dir:1|-1}>('library.sort',{by:'newest',dir:-1},validSort);
@@ -253,6 +253,8 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
  const runSearch=()=>{const civitai=catalog?.providers.find(p=>p.kind==='civitai'&&p.scopes.includes('search'));if(!civitai||!search.trim())return;sourceEdit();setSource('');setDiscovery(null);setRemoteId('');setSourceCategory('');setBase('');setMediaFilter('all');setEntryId('');setProviderId(civitai.id);setScope('search');setLocator(search.trim());browse({providerId:civitai.id,scope:'search',locator:search.trim()});};
  const resourceDetails=(r:DownloadResource)=><dl className="download-identity"><dt>{t('downloads.identity')}</dt><dd>{r.id}</dd><dt>{t('downloads.category')}</dt><dd>{r.category??r.kind}</dd><dt>{t('downloads.source')}</dt><dd>{r.url??r.locator??t('downloads.unknown')}</dd><dt>{t('downloads.size')}</dt><dd>{r.size??t('downloads.unknown')}</dd><dt>{t('downloads.digest')}</dt><dd>{r.sha256??t('downloads.unknown')}</dd><dt>{t('downloads.license')}</dt><dd>{r.license??t('downloads.unknown')}</dd></dl>;
  const [source,setSource]=useState('');
+ // A wizard's "Find in Library" narrows the bundled catalog; Enter in the search field still decides about CivitAI.
+ useEffect(()=>{if(!searchRequest)return;selectViewLive.current('catalog');setSource('');setDiscovery(null);setSearch(searchRequest.query);},[searchRequest?.n]); // eslint-disable-line react-hooks/exhaustive-deps
  const [discovery,setDiscovery]=useState<{providerId:string;scope:'user'|'search';locator:string;authenticated:boolean;listing:DownloadListing}|null>(null);
  const [remoteId,setRemoteId]=useState('');
  const remoteMode=!!source||!!discovery;
