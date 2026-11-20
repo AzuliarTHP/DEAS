@@ -1,5 +1,30 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Wan 2.2 GGUF with 5-D patch embedding (0.3.9)
+
+**Cause.** `DaSiWa_Wan22_I2V_14B_{HIGH,LOW}_v11_Q2_K-fix.gguf` (GGUF v3, `general.architecture=wan`, `modelspec.title` "Snatch Kiss v11 HIGH", quantized by DaSiWa Quant Station) stores `patch_embedding.weight` with 5 dims `(2, 2, 1, 36, 5120)`. `gguf_metadata` rejected any descriptor above 4 dims, so the whole file had no family.
+
+**Fix verified:**
+- With the limit at 8 dims, `detect` on both real files returns `wan` (for HIGH also under `unet`). The int8 convrot SnatchKiss safetensors is still `wan`.
+- The new fixture test `wan_gguf_with_a_5d_patch_embedding_is_detected` passes, and the parser test still rejects 0, 9 and `u32::MAX` dims.
+- The owned ComfyUI-GGUF `gguf_sd_loader` (CPU only) loads the HIGH file: 1095 tensors, `patch_embedding` `(5120, 36, 1, 2, 2)`. Core `detect_unet_config` returns `image_model=wan2.1`, `in_dim=36`, `dim=5120`, 40 layers.
+
+**Gates.** `cargo clippy --all-targets -D warnings` is clean. The full `cargo test --lib` run passed 1133 with the same 2 load-sensitive backend Python-shutdown failures as in the earlier runs (they pass alone).
+
+**Not run.** No GPU video generation: the RTX 5090 was busy with the owner's strata job.
+
+**Owner's run after the detection fix (12:39, job `d3b03002`).** Both GGUF experts loaded through `UnetLoaderGGUF` (qtypes F32 648, Q2_K 320, Q3_K 80, BF16 6, F16 41). Sampling then failed at the first step in `comfy/ldm/wan/model.py:199` → `comfy.ops.linear_input_act` → `comfy_kitchen` `cutlass_fp16_linear: K mismatch`, with `--fast fp16_accumulation` active.
+
+**Cause.** In Core `a20552b`, `linear_input_act` casts with the module-level `cast_bias_weight(linear, …)` whenever `_fp16_linear_wanted(x)` holds. ComfyUI-GGUF (`6ea2651`, its upstream head) dequantizes in `GGMLLayer.cast_bias_weight`, a method, so the packed tensor was used.
+
+**CPU reproduction** against the real Core, the real ComfyUI-GGUF and the real file (`blocks.0.ffn.2.weight`, Q2_K, packed `(5120, 4536)`, logical `(5120, 13824)`), with only the CUDA decision and the kitchen GEMM emulated:
+- before the adapter: `mat1 and mat2 shapes cannot be multiplied (8x13824 and 4536x5120)`;
+- after: output `(1, 8, 5120)`, max difference 0.0 against the layer's own forward.
+
+**Adapter checks.** `gguf_core_compat_tests.py` (4 contract tests: GGUF layer goes eager and the flag is restored, Core layers stay fused, idempotent, flag restored on exceptions) passes via `backend::tests::gguf_core_compat_python_contract_fixture`. The adapter-install test now expects `deas_gguf_core_compat.py`.
+
+**Not proven.** A GPU rerun of the owner's job is still needed.
+
 ## llama-cpp-python AVX-512 wheels — *Windows Error 0xc000001d* (0.3.7)
 
 The reported error was `Prompt Forge h3: 422 Could not reach local at : [WinError -1073741795] Windows Error 0xc000001d`. That code is STATUS_ILLEGAL_INSTRUCTION, raised by ctypes out of `ggml-cpu.dll`.

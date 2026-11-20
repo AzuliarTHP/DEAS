@@ -761,6 +761,12 @@ impl Lifecycle {
             "deas_h3_stream_video.py",
             include_bytes!("h3_stream_video.py"),
         )?;
+        // Core's fused linear_input_act must not bypass ComfyUI-GGUF's own dequantizing cast.
+        install_adapter(
+            root,
+            "deas_gguf_core_compat.py",
+            include_bytes!("gguf_core_compat.py"),
+        )?;
         // Optional capability: unsupported sources must not prevent normal backend startup.
         let mut interrupt_source = InterruptSource::capture(root).ok().and_then(|mut proof| {
             install_adapter(

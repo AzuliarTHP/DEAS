@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.9
+
+- **GGUF video models no longer fail at the first sampling step with *cutlass_fp16_linear: K mismatch*.** Current ComfyUI runs the feed-forward layers of Wan, LTX, MiniMax H3, Qwen Image 2.1 and others through a new fused path. With **fp16 accumulation** on (a DEAS startup speed option), that path reads the layer's weight directly, which bypasses ComfyUI-GGUF's on-the-fly dequantization: the packed GGUF data reached the GPU's matrix multiply. DEAS now installs a small adapter (`deas_gguf_core_compat.py`, placed at backend start) that sends only GGUF layers through ComfyUI's own non-fused branch. Every other layer, and every other model, keeps the fast path. The fix takes effect the next time the backend starts. Until then, turning fp16 accumulation off in **Backend → Startup optimizations** avoids the error.
+- **Wan 2.2 GGUF models from DaSiWa Quant Station show up again (SnatchKiss and others; likely #44).** These GGUFs store Wan's video patch embedding as a 5-dimensional tensor. DEAS's GGUF reader only accepted up to 4 dimensions (the llama.cpp limit), gave up on the file and left its family unknown. Such models were then missing from the Image → Video pipeline, and the text-encoder and VAE pickers had no family to match. ComfyUI-GGUF reads any number of dimensions, so DEAS now accepts up to 8. The DaSiWa Wan 2.2 I2V Q2_K HIGH/LOW pair is detected as Wan again and pairs HIGH → LOW as before. On older versions, the workaround is right-click the model → **Edit meta…** → family **Wan 2.1 / 2.2**.
+
 ## 0.3.8
 
 - **Library downloads are a background queue now.** **Download all** no longer runs one folder group after another inside the Library window: every selected file goes to a native queue that keeps working while you leave Library, switch workspace tabs, or even close and restart DEAS. The old failure — switching tabs mid-download reset the Library view, hid the progress and silently dropped the not-yet-started groups — cannot happen anymore; the Library stays mounted and the top **Library** tab shows a live percentage while anything downloads.

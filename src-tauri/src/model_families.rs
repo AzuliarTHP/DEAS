@@ -24,6 +24,7 @@ use std::sync::OnceLock;
 const MAX_HEADER: u64 = 64 << 20;
 const MAX_STRING: u64 = 1 << 24;
 const MAX_VALUES: u64 = 1 << 20;
+const MAX_GGUF_DIMS: u32 = 8;
 
 #[derive(Deserialize)]
 struct Family {
@@ -539,7 +540,9 @@ fn gguf_metadata(path: &Path) -> Option<(String, String)> {
         }
         keys.push_str(&key.replace('_', "."));
         let dims = r.u32v()?;
-        if !(1..=4).contains(&dims) {
+        // ggml itself stops at 4 dims, but ComfyUI-GGUF reads any count and Wan 2.x quantizers
+        // (e.g. DaSiWa Quant Station) store the Conv3d `patch_embedding.weight` as 5-D.
+        if !(1..=MAX_GGUF_DIMS).contains(&dims) {
             return None;
         }
         // shortcut: descriptor bytes only; validate types/offsets/payload before claiming load readiness.
@@ -654,7 +657,7 @@ mod gguf_parser_tests {
             bytes.extend([0u8; 16]);
             assert_eq!(parse(&bytes), None, "version {version}");
         }
-        for dims in [0u32, 5, u32::MAX] {
+        for dims in [0u32, MAX_GGUF_DIMS + 1, u32::MAX] {
             let mut bytes = SPEC.to_vec();
             bytes[103..107].copy_from_slice(&dims.to_le_bytes());
             assert_eq!(parse(&bytes), None, "dims {dims}");
@@ -1490,6 +1493,47 @@ mod tests {
         assert_eq!(detect("diffusion_models", &odd, None), None);
         // Non-safetensors companion architectures stay unknown for GGUF inputs.
         assert_eq!(detect("vae", &krea, None), None);
+    }
+
+    /// Wan 2.2 GGUFs from DaSiWa Quant Station (e.g. SnatchKiss) keep the Conv3d patch embedding
+    /// 5-D; rejecting that descriptor hid every such model from the video pipeline.
+    #[test]
+    fn wan_gguf_with_a_5d_patch_embedding_is_detected() {
+        fn s(bytes: &mut Vec<u8>, v: &str) {
+            bytes.extend((v.len() as u64).to_le_bytes());
+            bytes.extend(v.as_bytes());
+        }
+        let tensors: [(&str, &[u64]); 3] = [
+            ("patch_embedding.weight", &[2, 2, 1, 36, 5120]),
+            ("blocks.0.cross_attn.k.weight", &[5120, 5120]),
+            ("blocks.0.cross_attn.k.bias", &[5120]),
+        ];
+        let mut bytes = b"GGUF".to_vec();
+        bytes.extend(3u32.to_le_bytes());
+        bytes.extend((tensors.len() as u64).to_le_bytes());
+        bytes.extend(1u64.to_le_bytes());
+        s(&mut bytes, "general.architecture");
+        bytes.extend(8u32.to_le_bytes());
+        s(&mut bytes, "wan");
+        for (name, dims) in tensors {
+            s(&mut bytes, name);
+            bytes.extend((dims.len() as u32).to_le_bytes());
+            for d in dims {
+                bytes.extend(d.to_le_bytes());
+            }
+            bytes.extend(10u32.to_le_bytes()); // GGML Q2_K
+            bytes.extend(0u64.to_le_bytes());
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("DaSiWa_Wan22_I2V_14B_HIGH_v11_Q2_K.gguf");
+        std::fs::write(&path, bytes).unwrap();
+        for category in ["diffusion_models", "unet"] {
+            assert_eq!(
+                detect(category, &path, None).as_deref(),
+                Some("wan"),
+                "{category}"
+            );
+        }
     }
 
     #[test]

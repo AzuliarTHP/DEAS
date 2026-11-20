@@ -1,5 +1,41 @@
 # News
 
+## 0.3.9
+
+### Wan 2.2 GGUF video models work in Image → Video
+
+GGUF versions of Wan 2.2 models made with DaSiWa Quant Station (SnatchKiss and others) were missing from the video
+pipeline, and the text-encoder and VAE pickers stayed empty ([#44](https://github.com/darksidewalker/DEAS/issues/44)).
+DEAS could not read one part of these files, so it did not know they were Wan models. It reads them now. On current
+ComfyUI, GGUF video models then failed at the first step with *cutlass_fp16_linear: K mismatch* when the
+**fp16 accumulation** speed option was on. DEAS now steers only the GGUF layers around that new fast path.
+Restart the backend once after updating.
+
+## 0.3.8
+
+### Downloads run in the background
+
+**Download all** in the Library hands every file to a background queue that keeps running when you switch tabs
+or close the Library. A **Queue** view shows each download with its progress, and interrupted downloads resume
+after a restart.
+
+## 0.3.7
+
+### DEAS updates itself on Windows
+
+**Upgrade → Everything** no longer stops on Windows when a newer DEAS exists
+([#43](https://github.com/darksidewalker/DEAS/issues/43)). DEAS downloads and checks the new version, swaps it in
+while it runs, and asks **Restart now** or **Later**. It waits for antivirus scans and puts the old version back
+if anything goes wrong. When Windows ransomware protection blocks the folder, the message says which setting to
+change.
+
+### Local GGUF models: no more *Windows Error 0xc000001d*
+
+Some llama-cpp-python builds need AVX-512, a processor feature most desktop CPUs lack, so Prompt Forge and Chat
+with a local GGUF model failed with *0xc000001d* (illegal instruction). DEAS now installs a build without it. Run
+**Upgrade → ComfyUI and node packs** once in an existing environment. AMD environments, and Windows PCs with a
+GTX 10-series card, now get the Vulkan build, which runs local GGUF on the GPU.
+
 ## 0.3.6
 
 ### Face refine works straight after a generation

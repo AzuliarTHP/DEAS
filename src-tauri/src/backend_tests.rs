@@ -275,6 +275,25 @@ fn output_naming_adapter_is_installed_and_refuses_symlinks() {
 }
 
 #[test]
+fn gguf_core_compat_python_contract_fixture() {
+    let result = Command::new("/usr/bin/python3")
+        .args([
+            "-c",
+            include_str!("gguf_core_compat_tests.py"),
+            include_str!("gguf_core_compat.py"),
+        ])
+        .env_remove("PYTHONPATH")
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
 fn image_prompting_python_contract_fixture() {
     let result = Command::new("/usr/bin/python3")
         .args([
@@ -362,6 +381,10 @@ fn image_prompting_installed_before_owned_child_start() {
         fs::read(directory.join("deas_h3_stream_video.py")).unwrap(),
         include_bytes!("h3_stream_video.py")
     );
+    assert_eq!(
+        fs::read(directory.join("deas_gguf_core_compat.py")).unwrap(),
+        include_bytes!("gguf_core_compat.py")
+    );
     let mut entries: Vec<_> = fs::read_dir(&directory)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
@@ -370,6 +393,7 @@ fn image_prompting_installed_before_owned_child_start() {
     assert_eq!(
         entries,
         [
+            "deas_gguf_core_compat.py",
             "deas_h3_stream_video.py",
             "deas_image_postprocess.py",
             "deas_image_prompting.py",
