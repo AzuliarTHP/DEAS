@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ModelPreview } from '../../components/models/ModelPreview';
+import { hasVideoCover, ModelPreview } from '../../components/models/ModelPreview';
 import { useI18n } from '../../i18n/I18nProvider';
 import { modelTriggerWords, type LocalModel, type LoraEdit } from '../../lib/models';
 import { reportLibraryError } from './libraryDiagnostics';
@@ -72,8 +72,9 @@ export function LibraryCoverEditor({model,onEdit,disabled,blur}:{model:LocalMode
   catch{reportLibraryError('lora-edit');setResult('error');}
   finally{setBusy(false);}
  };
- return <section className="library-detail-section library-cover-editor">
-  <div className={blur?'library-cover-thumbnail is-sensitive':'library-cover-thumbnail'}><ModelPreview model={model} fallback={null}/></div>
+ const video=hasVideoCover(model);
+ return <section className={video?'library-detail-section':'library-detail-section library-cover-editor'}>
+  {!video&&<div className={blur?'library-cover-thumbnail is-sensitive':'library-cover-thumbnail'}><ModelPreview model={model} fallback={null}/></div>}
   <div>
    <button type="button" className="action-button" data-library-lora-cover disabled={disabled||busy} onClick={()=>input.current?.click()}>{t('library.replacePreview')}</button>
    <input hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp" aria-label={t('library.replacePreview')} ref={input} onChange={event=>{const file=event.currentTarget.files?.[0];event.currentTarget.value='';if(file&&!disabled&&!busy)void replace(file);}}/>

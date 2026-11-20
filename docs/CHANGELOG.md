@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Installed Library supports MP4 previews.** Model cards and details can play local and cached CivitAI video covers. **Save preview locally** saves a missing MP4 beside the model as `model.mp4`.
+
 - **Library refresh and Fetch do less work.** Refresh checks the current folder or category by default. Missing-only Fetch reuses completed lookups and downloads missing covers from cached URLs. Completed batches reload the saved index once.
 - **Library Fetch saves redirected CivitAI previews.** With **Save preview locally** enabled, thumbnails served through the CivitAI blob CDN can be saved beside the model. Existing previews are kept.
 - **Studio Notes saves renamed drafts separately.** Saving under a different name creates a new note. Saving under the same name asks before overwriting. The editor shows the note folder in its top-right corner.

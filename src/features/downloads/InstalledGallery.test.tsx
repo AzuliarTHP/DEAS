@@ -16,6 +16,16 @@ function Host({models=[fox,lamp],onFetch,locked=false,editLora}:{models?:LocalMo
 beforeEach(()=>{vi.mocked(invoke).mockReset().mockResolvedValue(undefined);localStorage.clear();localStorage.setItem('deas.locale.v1','en');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:vi.fn().mockResolvedValue(undefined)}});});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 
+it('shows a local video cover on the Library card and provides playback in model details',()=>{
+ const clip={...lamp,localPreview:'/models/loras/lighting/lamp.mp4'};
+ const view=render(<Host models={[clip]}/>);
+ const tile=view.container.querySelector('.library-card-art video') as HTMLVideoElement;
+ expect(tile.getAttribute('src')).toBe('https://asset.localhost/models/loras/lighting/lamp.mp4');
+ expect(tile.controls).toBe(false);
+ fireEvent.click(screen.getByRole('button',{name:lamp.name}));
+ expect(screen.getByRole('dialog').querySelector('video')?.controls).toBe(true);
+});
+
 it('reveals the literal model file and opens the model version and creator',()=>{
  const entry={...fox,path:'D:\\Models\\[Characters], Final\\[fox], v2.safetensors'};
  render(<Host models={[entry,lamp]}/>);

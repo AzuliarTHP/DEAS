@@ -67,21 +67,25 @@ fn selected_paths(
         }
         if missing_only {
             if let Some(info) = read_info_from_source(&source) {
-                if let Some(url) = info
-                    .civitai
-                    .and_then(|c| c.preview)
-                    .filter(|url| save_preview && preview::cdn_url(url).is_ok())
-                    .filter(|_| {
-                        !index::has_indexed_local_preview(Path::new(&path), &mut preview_folders)
-                    })
-                {
-                    selected.push((
-                        path,
-                        Work::Cover {
-                            url,
-                            source: source.stamp.clone(),
-                        },
-                    ));
+                if save_preview {
+                    if let Some(civitai) = info.civitai {
+                        let cached_url =
+                            civitai.preview.filter(|url| preview::cdn_url(url).is_ok());
+                        // A legacy response without a cover may have dropped video URLs.
+                        let check_legacy = cached_url.is_none() && civitai.preview_kind.is_none();
+                        if (cached_url.is_some() || check_legacy)
+                            && !index::has_indexed_local_preview(
+                                Path::new(&path),
+                                &mut preview_folders,
+                            )
+                        {
+                            let work = cached_url.map_or(Work::Metadata, |url| Work::Cover {
+                                url,
+                                source: source.stamp.clone(),
+                            });
+                            selected.push((path, work));
+                        }
+                    }
                 }
                 // A cached provider miss is a completed lookup for this model
                 // fingerprint. An explicit metadata refresh can retry it.
@@ -406,7 +410,7 @@ mod tests {
             1
         );
         let source = Source::open(&path).unwrap();
-        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.jpg"})).unwrap()) };
+        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.mp4","previewKind":"video"})).unwrap()) };
         publish_info(&source, &None, &info, || {}).unwrap();
         assert!(selected_paths(&root, vec![file.clone()], true, false)
             .unwrap()
@@ -422,7 +426,7 @@ mod tests {
             vec![(
                 file.clone(),
                 Work::Cover {
-                    url: "https://image.civitai.com/fixture.jpg".into(),
+                    url: "https://image.civitai.com/fixture.mp4".into(),
                     source: source.stamp.clone(),
                 }
             )]

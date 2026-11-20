@@ -177,7 +177,7 @@
 .wb-queue button, .wb-tiles button { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 6rem; padding: 3px; border: 1px solid transparent; border-radius: .5rem; background: transparent; color: inherit; text-align: center; }
 .wb-queue button:hover, .wb-tiles button:hover { background: rgb(var(--ink-rgb) / 0.063); }
 .wb-queue button[aria-current="true"], .wb-tiles button[aria-pressed="true"] { border-color: var(--ok); background: var(--ok-soft); }
-.wb-queue img, .wb-tiles img, .wb-thumb { width: 5.6rem; height: 4rem; border-radius: .35rem; object-fit: cover; background: var(--field); display: grid; place-items: center; color: var(--muted); font-size: 1.3rem; }
+.wb-queue img, .wb-tiles :is(img,video), .wb-thumb { width: 5.6rem; height: 4rem; border-radius: .35rem; object-fit: cover; background: var(--field); display: grid; place-items: center; color: var(--muted); font-size: 1.3rem; }
 .wb-queue button[data-state="failed"] .wb-thumb, .wb-queue button[data-state="unknown"] .wb-thumb { color: var(--danger); }
 .wb-queue button { width: 100%; }
 .wb-queue img, .wb-queue .wb-thumb { width: 100%; height: 5.4rem; }
@@ -298,11 +298,11 @@
 
 /* Dock views (pref studio.dock.view): tiles = default above; thumbs = large previews; list = one name per row. */
 .wb-dock[data-view="thumbs"] .wb-tiles button { width: 10rem; }
-.wb-dock[data-view="thumbs"] .wb-tiles img, .wb-dock[data-view="thumbs"] .wb-tiles .wb-thumb { width: 9.6rem; height: 7rem; }
+.wb-dock[data-view="thumbs"] .wb-tiles :is(img,video), .wb-dock[data-view="thumbs"] .wb-tiles .wb-thumb { width: 9.6rem; height: 7rem; }
 .wb-dock[data-view="list"] .wb-tiles { flex-direction: column; flex-wrap: nowrap; gap: 2px; }
 .wb-dock[data-view="list"] .wb-tiles li { flex-direction: row; gap: 6px; }
 .wb-dock[data-view="list"] .wb-tiles button { flex-direction: row; gap: 8px; width: 100%; flex: 1; min-width: 0; text-align: left; }
-.wb-dock[data-view="list"] .wb-tiles img, .wb-dock[data-view="list"] .wb-tiles .wb-thumb { flex: none; width: 2.2rem; height: 1.6rem; font-size: .8rem; }
+.wb-dock[data-view="list"] .wb-tiles :is(img,video), .wb-dock[data-view="list"] .wb-tiles .wb-thumb { flex: none; width: 2.2rem; height: 1.6rem; font-size: .8rem; }
 .wb-dock[data-view="list"] .wb-tile-name { flex: 1; -webkit-line-clamp: 1; height: auto; overflow-wrap: normal; white-space: nowrap; text-overflow: ellipsis; display: block; }
 .wb-dock[data-view="list"] .wb-family { flex: none; }
 .wb-stage > .empty-note { margin: auto; text-align: center; }

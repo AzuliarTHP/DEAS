@@ -23,3 +23,13 @@ it('retries a previously failed cover after explicit refresh without changing pr
  expect(view.container.querySelector('img')).toHaveProperty('src','asset:///previews/a.jpg?deas_preview=123');
  fireEvent.error(view.container.querySelector('img')!);expect(view.container.querySelector('img')).toHaveProperty('src','https://example.invalid/a.png');
 });
+it('prefers the local MP4 and falls back to a provider video with playback controls',()=>{
+ const clip={...model,localPreview:'/previews/a.MP4',info:{...model.info!,civitai:{...model.info!.civitai!,preview:'https://image.civitai.com/layout-fixture/video',previewKind:'video' as const}}};
+ const view=render(<ModelPreview model={clip} videoControls fallback={<span>No preview</span>}/>);
+ const video=()=>view.container.querySelector('video')!;
+ expect(video().getAttribute('src')).toBe('asset:///previews/a.MP4');
+ expect(video().controls).toBe(true);
+ expect(video().muted).toBe(true);
+ fireEvent.error(video());
+ expect(video().getAttribute('src')).toBe('https://image.civitai.com/layout-fixture/video');
+});

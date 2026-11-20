@@ -228,9 +228,12 @@ pub(super) fn civitai_preview(version: &Value) -> Option<String> {
 
 pub(super) fn civitai_still_preview(image: &Value) -> Option<String> {
     let url = image.get("url")?.as_str()?;
-    let still = image.get("type").and_then(Value::as_str) != Some("video")
-        && !url.ends_with(".mp4")
-        && !url.ends_with(".webm");
+    let path = url.split(['?', '#']).next()?.to_ascii_lowercase();
+    let still = !matches!(
+        image.get("type").and_then(Value::as_str),
+        Some("video" | "audio")
+    ) && !path.ends_with(".mp4")
+        && !path.ends_with(".webm");
     (still
         && url.len() <= 2048
         && url.starts_with("https://")

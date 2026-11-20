@@ -52,7 +52,7 @@
 .download-controls .library-card-main { display:flex; flex-direction:column; width:100%; height:100%; gap:0; padding:0; border:0; border-radius:0; background:none; overflow:hidden; cursor:pointer; }
 .library-card-art { position:relative; width:100%; aspect-ratio:3/4; overflow:hidden; background:var(--field); }
 .library-card-art .download-preview { width:100%; height:100%; aspect-ratio:auto; border-radius:0; object-fit:cover; transition:transform .3s; }
-.library-card:hover .library-card-art img { transform:scale(1.035); }
+.library-card:hover .library-card-art :is(img,video) { transform:scale(1.035); }
 .library-card-art .library-placeholder { position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1rem; color:var(--muted); background:radial-gradient(ellipse at 30% 20%,rgb(var(--ink-rgb) / .09),transparent 65%),linear-gradient(155deg,var(--raised),var(--field)); }
 .library-placeholder>svg { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:44px; height:44px; stroke-width:.7; opacity:.5; }
 .library-placeholder>span { position:absolute; left:0; top:calc(50% + 2rem); width:100%; text-align:center; letter-spacing:.14em; font-size:.65rem; opacity:.5; }
@@ -67,7 +67,7 @@
 .library-card-bottom>span:last-child { display:flex; gap:.3rem; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:65%; }
 .library-card-bottom svg { width:12px; height:12px; flex:none; }
 .library-model-check { font-size:.6rem!important; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.library-card.is-sensitive .library-card-art img { filter:blur(18px); transform:scale(1.1); }
+.library-card.is-sensitive .library-card-art :is(img,video) { filter:blur(18px); transform:scale(1.1); }
 .library-card-grid.is-list { grid-template-columns:minmax(0,1fr); gap:.45rem; }
 .is-list .library-card-main { flex-direction:row; align-items:center; }
 .is-list .library-card-art { width:5rem; aspect-ratio:1; flex:none; }
@@ -96,6 +96,9 @@
 .library-cover-thumbnail { height:3rem; }
 .library-cover-thumbnail img,.library-example-image img { display:block; width:100%; height:100%; object-fit:contain; }
 .library-cover-thumbnail.is-sensitive img,.library-example-image.is-sensitive img { filter:blur(12px); }
+.library-video-cover { margin:.7rem 0; overflow:hidden; border-radius:.4rem; background:var(--field); }
+.library-video-cover :is(video,img) { display:block; width:100%; max-height:20rem; object-fit:contain; }
+.library-video-cover.is-sensitive :is(video,img) { filter:blur(12px); }
 .library-cover-editor p { margin:.3rem 0 0; }
 .library-prompt-example { border:1px solid var(--library-border); border-radius:.4rem; padding:.45rem; }
 .library-prompt-example summary { display:flex; align-items:center; gap:.6rem; cursor:pointer; }
