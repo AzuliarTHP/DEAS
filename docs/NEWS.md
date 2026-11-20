@@ -2,6 +2,26 @@
 
 ## 0.3.12
 
+### Downloads: one line per file, and new models show up right away
+
+The **Queue** lists every file on its own line with its own progress bar, percentage, size and speed, instead of one
+combined row per folder. If a download stops, the error and **Resume** sit on the file where it stopped, and resuming a
+partly finished folder now continues after the files it already saved. When a download finishes, Library re-reads that
+folder, so **Installed** and the Studio model lists show the new model without restarting DEAS.
+
+### Library: faster refresh, video covers, Explorer select
+
+**Refresh models** checks only the current folder or category by default (**Entire library** is still there), and
+missing-only **Fetch** reuses earlier lookups. Library can show MP4 covers and **Save preview locally** keeps a missing
+one as `model.mp4`; on Linux, Model Details plays it with the native player while cards keep the still placeholder. On
+Windows the file link opens Explorer with the model selected.
+
+### Studio: backend LoRAs, Notes folders
+
+The LoRA list also shows LoRAs that ComfyUI reports but the local index has not seen yet. Studio Notes gets folder
+naming dialogs, drag-to-reorder and nesting, **Move to folder**, and asks before overwriting a note with the same name.
+The prompt buttons sit beside the editor so its scrollbar stays clear.
+
 ### Dark Wizards can run the job now
 
 The Replace wizard has **Prepare and run**: it sets up the draft in Generate and starts it there, through the same Run
@@ -9,7 +29,7 @@ path as pressing Run yourself. The wizard then shows the job live — step count
 finished picture with its size, model, seed and duration. **Stop** on the wizard stops just that one job. The masked
 method still only prepares, because you paint its mask in Generate.
 
-## 0.3.11
+## 0.3.11 (untagged; shipped in 0.3.12)
 
 ### Dark Wizards: Replace
 
@@ -19,7 +39,7 @@ Qwen Image 2.1 model it sets up a reference edit, or opens the picture in Inpain
 exactly where the object goes; without Qwen it inpaints from the text with another installed model. You always check the
 draft and press Run in Generate yourself. When no fitting model is installed, **Find in Library** shows it in the catalog.
 
-## 0.3.10
+## 0.3.10 (untagged; shipped in 0.3.12)
 
 ### Image editor: eyedropper and undo
 

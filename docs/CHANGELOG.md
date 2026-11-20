@@ -15,11 +15,11 @@
 - **Library file links reveal the model in Explorer.** The containing folder opens with the exact model file selected, including filenames with square brackets and other punctuation.
 - **Studio prompt actions leave the scrollbar clear.** The action buttons sit in a separate column beside the editor.
 
-## 0.3.11
+## 0.3.11 (untagged; shipped in 0.3.12)
 
 - **New Studio tab: Dark Wizards, starting with Replace** ([guide](DARK-WIZARDS.md)). Give it the picture to change (B), optionally an object picture (A) whose content should go into B, plus *Replace what* / *With what*; it picks an installed model and prepares Generate, where the Run Plan shows the draft and you press Run. With a Qwen Image 2.1 (or Turbo) model, **Reference edit** sends B and A as prompt references `image 1` / `image 2` at B's aspect ratio (32-pixel grid), and **Paint a mask** opens B in Inpaint on the same Qwen model with B and A as references — no second model. Without Qwen, Paint a mask falls back to Flux.2, Z-Image, Flux.1 or SDXL with the replacement text only. Wizards are data (`src/wizards/builtin.json`), never guess unknown models, never run, upload or download anything themselves; without a fitting model **Find in Library** opens the Library catalog filtered to the preferred model. Advanced experience only for now.
 
-## 0.3.10
+## 0.3.10 (untagged; shipped in 0.3.12)
 
 - **Image editor eyedropper is an in-picture tool now.** The screen eyedropper relied on the desktop portal, which on some desktops never answered: the button stayed disabled, picked nothing and reported *This runtime has no screen eyedropper*. It is replaced by an eyedropper icon beside the brush colour: click it, then click the picture to take the colour of the visible picture stack (pictures and their strokes, never masks); the previous tool returns afterwards, and Esc or a second click on the icon cancels. Mouse-wheel zoom and middle-button pan keep working while it is active. The colour group (picker, eyedropper, hex, swatches) now appears only while a picture is the active layer, not while painting a mask.
 - **Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) undo and redo in the image editor.** Brush and erase strokes, magic-wand fills and Clear on masks and on picture paint can be undone step by step (up to 50 steps within a 256 MiB budget). Text fields keep their own undo; the history resets when another picture or draft is opened.
