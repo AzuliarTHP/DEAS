@@ -2,6 +2,10 @@
 
 ## Library preview downloads and note overwrites
 
+Chromium played the repository’s H.264 fixture in Model Details. Windows Library
+tests cover Civitai video selection, the local-save preference, preserving
+existing covers, and indexing both `model.mp4` and earlier preview filenames.
+
 An unauthenticated request for a public CivitAI model-version thumbnail
 returned HTTP 301 from the image CDN and HTTP 200 with JPEG bytes from
 the blob CDN. Native fixtures cover the redirect host restrictions and

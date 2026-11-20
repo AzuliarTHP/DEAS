@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Installed Library supports MP4 previews.** Model cards and details can play local and cached CivitAI video covers. **Save preview locally** saves a missing MP4 beside the model as `model.mp4`.
+
 ## 0.3.12
 
 - **Dark Wizards: Prepare and run.** The Replace wizard has a second action. **Prepare and run** hands the draft to Generate and starts it there through Generate's own Run path — the same capture, uploads, prerequisites, queue, job history and Stop as pressing Run yourself; nothing runs by itself and the Run Plan stays the authority in Generate. The wizard follows only that one job: live step progress and the sampler preview while it draws, then the finished picture with its size, model, seed and duration, plus **Show in Generate** (the picture is also in Generate's queue and Media as usual). **Stop** on the wizard cancels just that job, never the queue. **Paint a mask (inpaint)** still only prepares: its mask is painted in Generate, so the wizard cannot run that method yet — SAM text-to-mask from *Replace what* is the next planned slice. Requires the desktop app; Beginner and every existing draft, intent and graph are unchanged.

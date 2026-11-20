@@ -1,6 +1,6 @@
 import builtinFamilies from '../../families/builtin.json' with {type:'json'};
 import { useModelOrganization } from '../../lib/modelOrganization';
-import { ModelPreview } from '../../components/models/ModelPreview';
+import { hasVideoCover, ModelPreview } from '../../components/models/ModelPreview';
 import { useDialogBackdropClose } from '../../components/useDialogBackdropClose';
 import { requestStudioLora } from '../../lib/studioLoraSelection';
 import { ModelAutoLoad, ModelViewAllControl } from '../../components/ModelAutoLoad';
@@ -190,6 +190,9 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
        {isTauri()&&civitai&&<div className="library-civitai-links"><button className="action-button" type="button" onClick={()=>openLink('native_open_civitai_model',{modelId:civitai.modelId,versionId:civitai.versionId,nsfw:civitai.nsfw})}>{t('library.viewCivitai')}</button>{civitai.creator&&<button className="action-button" type="button" title={t('library.viewCreator')} onClick={()=>openLink('native_open_civitai_creator',{username:civitai.creator!,nsfw:civitai.nsfw})}>{civitai.creator}</button>}</div>}
       </div>
       {linkError===picked.path&&<p role="alert">{t('library.openLinkError')}</p>}
+      {hasVideoCover(picked)&&<div className={blurPicked?'library-video-cover is-sensitive':'library-video-cover'}>
+       <ModelPreview key={picked.path} model={picked} videoControls={!blurPicked} fallback={null}/>
+      </div>}
       {picked.info?.civitai&&models.filter(m=>m.info?.civitai?.modelId===picked.info?.civitai?.modelId).length>1&&<section className="library-detail-section"><h4>{t('downloads.version')}</h4><div className="library-trigger-words">{models.filter(m=>m.info?.civitai?.modelId===picked.info?.civitai?.modelId).map(m=><button key={m.path} type="button" aria-pressed={m.path===picked.path} onClick={()=>setSelected(m.path)}>{m.info?.civitai?.version??filename(m)}</button>)}</div></section>}
       <LibraryTriggerWords key={picked.path} model={picked} copy={copy} copied={copied} onEdit={pickedEdit} disabled={editDisabled}/>
       {pickedEdit&&<LibraryCoverEditor key={picked.path+'-cover'} model={picked} onEdit={pickedEdit} disabled={editDisabled} blur={blurPicked}/>}

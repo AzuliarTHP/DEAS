@@ -79,7 +79,7 @@ struct Index {
 }
 
 pub(super) const PREVIEW_EXTENSIONS: &[&str] =
-    &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp"];
+    &["jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "mp4"];
 
 const MAX_DISPLAY_PREVIEW: u64 = 32 * 1024 * 1024;
 

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 /** Installed models under the ComfyUI models folder; CivitAI metadata is cached natively beside each file. */
 export interface ModelSettings { sampler?:string; scheduler?:string; steps?:number; cfgScale?:number; size?:string; clipSkip?:number }
 export interface ModelExample { image:string; prompt:string; negativePrompt?:string }
-export interface CivitaiInfo { description?:string; modelId:number; versionId:number; name:string; creator?:string; version:string; modelType:string; category:string; base?:string; nsfw:boolean; trainedWords:string[]; preview?:string; settings?:ModelSettings; examples?:ModelExample[] }
+export interface CivitaiInfo { description?:string; modelId:number; versionId:number; name:string; creator?:string; version:string; modelType:string; category:string; base?:string; nsfw:boolean; trainedWords:string[]; preview?:string; previewKind?:'image'|'video'|'unavailable'; settings?:ModelSettings; examples?:ModelExample[] }
 export interface ModelInfo { sha256:string; size:number; fetchedAt:number; civitai:CivitaiInfo|null }
 /** `family` is effective (declaration or detection); metadataError blocks execution, even for unknown checkpoints. */
 export type FamilyEvidence = 'header' | 'filename' | 'unresolved' | 'conflict';

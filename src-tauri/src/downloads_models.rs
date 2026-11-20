@@ -479,6 +479,14 @@ pub struct Settings {
     pub clip_skip: Option<u64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CivitaiPreviewKind {
+    Image,
+    Video,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CivitaiInfo {
@@ -498,6 +506,8 @@ pub struct CivitaiInfo {
     pub trained_words: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_kind: Option<CivitaiPreviewKind>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<Settings>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1198,6 +1208,26 @@ fn model_examples(version: &Value) -> Vec<ModelExample> {
         .collect()
 }
 
+fn civitai_cover(version: &Value) -> Option<(String, CivitaiPreviewKind)> {
+    version.get("images")?.as_array()?.iter().find_map(|media| {
+        let raw = media.get("url")?.as_str()?;
+        if raw.len() > 2048 || raw.chars().any(char::is_control) {
+            return None;
+        }
+        let url = preview::cdn_url(raw).ok()?;
+        let path = url.path().to_ascii_lowercase();
+        let kind = media.get("type").and_then(Value::as_str);
+        if kind == Some("audio") || path.ends_with(".webm") {
+            return None;
+        }
+        if kind == Some("video") || path.ends_with(".mp4") {
+            // Use CivitAI's video URL without applying the still-thumbnail resize.
+            return Some((raw.into(), CivitaiPreviewKind::Video));
+        }
+        providers::civitai_still_preview(media).map(|url| (url, CivitaiPreviewKind::Image))
+    })
+}
+
 pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
     let model = v.get("model").ok_or("Missing CivitAI model")?;
     let name = providers::text(model, "name")?;
@@ -1205,6 +1235,10 @@ pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
     bounded_text(name, 240)?;
     bounded_text(version, 240)?;
     let model_type = model.get("type").and_then(Value::as_str).unwrap_or("");
+    let (preview, preview_kind) = match civitai_cover(v) {
+        Some((url, kind)) => (Some(url), kind),
+        None => (None, CivitaiPreviewKind::Unavailable),
+    };
     Ok(CivitaiInfo {
         description: v.get("description").and_then(Value::as_str).map(|text| {
             text.chars()
@@ -1239,7 +1273,8 @@ pub(super) fn civitai_info(v: &Value) -> Result<CivitaiInfo, String> {
                     .collect()
             })
             .unwrap_or_default(),
-        preview: providers::civitai_preview(v),
+        preview,
+        preview_kind: Some(preview_kind),
         settings: v
             .get("images")
             .and_then(Value::as_array)
@@ -2972,6 +3007,29 @@ mod tests {
         );
         assert_eq!(examples[0].prompt, "portrait <lora:test:1>\n second line");
         assert_eq!(examples[0].negative_prompt.as_deref(), Some("blur"));
+    }
+
+    #[test]
+    fn civitai_model_cover_keeps_the_first_mp4_and_its_original_url() {
+        let video = "https://image.civitai.com/fixture/original=true/video.MP4?size=small";
+        let original = serde_json::json!({
+            "images": [
+                {"type":"video","url":video,"meta":{"prompt":"video"}},
+                {"type":"image","url":"https://image.civitai.com/original=true/frame.jpg","meta":{"prompt":"still"}}
+            ]
+        });
+        assert_eq!(
+            civitai_cover(&original),
+            Some((video.into(), CivitaiPreviewKind::Video))
+        );
+        assert_eq!(model_examples(&original).len(), 1);
+        let provider_video = serde_json::json!({
+            "images":[{"type":"video","url":"https://images.civitai.com/fixture/clip"}]
+        });
+        assert_eq!(
+            civitai_cover(&provider_video).unwrap().1,
+            CivitaiPreviewKind::Video
+        );
     }
 
     #[test]
