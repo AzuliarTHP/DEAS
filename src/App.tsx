@@ -14,7 +14,7 @@ import { PromptForge } from './features/forge/PromptForge';
 import { Chat } from './features/chat/Chat';
 import { Analysis } from './features/analysis/Analysis';
 import { DarkWizards } from './features/wizards/DarkWizards';
-import type { WizardHandoff } from './lib/wizards';
+import type { WizardHandoff, WizardRun } from './lib/wizards';
 import type { MediaItem } from './lib/media';
 import type { MediaAction } from './features/media/MediaLibrary';
 import type { Folders } from './lib/settings';
@@ -81,9 +81,10 @@ export default function App(){
  // Dark Wizards prepare an ordinary Generate draft; Generate answers by hand-over number and only then becomes visible.
  const wizardsOpened=useRef(false);if(tab==='wizards')wizardsOpened.current=true;
  const [wizardHandoff,setWizardHandoff]=useState<WizardHandoff>();
- const [wizardOutcome,setWizardOutcome]=useState<{n:number;error?:string}>();
+ const [wizardOutcome,setWizardOutcome]=useState<{n:number;error?:string;run?:WizardRun}>();
  const prepareWizard=useCallback((handoff:Omit<WizardHandoff,'n'>)=>setWizardHandoff(previous=>({...handoff,n:(previous?.n??0)+1})),[]);
- const wizardApplied=useCallback((n:number,error?:string)=>{setWizardOutcome({n,...(error?{error}:{})});if(!error)setTab('generate');},[setTab]);
+ // A run hand-over stays on the wizard tab: Generate reports its progress and result back here instead of switching.
+ const wizardApplied=useCallback((n:number,error?:string,run?:WizardRun)=>{setWizardOutcome({n,...(error?{error}:{}),...(run?{run}:{})});if(!error&&!run)setTab('generate');},[setTab]);
  const monitorOpened=useRef(false);if(tab==='monitor')monitorOpened.current=true;
  const [forgeHost,setForgeHost]=useState<HTMLDivElement|null>(null);
  const [h3ForgeAvailable,setH3ForgeAvailable]=useState(false);
@@ -130,7 +131,7 @@ export default function App(){
     <div className="studio-main">
     <div className="studio-generate-host" hidden={tab==='forge'||tab==='chat'||tab==='analysis'||tab==='wizards'||tab==='tve'||tab==='monitor'}><Workbench beginner={beginner} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} planVisible={tab==='map'} endpoint={endpoint} ownedBackend={endpoint===ownedEndpoint} roots={roots} root={environment?.root} incoming={sent} onCanvasContext={setForgeCanvasContext} onOpenVideoPost={()=>setTab('tve')} forgeHost={forgeHost} forgeActive={studioActive&&tab==='forge'} onOpenPromptForge={()=>setTab('forge')} onH3ForgeAvailable={setH3ForgeAvailable} chatRender={chatRender} onChatRender={chatRendered} onChatStudio={setChatStudio} onAnalyze={analyze} onFrameActions={fn=>{frameActions.current=fn;}} wizard={wizardHandoff} onWizardApplied={wizardApplied}/></div>
     {analysisOpened.current&&<div className="studio-generate-host" hidden={tab!=='analysis'}><Analysis active={studioActive&&tab==='analysis'} endpoint={endpoint} frameActions={item=>frameActions.current?.(item)??[]} roots={roots} root={environment?.root} incoming={toAnalyze} onSend={sendToGenerate}/></div>}
-    {wizardsOpened.current&&<div className="studio-generate-host" hidden={tab!=='wizards'}><DarkWizards active={studioActive&&tab==='wizards'} roots={roots} onPrepare={prepareWizard} outcome={wizardOutcome} handoff={wizardHandoff?.n}/></div>}
+    {wizardsOpened.current&&<div className="studio-generate-host" hidden={tab!=='wizards'}><DarkWizards active={studioActive&&tab==='wizards'} roots={roots} onPrepare={prepareWizard} outcome={wizardOutcome} onOpenGenerate={()=>setTab('generate')} handoff={wizardHandoff?.n}/></div>}
     {tveOpened.current&&<div className="studio-generate-host" hidden={tab!=='tve'}><TrueVideoEnhancer endpoint={endpoint} roots={roots}/></div>}
     {monitorOpened.current&&<div className="studio-generate-host" hidden={tab!=='monitor'}><Monitoring active={studioActive&&tab==='monitor'} root={environment?.root}/></div>}
     {forgeOpened.current&&<div className="studio-generate-host" hidden={tab!=='forge'}>{canvasSendError&&<p className="error-message" role="alert">{t(canvasSendError)}</p>}<div ref={setForgeHost} hidden={!h3ForgeAvailable}/><div hidden={h3ForgeAvailable}><PromptForge active={studioActive&&tab==='forge'&&!h3ForgeAvailable} endpoint={endpoint} root={environment?.root} inputDir={roots?.input} outputDir={roots?.output} onSend={sendToGenerate} canvasContext={forgeCanvasContext}/></div></div>}

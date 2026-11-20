@@ -1,11 +1,11 @@
-import { evidence, referenceModels, referenceNodes, refsEvidence } from './Workbench.testHarness';
+import { evidence, heldJob, referenceModels, referenceNodes, refsEvidence, collection } from './Workbench.testHarness';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { Workbench } from './Workbench';
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { checkRecipePrerequisites } from '../../lib/recipePrerequisites';
 import { scanModels } from '../../lib/models';
-import { runWorkbenchJob, uploadInput, uploadMask } from '../../lib/jobs';
+import { pollWorkbench, readCurrentWorkbench, runWorkbenchJob, uploadInput, uploadMask } from '../../lib/jobs';
 import type { WizardHandoff } from '../../lib/wizards';
 
 const picture = { name: 'street.png', path: '/pics/street.png', src: 'asset://localhost//pics/street.png' };
@@ -41,6 +41,59 @@ test('a reference-edit hand-over selects the Qwen model, adds the picture as pro
   view.rerender(<I18nProvider><Workbench {...props} wizard={reference}/></I18nProvider>);
   expect(prompt()).toBe('my own edit'); expect(applied).toHaveBeenCalledTimes(1);
   expect(runWorkbenchJob).not.toHaveBeenCalled(); expect(uploadInput).not.toHaveBeenCalled(); expect(uploadMask).not.toHaveBeenCalled();
+});
+
+test('a run hand-over applies the draft and starts it through Generate\'s own Run path, reporting the job back without a plain prepare', async () => {
+  vi.mocked(scanModels).mockResolvedValue(referenceModels('qwen-image-2.1-turbo'));
+  vi.mocked(checkRecipePrerequisites).mockResolvedValue(qwenEvidence());
+  vi.mocked(uploadInput).mockResolvedValue('deas-inputs/street.png');
+  vi.mocked(runWorkbenchJob).mockResolvedValue({ ...heldJob('wizard-run', 'running'), progress: { value: 3, max: 20 } });
+  const applied = vi.fn(), props = { endpoint: evidence.baseUrl, roots: { models: '/m', output: '/out' }, onWizardApplied: applied };
+  const view = render(<I18nProvider><Workbench {...props}/></I18nProvider>);
+  await waitFor(() => expect(document.querySelector('[data-model-picker]')?.textContent).toContain('qwen.safetensors'));
+  view.rerender(<I18nProvider><Workbench {...props} wizard={{ ...reference, n: 2, run: true }}/></I18nProvider>);
+  // The draft is applied first, so the intent Run builds carries the wizard's model, picture reference and size.
+  await waitFor(() => expect(applied).toHaveBeenCalledWith(2, undefined, expect.objectContaining({ state: 'running', value: 3, max: 20 })));
+  const [endpoint, intent] = vi.mocked(runWorkbenchJob).mock.calls.at(-1)!;
+  expect(endpoint).toBe(evidence.baseUrl);
+  expect(intent).toMatchObject({ checkpoint: 'qwen.safetensors', positivePrompt: reference.positive, width: 1216, height: 672,
+    nativeImageReference: { method: 'qwen-image-2.1', images: ['deas-inputs/street.png'] } });
+  expect((intent as { inputImage?: string }).inputImage).toBeUndefined();
+  expect(prompt()).toBe(reference.positive);
+  // A run hand-over is never reported as a plain prepare, so the wizard tab stays open.
+  expect(applied.mock.calls.every(call => call[2] !== undefined)).toBe(true);
+});
+
+test('a wizard run reports the finished picture from that job\'s own native output folder', async () => {
+  vi.mocked(scanModels).mockResolvedValue(referenceModels('qwen-image-2.1-turbo'));
+  vi.mocked(checkRecipePrerequisites).mockResolvedValue(qwenEvidence());
+  vi.mocked(uploadInput).mockResolvedValue('deas-inputs/street.png');
+  vi.mocked(runWorkbenchJob).mockResolvedValue({ ...heldJob('wizard-run', 'running') });
+  const finished = { ...heldJob('wizard-run', 'succeeded'), outputRoot: '/out', metadata: { startedAt: 0, generationMs: 4200 },
+    outputs: [{ filename: 'done.png', subfolder: 'DEAS/replace', type: 'output' as const }] };
+  vi.mocked(pollWorkbench).mockResolvedValue(collection([finished]));
+  const applied = vi.fn(), props = { endpoint: evidence.baseUrl, roots: { models: '/m', output: '/out' }, onWizardApplied: applied };
+  const view = render(<I18nProvider><Workbench {...props}/></I18nProvider>);
+  await waitFor(() => expect(document.querySelector('[data-model-picker]')?.textContent).toContain('qwen.safetensors'));
+  view.rerender(<I18nProvider><Workbench {...props} wizard={{ ...reference, n: 2, run: true }}/></I18nProvider>);
+  await waitFor(() => expect(applied).toHaveBeenCalledWith(2, undefined, expect.objectContaining({
+    state: 'succeeded', job: expect.objectContaining({ id: 'wizard-run' }),
+    picture: expect.objectContaining({ path: '/out/DEAS/replace/done.png', width: 1216, height: 672, checkpoint: 'qwen.safetensors', ms: 4200 }) })), { timeout: 4000 });
+  expect(applied.mock.calls.filter(call => call[0] === 2 && call[2]?.state === 'succeeded')).toHaveLength(1);
+});
+
+test('a wizard run that finished without a file or failed names the outcome instead of inventing a picture', async () => {
+  vi.mocked(scanModels).mockResolvedValue(referenceModels('qwen-image-2.1-turbo'));
+  vi.mocked(checkRecipePrerequisites).mockResolvedValue(qwenEvidence());
+  vi.mocked(uploadInput).mockResolvedValue('deas-inputs/street.png');
+  vi.mocked(runWorkbenchJob).mockResolvedValue({ ...heldJob('wizard-run', 'running') });
+  vi.mocked(pollWorkbench).mockResolvedValue(collection([{ ...heldJob('wizard-run', 'succeeded'), outputRoot: '/out' }]));
+  const applied = vi.fn(), props = { endpoint: evidence.baseUrl, roots: { models: '/m', output: '/out' }, onWizardApplied: applied };
+  const view = render(<I18nProvider><Workbench {...props}/></I18nProvider>);
+  await waitFor(() => expect(document.querySelector('[data-model-picker]')?.textContent).toContain('qwen.safetensors'));
+  view.rerender(<I18nProvider><Workbench {...props} wizard={{ ...reference, n: 2, run: true }}/></I18nProvider>);
+  await waitFor(() => expect(applied).toHaveBeenCalledWith(2, undefined, expect.objectContaining({ state: 'succeeded', error: 'The run finished without a picture file.' })), { timeout: 4000 });
+  expect(applied.mock.calls.at(-1)![2]?.picture).toBeUndefined();
 });
 
 test('an inpaint hand-over opens the picture in Inpaint with the prompt and keeps Run behind the mask gate', async () => {

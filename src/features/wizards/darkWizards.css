@@ -23,3 +23,8 @@
 .wizards-form select { max-width: 100%; }
 .wizards-missing { display: grid; gap: 6px; }
 .wizards-actions { margin-top: auto; padding-top: 6px; }
+.wizards-run { display: grid; gap: 8px; align-content: start; }
+.wizards-result { display: grid; gap: 4px; margin: 0; min-width: 0; }
+.wizards-result img, .wizards-preview { max-width: 100%; max-height: 40vh; object-fit: contain; border-radius: 8px; }
+.wizards-preview { opacity: 0.85; }
+.wizards-result figcaption { font-size: 12px; opacity: 0.8; }

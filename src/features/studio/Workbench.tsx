@@ -96,7 +96,8 @@ import { ForgeButton, HammerIcon } from '../forge/ForgeButton';
 import { applyRefPrefill, nextShot, promptStructure, refPrefill } from '../../lib/h3Prompt';
 import { dialectOf, labelCharacters, nativeTarget } from '../../lib/forge';
 import { chatRenderSize, type ChatRenderOutcome, type ChatRenderRequest, type ChatStudio } from '../../lib/chat';
-import type { WizardHandoff } from '../../lib/wizards';
+import type { WizardHandoff, WizardRun } from '../../lib/wizards';
+import { jobOutputPath } from '../../lib/wizards';
 import { PresetPanel } from '../presets/PresetPanel';
 import { WildcardPanel } from '../wildcards/WildcardPanel';
 import { defaultWildcard, isWildcardRules, wildcardNode, parseWildcardLibrary, flattenCategories, mergeVariableLibrary, parsePins, parseVariableLibrary, prunePins, scanVariables, variablePick, type WildcardLibrary } from '../../lib/wildcard';
@@ -171,7 +172,7 @@ const isMusicGeneration=inBounds<MusicGenerationSettings>(musicBounds.generation
 const isMusicDuration=(v:unknown):v is {t2m:number;cover:number}=>!!v&&typeof v==='object'&&(['t2m','cover'] as const).every(k=>{const n=(v as Record<string,unknown>)[k];return typeof n==='number'&&n>=musicMaxDuration.step&&n<=musicMaxDuration.limit;});
 /** Edits of the shown image: plain image-to-image (`resample`) or inpaint; refine/upscale live in the Post-Processing tab. */
 const editModes=['resample','inpaint'] as const;
-export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void; /** A Dark Wizards draft to prepare here (never run); `n` changes per hand-over. */ wizard?:WizardHandoff; onWizardApplied?:(n:number,error?:string)=>void }
+export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void; /** A Dark Wizards draft to prepare here, and with `run` started through Generate's own Run path; `n` changes per hand-over. `run` reports that hand-over's progress and result. */ wizard?:WizardHandoff; onWizardApplied?:(n:number,error?:string,run?:WizardRun)=>void }
 /** Text-to-image workbench: settings left, preview over the prompts, queue right, bottom dock with Media · Models · LoRAs tabs. */
 export function Workbench(props:WorkbenchProps){
  const [project,setProject]=useState<ProjectSnapshot|null>(null);
@@ -1797,11 +1798,13 @@ const promptTools=forgeContext&&<>
   setBrowsed(null);setSelectedJob('');
  };
  const pickModel=(m:LocalModel)=>switchDraft(pipeline,m,true,false,true);
- // Dark Wizards: prepare an ordinary draft (model, picture, prompt, size) and leave Run to the user. Applied once per hand-over, after models are listed.
+ // Dark Wizards: prepare an ordinary draft (model, picture, prompt, size); with `run`, Generate starts that draft afterwards.
  const wizardApplied=useRef(0);
+ const [wizardStart,setWizardStart]=useState<number>();
+ const wizardJob=useRef<{n:number;job:JobStatus;intent:DiagnosticImageIntentV1}|undefined>(undefined);
  useEffect(()=>{
   if(!wizard||wizardApplied.current===wizard.n||models===null)return;
-  wizardApplied.current=wizard.n;
+  wizardApplied.current=wizard.n;wizardJob.current=undefined;setWizardStart(undefined);
   const fail=(key:string)=>{setError(t(key));onWizardApplied?.(wizard.n,t(key));};
   if(beginner){fail('wizards.handoff.beginner');return;}
   const m=allModels.find(x=>x.path===wizard.model.path)??allModels.find(x=>x.name===wizard.model.name);
@@ -1814,8 +1817,35 @@ const promptTools=forgeContext&&<>
   if(wizard.source==='reference'){setMedia(null);setImageRefs([{item:picture,strength:0.6},...references]);}
   else {setImageRefs(references);setMedia(picture);if(wizard.edit)setEdit(wizard.edit);}
   if(wizard.size){setWidth(wizard.size.width);setHeight(wizard.size.height);setResolution('fixed');}
-  setPositive(wizard.positive);setError('');onWizardApplied?.(wizard.n);
+  setPositive(wizard.positive);setError('');
+  // A hand-over that asked to run starts one commit later, so Run builds its intent from the draft that was just applied.
+  if(wizard.run)setWizardStart(wizard.n);else onWizardApplied?.(wizard.n);
  },[wizard?.n,models===null]); // eslint-disable-line react-hooks/exhaustive-deps
+ // The wizard's own Run goes through Workbench's Run path — the same capture, upload, admission and queue a Generate press uses.
+ useEffect(()=>{
+  const n=wizardStart;
+  if(n===undefined||wizard?.n!==n||wizardJob.current)return;
+  setWizardStart(undefined);lastError.current='';
+  void run().then(started=>{
+   if(!started){onWizardApplied?.(n,undefined,{state:'unknown',error:lastError.current||t('wizards.run.notStarted')});return;}
+   wizardJob.current={n,job:started.job,intent:started.intent};
+   onWizardApplied?.(n,undefined,{state:started.job.state,...(started.job.progress?{value:started.job.progress.value,max:started.job.progress.max}:{})});
+  },e=>onWizardApplied?.(n,undefined,{state:'unknown',error:e instanceof Error?e.message:String(e)}));
+ },[wizardStart]); // eslint-disable-line react-hooks/exhaustive-deps
+ // Only the wizard's own job is followed here; Generate's poller stays the single status reader of the session.
+ useEffect(()=>{
+  const held=wizardJob.current;if(!held)return;
+  const found=jobs.find(j=>j.id===held.job.id);if(!found||found===held.job)return;
+  held.job=found;
+  if(found.state==='queued'||found.state==='running'){onWizardApplied?.(held.n,undefined,{state:found.state,...(found.progress?{value:found.progress.value,max:found.progress.max}:{}),...(found.preview?{preview:found.preview}:{})});return;}
+  wizardJob.current=undefined;
+  const output=found.outputs.find(o=>!o.format?.startsWith('video/'));
+  const path=output&&found.state==='succeeded'?jobOutputPath(found,output):undefined;
+  const problem=found.state!=='succeeded'?(found.error||t(found.state==='cancelled'?'wizards.run.cancelled':'wizards.run.failed')):(path?undefined:t('wizards.run.noFile'));
+  onWizardApplied?.(held.n,undefined,{state:found.state,job:found,
+   ...(path?{picture:{path,width:held.intent.width,height:held.intent.height,seed:held.intent.seed,checkpoint:held.intent.checkpoint,...(found.metadata?.generationMs!=null?{ms:found.metadata.generationMs}:{})}}:{}),
+   ...(problem?{error:problem}:{})});
+ },[jobs]); // eslint-disable-line react-hooks/exhaustive-deps
  const beginnerTarget=(m:LocalModel)=>familyOf(m)?.defaults||m.family==='yue2'||aceMusicProfile(m.family)?pipelines.find(p=>!blocked(m,p)):undefined;
  const beginnerUse=(m:LocalModel)=>{const target=beginnerTarget(m);if(!target)return;
   const next=!blocked(m,pipeline)?pipeline:target;

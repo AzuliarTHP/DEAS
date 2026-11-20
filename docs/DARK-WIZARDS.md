@@ -1,6 +1,6 @@
 # Dark Wizards
 
-**Studio → Dark Wizards** holds guided helpers for common jobs. You give a wizard a picture and a few words; it picks a fitting installed model, the pipeline, the prompt and the output size, and **prepares Generate**. Nothing runs in the wizard: Generate shows the prepared draft, the Run Plan shows exactly what would be submitted, and you press **Run** there. A wizard run is an ordinary Generate job in the ordinary queue.
+**Studio → Dark Wizards** holds guided helpers for common jobs. You give a wizard a picture and a few words; it picks a fitting installed model, the pipeline, the prompt and the output size, and **prepares Generate**. Nothing starts on its own: Generate shows the prepared draft, the Run Plan shows exactly what would be submitted, and you press **Run** there — or press **Prepare and run** in the wizard, which asks Generate to start that same draft (see below). A wizard run is an ordinary Generate job in the ordinary queue.
 
 The tab is available in the Advanced experience. Beginner keeps its own composer; a prepared draft sent while Beginner is active is refused with a note.
 
@@ -17,6 +17,7 @@ Swaps a person, object or detail in a picture for something else — described i
    - When no Qwen model is installed, **Paint a mask** falls back to a Flux.2, Z-Image, Flux.1 or SDXL model with *With what* as the prompt. These models cannot read the object picture; the wizard says so and uses only the text.
 5. **Model** — the installed models that fit the method, in the wizard's preference order. Models whose family DEAS does not know are never offered.
 5. **Prepare in Generate** — switches to Generate with the prepared draft. If Generate cannot use the chosen model (for example the file was moved), the wizard shows why and nothing changes in Generate.
+6. **Prepare and run** — prepares the same draft and asks Generate to start it, through Generate's own Run path: the same input capture and uploads, the same prerequisite and grid checks, the same queue, history and Stop. The wizard does not submit anything itself. While the job runs it shows the step counter and the sampler preview with a **Stop** for that one job; afterwards it shows the finished picture with its size, model, seed and duration, and **Show in Generate** opens the tab with the job and its output. The result also appears in Generate's queue and in Media, like any other job. This button needs the desktop app, and the **Paint a mask** method keeps it disabled: that mask is painted in Generate, so the wizard has nothing to run yet — use **Prepare in Generate** and press Run there.
 
 Preparing selects the model like a click in the Models dock (its remembered settings return), clears that draft's LoRAs, replaces the picture to edit / prompt references and the positive prompt, and leaves the negative prompt, seed, sampler and post-processing as they are. Check the Run Plan before Run. Components the model needs (text encoder, VAE) are checked by Generate as usual.
 
@@ -26,8 +27,8 @@ The wizard says which model it prefers and offers **Find in Library**, which ope
 
 ## What a wizard is
 
-A wizard is a data entry in `src/wizards/builtin.json`: its input fields, whether it takes an object picture and, per method, the accepted model families in preference order, the families that can read the object picture, the Generate pipeline, whether the picture is a reference or the picture to edit, the edit mode and the prompt templates (`{field}` required, `{field|fallback}` optional). DEAS validates these entries (known families only, matching pipeline/source/mask) and ignores invalid ones. The wizard only reads the model index, describes the chosen file and asks Generate to prepare a draft; it does not upload, prepare or submit jobs.
+A wizard is a data entry in `src/wizards/builtin.json`: its input fields, whether it takes an object picture and, per method, the accepted model families in preference order, the families that can read the object picture, the Generate pipeline, whether the picture is a reference or the picture to edit, the edit mode and the prompt templates (`{field}` required, `{field|fallback}` optional). DEAS validates these entries (known families only, matching pipeline/source/mask) and ignores invalid ones. The wizard only reads the model index, describes the chosen file and asks Generate to prepare a draft — and, only when you press **Prepare and run**, to start it; it never uploads, compiles or submits jobs itself, and it follows just the job its own hand-over started.
 
 ## Not yet included
 
-One-click Run from the wizard, SAM text-to-mask from *Replace what* for the inpaint method, Replace for videos, and the planned Mood, Movie Maker and Grid Generator wizards are tracked in the [plan](PLAN.md#ux-22--dark-wizards-tab--replace-priority-1-movie-maker-mood-grid-generator).
+SAM text-to-mask from *Replace what* for the inpaint method (so the masked method can run from the wizard too), Replace for videos, and the planned Mood, Movie Maker and Grid Generator wizards are tracked in the [plan](PLAN.md#ux-22--dark-wizards-tab--replace-priority-1-movie-maker-mood-grid-generator).

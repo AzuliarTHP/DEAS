@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.12
+
+- **Dark Wizards: Prepare and run.** The Replace wizard has a second action. **Prepare and run** hands the draft to Generate and starts it there through Generate's own Run path — the same capture, uploads, prerequisites, queue, job history and Stop as pressing Run yourself; nothing runs by itself and the Run Plan stays the authority in Generate. The wizard follows only that one job: live step progress and the sampler preview while it draws, then the finished picture with its size, model, seed and duration, plus **Show in Generate** (the picture is also in Generate's queue and Media as usual). **Stop** on the wizard cancels just that job, never the queue. **Paint a mask (inpaint)** still only prepares: its mask is painted in Generate, so the wizard cannot run that method yet — SAM text-to-mask from *Replace what* is the next planned slice. Requires the desktop app; Beginner and every existing draft, intent and graph are unchanged.
+
 ## 0.3.11
 
 - **New Studio tab: Dark Wizards, starting with Replace** ([guide](DARK-WIZARDS.md)). Give it the picture to change (B), optionally an object picture (A) whose content should go into B, plus *Replace what* / *With what*; it picks an installed model and prepares Generate, where the Run Plan shows the draft and you press Run. With a Qwen Image 2.1 (or Turbo) model, **Reference edit** sends B and A as prompt references `image 1` / `image 2` at B's aspect ratio (32-pixel grid), and **Paint a mask** opens B in Inpaint on the same Qwen model with B and A as references — no second model. Without Qwen, Paint a mask falls back to Flux.2, Z-Image, Flux.1 or SDXL with the replacement text only. Wizards are data (`src/wizards/builtin.json`), never guess unknown models, never run, upload or download anything themselves; without a fitting model **Find in Library** opens the Library catalog filtered to the preferred model. Advanced experience only for now.

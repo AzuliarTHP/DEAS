@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { useI18n } from '../../i18n/I18nProvider';
 import { pickMedia } from '../../lib/analysis';
 import { describeMedia, dropCssPoint, itemFromEntry, pastedPaths, pastedPictures, pasteToInput } from '../../lib/media';
+import { stopWorkbenchJob } from '../../lib/jobs';
 import { scanModels } from '../../lib/models';
-import { builtinWizards, editGrid, findInLibrary, preferredChoice, strategyPrompt, usesObject, wizardCanvas, wizardChoices, wizardReady, type WizardField, type WizardHandoff, type WizardModel, type WizardPicture } from '../../lib/wizards';
+import { builtinWizards, editGrid, findInLibrary, preferredChoice, strategyPrompt, usesObject, wizardCanvas, wizardChoices, wizardReady, type WizardField, type WizardHandoff, type WizardModel, type WizardPicture, type WizardRun } from '../../lib/wizards';
 import './darkWizards.css';
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
@@ -14,15 +15,17 @@ type Slot = 'target' | 'object';
 export interface DarkWizardsProps {
   active?: boolean;
   roots?: { models?: string; extraModels?: string[]; input?: string };
-  /** Hands an ordinary draft to Generate; Generate replies through `outcome` with the same number. */
+  /** Hands an ordinary draft to Generate, optionally asking it to run that draft; Generate replies through `outcome` with the same number. */
   onPrepare: (handoff: Omit<WizardHandoff, 'n'>) => void;
-  outcome?: { n: number; error?: string };
+  outcome?: { n: number; error?: string; run?: WizardRun };
+  /** Opens Generate again to show the finished draft and its job in the queue. */
+  onOpenGenerate?: () => void;
   /** Number of the last hand-over, so the outcome of an older one is not shown as current. */
   handoff?: number;
 }
 
 /** Dark Wizards: preset-driven helpers that pick model, pipeline and prompt, then prepare Generate. They never run anything themselves. */
-export function DarkWizards({ active = false, roots, onPrepare, outcome, handoff }: DarkWizardsProps) {
+export function DarkWizards({ active = false, roots, onPrepare, outcome, onOpenGenerate, handoff }: DarkWizardsProps) {
   const { t } = useI18n();
   const native = isTauri();
   const [wizardId, setWizardId] = useState(builtinWizards[0]?.id ?? '');
@@ -59,6 +62,12 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, handoff
   const pictureSize = picture ? sizes[picture.src] : undefined;
   const ready = !!picture && !!chosen && !!model && wizardReady(chosen.strategy, fields, withObject) && (chosen.strategy.source !== 'reference' || !!pictureSize);
   const pending = !!handoff && outcome?.n !== handoff;
+  // The wizard's own run: Generate submits and follows it; the wizard shows its progress and can stop only that job.
+  const run = !!handoff && outcome?.n === handoff ? outcome.run : undefined;
+  const running = run?.state === 'queued' || run?.state === 'running';
+  // A masked method has no mask at hand-over time (the wizard cannot make one yet), so it stays a prepared draft.
+  const runBlocked = !native ? t('wizards.run.native') : chosen?.strategy.needsMask ? t('wizards.run.maskHint') : '';
+  const runnable = !runBlocked;
   // Inpaint keeps the source size, so a picture off the model's grid is first resampled in Generate; say so before the hand-over.
   const grid = chosen?.strategy.source === 'edit' && model?.family ? editGrid(model.family, withObject) : 0;
   const offGrid = !!grid && !!pictureSize && (pictureSize.width % grid !== 0 || pictureSize.height % grid !== 0);
@@ -123,8 +132,8 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, handoff
     return () => { alive = false; unlisten?.(); };
   }, [native, active]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const prepare = () => {
-    if (!wizard || !chosen || !model || !picture || !ready) return;
+  const prepare = (withRun = false) => {
+    if (!wizard || !chosen || !model || !picture || !ready || (withRun && !runnable)) return;
     const s = chosen.strategy, family = model.family ?? '';
     const canvas = s.source === 'reference' && pictureSize ? wizardCanvas(family, pictureSize) : undefined;
     if (s.source === 'reference' && !canvas) { setError(t('wizards.picture.size')); return; }
@@ -133,7 +142,7 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, handoff
       model: { name: model.name, path: model.path }, picture,
       // Reference edits make the picture reference 1 themselves; a masked edit lists it explicitly so the prompt's `image 1` exists there too.
       ...(withObject && object ? { references: s.source === 'reference' ? [object] : [picture, object] } : {}),
-      positive: strategyPrompt(s, fields, withObject), ...(canvas ? { size: canvas } : {}) });
+      positive: strategyPrompt(s, fields, withObject), ...(canvas ? { size: canvas } : {}), ...(withRun ? { run: true } : {})});
   };
 
   if (!wizard) return null;
@@ -199,9 +208,21 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, handoff
         </>}
       </div>
       <div className="wizards-row wizards-actions">
-        <button type="button" className="action-button" data-wizard-prepare disabled={!ready || pending} onClick={prepare}>{t('wizards.prepare')}</button>
-        <span className="forge-note">{t('wizards.prepareNote')}</span>
+        <button type="button" className="action-button" data-wizard-prepare disabled={!ready || pending || running} onClick={() => prepare()}>{t('wizards.prepare')}</button>
+        <button type="button" className="action-button" data-wizard-run disabled={!ready || pending || running || !runnable} title={runBlocked || undefined} onClick={() => prepare(true)}>{t('wizards.run')}</button>
+        {running && <button type="button" className="forge-ghost" data-wizard-stop onClick={() => { const job = run?.job; if (job) void stopWorkbenchJob(job).catch(e => setError(e instanceof Error ? e.message : String(e))); }}>{t('wizards.run.stop')}</button>}
+        {!running && <span className="forge-note">{t('wizards.prepareNote')}</span>}
       </div>
+      {run && <div className="wizards-run" data-wizard-run-state={run.state} role="status">
+        <p className="forge-note" data-wizard-run-status>{run.state === 'running' && run.max ? t('wizards.run.running', { value: String(run.value ?? 0), max: String(run.max) }) : t(`wizards.run.${run.state}`)}</p>
+        {run.preview && running && <img className="wizards-preview" src={run.preview} alt=""/>}
+        {run.picture && <figure className="wizards-result">
+          <img src={convertFileSrc(run.picture.path)} alt={chosen ? strategyPrompt(chosen.strategy, fields, withObject).slice(0, 160) : t('wizards.title')}/>
+          <figcaption>{[`${run.picture.width}×${run.picture.height}`, run.picture.checkpoint.replace(/\.(safetensors|gguf|ckpt)$/i, ''), t('wizards.run.seed', { seed: String(run.picture.seed) }), run.picture.ms ? `${(run.picture.ms / 1000).toFixed(1)} s` : ''].filter(Boolean).join(' · ')}</figcaption>
+        </figure>}
+        {run.picture && onOpenGenerate && <button type="button" className="forge-ghost" data-wizard-open onClick={onOpenGenerate}>{t('wizards.run.open')}</button>}
+        {run.error && <p className="error-message" role="alert" data-wizard-run-error>{run.error}</p>}
+      </div>}
       {error && <p className="error-message" role="alert">{error}</p>}
       {outcome?.error && outcome.n === handoff && <p className="error-message" role="alert" data-wizard-outcome>{outcome.error}</p>}
     </div>

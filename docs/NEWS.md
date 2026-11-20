@@ -1,5 +1,14 @@
 # News
 
+## 0.3.12
+
+### Dark Wizards can run the job now
+
+The Replace wizard has **Prepare and run**: it sets up the draft in Generate and starts it there, through the same Run
+path as pressing Run yourself. The wizard then shows the job live — step counter and preview image — and afterwards the
+finished picture with its size, model, seed and duration. **Stop** on the wizard stops just that one job. The masked
+method still only prepares, because you paint its mask in Generate.
+
 ## 0.3.11
 
 ### Dark Wizards: Replace

@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { librarySearchEvent } from '../../lib/wizards';
 import { DarkWizards } from './DarkWizards';
+import type { JobStatus } from '../../lib/jobs';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(), isTauri: () => true, convertFileSrc: (p: string) => `asset://${p}` }));
 vi.mock('@tauri-apps/api/webview', () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -23,6 +24,7 @@ beforeEach(() => {
     if (command === 'native_models_scan') return models;
     if (command === 'native_analysis_pick') return picks.shift() ?? '/pics/street.png';
     if (command === 'native_media_describe') return a.paths.map((path: string) => ({ kind: 'file', name: path.split('/').pop(), path, media: /\.(png|jpe?g|webp)$/i.test(path) ? 'image' : null }));
+    if (command === 'native_workbench_interrupt_running' || command === 'native_workbench_cancel_pending') return { ...(a as object) } as never;
     throw new Error(`Unexpected ${command}`);
   });
 });
@@ -114,6 +116,56 @@ it('takes a file copied in a file manager by Ctrl+V, refuses other files, and sh
   view.rerender(<I18nProvider><DarkWizards active roots={{ models: '/m', input: '/in' }} onPrepare={onPrepare} handoff={2} outcome={{ n: 2, error: 'Generate cannot use the model the wizard chose.' }}/></I18nProvider>);
   expect(screen.getByText('Generate cannot use the model the wizard chose.')).toBeTruthy();
   await waitFor(() => expect(calls('native_media_describe')).toEqual([{ paths: ['/pics/My Cat.webp'] }]));
+});
+
+it('runs the prepared draft through Generate with Prepare and run, and keeps that button closed for the mask method', async () => {
+  const { onPrepare } = ui();
+  await choosePicture();
+  type('With what', 'a blue bicycle'); type('Replace what', 'the red car');
+  const run = screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement;
+  expect(run.disabled).toBe(false);
+  fireEvent.click(run);
+  expect(onPrepare).toHaveBeenCalledTimes(1);
+  expect(onPrepare.mock.calls[0][0]).toMatchObject({ strategy: 'reference', source: 'reference', run: true, model: { path: qwen.path } });
+  const runSize = onPrepare.mock.calls[0][0].size as { width: number; height: number };
+  expect(runSize.width % 32).toBe(0); expect(runSize.height % 32).toBe(0);
+  // The wizard itself never submits: only the hand-over leaves this component.
+  expect(vi.mocked(invoke).mock.calls.map(([c]) => c).sort()).toEqual(['native_analysis_pick', 'native_media_describe', 'native_models_scan']);
+  // A masked method has no mask yet, so it stays a draft the user runs in Generate.
+  fireEvent.click(screen.getByRole('button', { name: 'Paint a mask (inpaint)' }));
+  expect((screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByRole('button', { name: 'Prepare and run' }).getAttribute('title')).toMatch(/gets its mask in Generate/);
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare in Generate' }));
+  expect(onPrepare.mock.calls[1][0]).toMatchObject({ strategy: 'inpaint' });
+  expect(onPrepare.mock.calls[1][0].run).toBeUndefined();
+});
+
+it('follows the wizard run Generate reports: progress, Stop for that one job, then the finished picture', async () => {
+  const job: JobStatus = { id: 'wizard-run', baseUrl: 'http://127.0.0.1:7801/', promptId: 'p-wizard', state: 'running', outputs: [], error: null, generationReady: false, progress: { value: 4, max: 20 }, preview: 'data:image/png;base64,prev' };
+  const open = vi.fn();
+  const { view, onPrepare } = ui({ handoff: 3, outcome: { n: 3, run: { state: 'running', value: 4, max: 20, preview: 'data:image/png;base64,prev', job } } });
+  expect(screen.getByText('Drawing… 4/20')).toBeTruthy();
+  expect(document.querySelector('[data-wizard-run-state="running"] img')?.getAttribute('src')).toBe('data:image/png;base64,prev');
+  expect((screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button', { name: 'Prepare in Generate' }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  await waitFor(() => expect(calls('native_workbench_interrupt_running')).toEqual([{ jobId: 'wizard-run', confirmed: true }]));
+  const done: JobStatus = { ...job, state: 'succeeded', progress: undefined, preview: undefined };
+  const finished = { n: 3, run: { state: 'succeeded' as const, job: done, picture: { path: '/out/DEAS/replace/done.png', width: 1216, height: 672, seed: 7, checkpoint: 'qwen_image_2.1_turbo.safetensors', ms: 4200 } } };
+  view.rerender(<I18nProvider><DarkWizards active roots={{ models: '/m', input: '/in' }} onPrepare={onPrepare} handoff={3} onOpenGenerate={open} outcome={finished}/></I18nProvider>);
+  expect(await screen.findByText('1216×672 · qwen_image_2.1_turbo · seed 7 · 4.2 s')).toBeTruthy();
+  expect(document.querySelector('[data-wizard-run-state="succeeded"] img')?.getAttribute('src')).toBe('asset:///out/DEAS/replace/done.png');
+  expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Show in Generate' }));
+  expect(open).toHaveBeenCalledTimes(1);
+});
+
+it('names a failed or unstartable wizard run with Generate\'s reason and never shows a picture for it', async () => {
+  ui({ handoff: 6, outcome: { n: 6, run: { state: 'failed', error: 'ClipVisionLoader missing', job: { id: 'j', baseUrl: 'http://x/', promptId: null, state: 'failed', outputs: [], error: 'ClipVisionLoader missing', generationReady: false } } } });
+  await screen.findByRole('combobox', { name: 'Model' });
+  expect(screen.getByText('ClipVisionLoader missing')).toBeTruthy();
+  expect(document.querySelector('[data-wizard-run-state="failed"] img')).toBeNull();
+  expect((screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement).disabled).toBe(true); // no picture yet
 });
 
 it('uses an object picture A inside picture B: reference edit and masked edit on the same Qwen model, text only elsewhere', async () => {
