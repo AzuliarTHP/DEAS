@@ -13,7 +13,7 @@ import { isModelSort, sortModels, useModelUsage } from '../../lib/modelBrowsing'
 import { useI18n } from '../../i18n/I18nProvider';
 import { isString, oneOf, usePref } from '../../lib/preferences';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { modelTriggerWords, type LocalModel, type LoraEdit, type ModelFileReport } from '../../lib/models';
+import { modelTriggerWords, type LocalModel, type LoraEdit, type ModelFileReport, type ModelRefreshScope } from '../../lib/models';
 import { LibraryCoverEditor, LibraryPromptExamples, LibraryTriggerWords } from './LibraryLoraDetails';
 import { checkModel, modelCheckText } from '../../lib/modelCheck';
 import { ModelDeclaredBadge, ModelMetadataTarget, ModelMetadataEditor } from '../../components/models/ModelMetadataEditor';
@@ -36,7 +36,7 @@ function Cover({model}:{model:LocalModel}) {
  return <ModelPreview model={model} className="download-preview" fallback={<div className="download-preview library-placeholder"><LibraryGlyph name="model"/><span>{model.name.split('.').at(-1)?.toUpperCase()}</span></div>}/>;
 }
 
-export function InstalledGallery({models,loaded,root,category,setCategory,selected,setSelected,locked,actions,feedback,renderDetail,onFetch,fetchBusy,previewPreference,fileActions,editLora}:{models:LocalModel[];loaded:boolean;root:string;category:string;setCategory:(value:string)=>void;selected:string;setSelected:(value:string)=>void;locked:boolean;actions:ReactNode;feedback:ReactNode;renderDetail:(model:LocalModel)=>ReactNode;onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;fetchBusy?:boolean;previewPreference?:{save:boolean;set:(value:boolean)=>void};fileActions?:{run:(paths:string[],destination?:string)=>Promise<ModelFileReport>;disabled:boolean};editLora?:(path:string,edit:LoraEdit)=>Promise<void>}) {
+export function InstalledGallery({models,loaded,root,category,setCategory,selected,setSelected,locked,actions,feedback,renderDetail,onFetch,fetchBusy,previewPreference,fileActions,editLora,refresh}:{models:LocalModel[];loaded:boolean;root:string;category:string;setCategory:(value:string)=>void;selected:string;setSelected:(value:string)=>void;locked:boolean;actions:ReactNode;feedback:ReactNode;renderDetail:(model:LocalModel)=>ReactNode;onFetch?:(models:LocalModel[],missingOnly:boolean)=>void;fetchBusy?:boolean;previewPreference?:{save:boolean;set:(value:boolean)=>void};fileActions?:{run:(paths:string[],destination?:string)=>Promise<ModelFileReport>;disabled:boolean};editLora?:(path:string,edit:LoraEdit)=>Promise<void>;refresh?:{disabled:boolean;run:(scope?:ModelRefreshScope)=>void}}) {
  const {t}=useI18n();
  const [loraNotice,setLoraNotice]=useState<{error:boolean}|null>(null);
  useEffect(()=>{if(!loraNotice)return;const timer=setTimeout(()=>setLoraNotice(null),3000);return()=>clearTimeout(timer);},[loraNotice]);
@@ -44,6 +44,7 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  const noticeRef=useRef<HTMLDivElement>(null);
  const notice=loraNotice&&<div ref={noticeRef} popover="manual" className="library-added-notice" role={loraNotice.error?'alert':'status'}>{t(loraNotice.error?'library.loraAddFailed':'library.loraAdded')}</div>;
  const [fetchOpen,setFetchOpen]=useState(false);const [fetchTarget,setFetchTarget]=useState('filtered');const [missingOnly,setMissingOnly]=useState(true);
+ const [refreshTarget,setRefreshTarget]=useState<'current'|'all'>('current');
  const [viewAll,setViewAll]=usePref('library.local.viewAll',false,(v):v is boolean=>typeof v==='boolean');
  const [query,setQuery]=usePref('library.local.query','',isString);
  const [layout,setLayout]=usePref('library.local.layout','grid',oneOf('grid','list'));
@@ -120,7 +121,13 @@ export function InstalledGallery({models,loaded,root,category,setCategory,select
  return <section className="installed-library" aria-label={t('library.collection')} data-installed-gallery>
   {confirmFiles&&<ConfirmDialog message={<><strong>{t('library.deleteCount',{count:confirmFiles.length})}</strong><br/>{t('library.deleteWarning')}<br/>{confirmFiles.slice(0,8).map(filename).join(', ')}</>} onDone={accepted=>{const files=confirmFiles;setConfirmFiles(null);if(accepted)void editFiles(files,false);}}/>}
   {!picked&&notice&&createPortal(notice,document.body)}
-  <header className="library-heading"><div className="library-native-actions">{onFetch&&<button type="button" className="action-button" aria-expanded={fetchOpen} disabled={locked||fetchBusy} onClick={()=>setFetchOpen(v=>!v)}>{t('library.fetch')}</button>}{actions}</div></header>
+  <header className="library-heading"><div className="library-native-actions">{onFetch&&<button type="button" className="action-button" aria-expanded={fetchOpen} disabled={locked||fetchBusy} onClick={()=>setFetchOpen(v=>!v)}>{t('library.fetch')}</button>}{refresh&&<>
+    <button className="action-button library-refresh" type="button" disabled={refresh.disabled} onClick={()=>refresh.run(refreshTarget==='current'&&active?{category:active,...(folder?{folder}:{})}:undefined)}><span aria-hidden="true">↻</span> {t('downloads.installed.refreshListing')}</button>
+    <div className="library-scan-tools"><label><span>{t('library.refreshScope')}</span><select data-refresh-scope value={active?refreshTarget:'all'} disabled={refresh.disabled||!active} onChange={e=>setRefreshTarget(e.currentTarget.value==='all'?'all':'current')}>
+     <option value="current">{t(folder?'library.fetchFolder':'library.fetchCategory')}</option>
+     <option value="all">{t('library.fetchAll')}</option>
+    </select></label></div>
+   </>}{actions}</div></header>
   <div className="library-fetch-tools">{onFetch&&fetchOpen&&<div className="library-fetch-options" role="group" aria-label={t('library.fetch')}><label>{t('library.fetchTarget')}<select value={fetchTarget} disabled={fetchBusy} onChange={e=>setFetchTarget(e.target.value)}><option value="filtered">{t('library.fetchFiltered')}</option><option value="folder">{t('library.fetchFolder')}</option><option value="category">{t('library.fetchCategory')}</option><option value="all">{t('library.fetchAll')}</option></select></label><label className="library-checkbox"><input type="checkbox" checked={missingOnly} disabled={fetchBusy} onChange={e=>setMissingOnly(e.target.checked)}/>{t('library.fetchMissing')}</label><span>{t('library.fetchCount',{count:fetchModels.length})}</span><button type="button" className="action-button" disabled={locked||fetchBusy||!fetchModels.length} onClick={()=>{onFetch(fetchModels,missingOnly);setFetchOpen(false);}}>{t('library.fetchStart')}</button>{previewPreference&&<label className="library-checkbox"><input type="checkbox" checked={previewPreference.save} disabled={fetchBusy} onChange={e=>previewPreference.set(e.target.checked)}/>{t('library.savePreview')}</label>}<p className="field-help">{t('library.fetchHelp')}</p></div>}</div>
   {feedback}
   {fileResult&&<div className="library-file-result">

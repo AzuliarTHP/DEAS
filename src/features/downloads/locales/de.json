@@ -254,6 +254,7 @@
   "library.versionId": "Versions-ID",
   "library.aboutVersion": "Über diese Version",
   "library.fetch": "Abrufen",
+  "library.refreshScope": "Aktualisierungsbereich",
   "library.fetchTarget": "Abrufbereich",
   "library.fetchFiltered": "Aktuell gefilterte Ergebnisse",
   "library.fetchFolder": "Aktueller Ordner und Unterordner",

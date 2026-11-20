@@ -254,6 +254,7 @@
   "library.versionId": "ID de version",
   "library.aboutVersion": "À propos de cette version",
   "library.fetch": "Récupérer",
+  "library.refreshScope": "Périmètre d’actualisation",
   "library.fetchTarget": "Portée",
   "library.fetchFiltered": "Résultats filtrés actuels",
   "library.fetchFolder": "Dossier actuel et sous-dossiers",

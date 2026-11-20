@@ -297,7 +297,8 @@ Spellcheck runs inside DEAS, not in the WebView or the operating system: prompt 
 
 Tag autocomplete starts **off**. When enabled, it reuses Prompt Forge’s existing native local tag search and model-specific spelling; other generation families use ordinary space-separated tag spelling. A configured environment/root and the Forge tag data are required. Type at least two characters in the current comma/newline-separated tag, select with Up/Down and Enter or Tab, or click a suggestion. Escape dismisses suggestions before closing the enlarged editor. Selecting replaces only the current tag; it never submits a job or rewrites the remaining prompt. Suggestions are optional Danbooru vocabulary, not a claim that every model supports every tag. Nothing is searched while disabled.
 
-The tag-plus icon in the positive prompt opens **Tag autocomplete options**. Its
+Prompt actions sit beside the editor so you can drag the scrollbar in a long
+prompt. The tag-plus icon in the positive prompt opens **Tag autocomplete options**. Its
 on/off switch is shared with Backend and Quick Settings and applies to positive,
 negative and enlarged prompt fields. Choose the original inline list or a larger
 floating list outside the prompt box, with 8, 16, 32 or 64 results. The floating
@@ -876,21 +877,28 @@ Use a checked running backend, compatible models and required nodes. Run snapsho
 
 Open **Notes**, between LoRAs and Presets, to keep a personal prompt notebook.
 Enter a note name, positive prompt, negative prompt and nonnegative integer seed,
-then click **Save note**. Notes do not copy or change the active generation prompt,
+then click **Save note**. Change the name to save the draft as a separate note and
+keep the original. Saving a selected note under the same name asks for overwrite
+confirmation. **Cancel** keeps the saved note and leaves your edits in the draft.
+Notes do not copy or change the active generation prompt,
 seed, models or selected LoRAs. Ctrl/Cmd+Enter in the notebook does not run Studio.
 
 The left pane holds folders; the middle pane lists notes for the selected folder.
 All notes shows the whole notebook. Each pane scrolls independently of the editor.
 **New folder**, **Rename folder** and **Delete folder** are compact icons beside
-**All notes**, with hover labels. Type a name in **Folder name** before creating
-or renaming. **New folder** creates a child of the selected folder; select **All notes** first to create a top-level folder. Expand
-folders with the arrow. Rename/delete the selected folder using its name field
-and buttons. Folder deletion asks for confirmation and removes its subfolders
-and their notes. It never removes media or models. Choose another **Note folder**
-in the editor and Save to move a note. **New note** sits beside **Delete note** in
-the editor toolbar. **Save note**,
+**All notes**, with hover labels. **New folder** and **Rename folder** open a
+naming dialog. A new folder goes under the selected folder. Select **All notes**
+first to create a top-level folder. Folders with children have a chevron for
+expanding or collapsing them. Drag to the middle of a folder row to make it
+the new parent. Use the top or bottom of a sibling row to reorder folders.
+Drop a nested folder onto **All notes** to move it and its contents to the root.
+Folder locations and order are saved.
+Folder deletion asks for confirmation and removes its subfolders
+and their notes. It never removes media or models. Select a folder before
+creating a note there. The editor shows the note’s folder in its top-right corner.
+**New note** sits beside **Delete note** in the editor toolbar. **Save note**,
 **Discard changes** and confirmed **Delete note** manage individual entries.
-The top fields place Seed beside Note name, followed by the Note folder selector.
+The top fields place Seed beside Note name, followed by **Move to folder**: pick another folder (or Root) and Save to move the note; saving an existing note asks before overwriting it.
 
 Unsaved edits disable navigation to another note/folder until Save or Discard.
 Switching dock tabs retains the draft during the current session; restarting

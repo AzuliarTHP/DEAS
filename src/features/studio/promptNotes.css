@@ -3,8 +3,18 @@
 .prompt-note-folders,.prompt-note-browser { min-width:0; min-height:0; overflow:auto; padding:.7rem; border-inline-end:1px solid var(--line); }
 .prompt-notebook h3 { margin:.5rem 0; font-size:.8rem; }
 .prompt-notebook ul { list-style:none; padding:0; margin:.35rem 0; }
-.prompt-note-folder { display:flex; min-width:0; }
+.prompt-note-folder { position:relative; display:flex; align-items:center; gap:.2rem; min-width:0; border-radius:.3rem; }
+.prompt-note-folder .prompt-note-folder-toggle { display:grid; place-items:center; flex:0 0 1rem; height:1.5rem; padding:0; border:0; background:none; color:var(--muted); }
+.prompt-note-folder button.prompt-note-folder-toggle:hover { color:var(--chalk); }
+.prompt-note-folder-toggle[aria-expanded="true"] svg { transform:rotate(90deg); }
 .prompt-note-folder button:last-child { flex:1; text-align:start; overflow-wrap:anywhere; min-width:0; }
+.prompt-note-folder button:last-child:not(:disabled) { cursor:grab; user-select:none; }
+.prompt-note-folder[data-moving] { opacity:.55; }
+.prompt-note-folder:is([data-folder-drop="before"],[data-folder-drop="after"])::after { content:""; position:absolute; inset-inline:0; height:2px; background:var(--copper); pointer-events:none; }
+.prompt-note-folder[data-folder-drop="before"]::after { top:0; }
+.prompt-note-folder[data-folder-drop="after"]::after { bottom:0; }
+.prompt-note-folder[data-folder-drop="inside"] > button:last-child { border-color:var(--copper); background:var(--surface); }
+.prompt-note-folder-toolbar > button[data-folder-drop="root"] { outline:2px solid var(--copper); outline-offset:-2px; }
 .prompt-notebook button { border:1px solid var(--line); border-radius:.3rem; padding:.35rem .55rem; color:inherit; background:var(--field); font:inherit; font-size:.75rem; cursor:pointer; }
 .prompt-notebook button[aria-pressed=true] { border-color:var(--copper); color:var(--copper); }
 .prompt-notebook button:disabled { opacity:.45; cursor:default; }
@@ -13,6 +23,7 @@
 .prompt-notebook input,.prompt-notebook select,.prompt-notebook textarea { box-sizing:border-box; min-width:0; width:100%; background:var(--field); color:inherit; border:1px solid var(--line); border-radius:.3rem; padding:.4rem; font:inherit; }
 .prompt-note-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.35rem; }
 .prompt-note-actions small { font-size:.7rem; color:var(--muted); }
+.prompt-note-location { margin-inline-start:auto; max-width:min(100%,20rem); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .prompt-note-folder-toolbar { display:flex; align-items:center; gap:.2rem; min-width:0; }
 .prompt-note-folder-toolbar>button:first-child { flex:1; min-width:0; padding:.3rem; }
 .prompt-note-folder-toolbar>button:not(:first-child) { display:grid; place-items:center; flex:0 0 1.65rem; width:1.65rem; height:1.65rem; padding:0; }

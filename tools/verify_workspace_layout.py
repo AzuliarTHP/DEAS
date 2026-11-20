@@ -42,6 +42,22 @@ def assert_viewport(page, label):
     return g
 
 
+def assert_prompt_scrollbar(prompt):
+    prompt.fill('A long synthetic prompt line.\n' * 60)
+    prompt.scroll_into_view_if_needed()
+    layout = prompt.evaluate("""textarea => {
+      const bounds = textarea.getBoundingClientRect();
+      const buttons = [...textarea.parentElement.nextElementSibling.querySelectorAll('button')]
+        .filter(button => button.getClientRects().length);
+      return {
+        overflows: textarea.scrollHeight > textarea.clientHeight,
+        buttonCount: buttons.length,
+        clear: buttons.every(button => button.getBoundingClientRect().left >= bounds.right),
+      };
+    }""")
+    assert layout['overflows'] and layout['buttonCount'] and layout['clear'], layout
+
+
 FIXTURE = video.IPC + r'''
 window.__TAURI_INTERNALS__.metadata={currentWindow:{label:'main'},currentWebview:{label:'main'}};
 window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener(){}};
@@ -88,6 +104,47 @@ def verify(browser, url, shots):
         assert picker.evaluate("e=>e.tagName==='SELECT'&&!e.multiple&&e.size===0")
         assert page.locator('[data-model-filter], [data-model-list]').count() == 0
         page.screenshot(path=str(shots/'checkpoint-native-desktop.png'))
+        for width in (1440, 390):
+            page.set_viewport_size({'width':width,'height':900})
+            assert_prompt_scrollbar(page.locator('[data-run-positive]'))
+            assert_prompt_scrollbar(page.locator('[data-run-negative]'))
+            checks.append(f'{width}: prompt actions leave both scrollbars clear')
+        page.set_viewport_size({'width':1440,'height':960})
+        page.locator('[data-prompt-expand="positive"]').click()
+        overlay = page.locator('.wb-prompt-overlay')
+        assert_prompt_scrollbar(overlay.locator('.wb-prompt-overlay-body > .prompt-textarea > textarea'))
+        overlay.locator('.wb-prompt-overlay-bar button').click()
+        checks.append('expanded prompt leaves its scrollbar clear')
+        page.locator('[data-dock-tab="notes"]').click()
+        notes = page.locator('.prompt-note-editor')
+        expect(notes.locator('.prompt-note-location')).to_be_visible()
+        assert notes.locator('select').count() == 1 and notes.locator('[data-note-move]').count() == 1
+        checks.append('note folder is shown in the editor toolbar as text, with one Move to folder select')
+        folders = page.locator('.prompt-note-folders')
+        all_notes = folders.get_by_role('button', name='All notes')
+        for name in ('Alpha', 'Nested', 'Zulu'):
+            if name == 'Zulu':
+                all_notes.click()
+            folders.get_by_role('button', name='New folder').click()
+            naming = page.get_by_role('dialog', name='New folder')
+            naming.get_by_role('textbox', name='Folder name').fill(name)
+            naming.get_by_role('button', name='Confirm').click()
+        roots = folders.locator('.prompt-note-tree > li > .prompt-note-folder > button:last-child')
+        expect(roots).to_have_text(['Alpha', 'Zulu'])
+        folders.get_by_role('button', name='Zulu', exact=True).drag_to(
+            folders.get_by_role('button', name='Alpha', exact=True), target_position={'x':20,'y':3})
+        expect(roots).to_have_text(['Zulu', 'Alpha'])
+        folders.get_by_role('button', name='Nested', exact=True).drag_to(all_notes)
+        expect(roots).to_have_text(['Zulu', 'Alpha', 'Nested'])
+        expect(folders.get_by_role('button', name='Expand Zulu')).to_have_count(0)
+        folders.get_by_role('button', name='Nested', exact=True).drag_to(
+            folders.get_by_role('button', name='Zulu', exact=True))
+        expect(roots).to_have_text(['Zulu', 'Alpha'])
+        expect(folders.get_by_role('button', name='Collapse Zulu')).to_have_attribute('aria-expanded', 'true')
+        expect(folders.get_by_role('button', name='Nested', exact=True)).to_be_visible()
+        checks.append('note folders can be reordered, nested, and dragged to root')
+        page.locator('[data-dock-tab="media"]').click()
+        page.locator('[data-run-negative]').fill('')
         page.locator('[data-run-positive]').fill('Viewport draft retained')
         tabs = page.locator('.aio-tabs [role="tab"]').evaluate_all("els=>els.map(e=>({studio:e.dataset.studioTab,node:e.dataset.node}))")
         assert tabs

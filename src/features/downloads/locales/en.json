@@ -254,6 +254,7 @@
   "library.versionId": "Version ID",
   "library.aboutVersion": "About this version",
   "library.fetch": "Fetch",
+  "library.refreshScope": "Refresh scope",
   "library.fetchTarget": "Fetch scope",
   "library.fetchFiltered": "Current filtered results",
   "library.fetchFolder": "Current folder and subfolders",

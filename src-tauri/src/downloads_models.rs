@@ -649,8 +649,13 @@ fn sidecar(path: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+#[cfg(test)]
 fn read_info(path: &Path) -> Option<ModelInfo> {
     let source = Source::open(path).ok()?;
+    read_info_from_source(&source)
+}
+
+fn read_info_from_source(source: &Source) -> Option<ModelInfo> {
     let (_, info) = source
         .dir
         .cache(&format!("{}{SIDECAR}", source.name))
@@ -1736,6 +1741,7 @@ pub async fn native_models_scan(
     root: String,
     extra_roots: Option<Vec<String>>,
     refresh: Option<bool>,
+    scope: Option<index::RefreshScope>,
 ) -> Result<Vec<index::SnapshotModel>, String> {
     let directory = index::directory(&app)?;
     let mut roots = vec![PathBuf::from(&root)];
@@ -1743,7 +1749,11 @@ pub async fn native_models_scan(
         roots.extend(extra.iter().map(PathBuf::from));
     }
     let result = tauri::async_runtime::spawn_blocking(move || {
-        index::load(&directory, roots, refresh.unwrap_or(false))
+        if let Some(scope) = scope {
+            index::load_scoped(&directory, roots, true, Some(scope))
+        } else {
+            index::load(&directory, roots, refresh.unwrap_or(false))
+        }
     })
     .await
     .map_err(|e| e.to_string())?;

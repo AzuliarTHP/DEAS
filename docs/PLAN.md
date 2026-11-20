@@ -989,7 +989,7 @@ native WebView user acceptance remains open. Native deletion/cache/RefMod code
 compiled and passed the full serial Rust suite, including disposable Linux
 capture/rollback fixtures; Windows cross-check and strict Clippy passed. Real Windows
 handle/reparse deletion ran on the Windows host (module 11/11, see the 2026-11-17
-VERIFICATION entry); interactive Linux/Windows acceptance remains a separate gate. These changes do not authorize a real library scan or generation
+VERIFICATION entry); interactive Linux/Windows acceptance remains a separate gate. 0.3.12 (PR #45) adds folder naming dialogs, saved drag order/nesting and overwrite confirmation; pointer drag is covered in Chromium only, so native WebKitGTK/WebView2 drag acceptance is open, as is a real Windows run of the Explorer select-the-file reveal (compiles under strict Windows Clippy). These changes do not authorize a real library scan or generation
 during verification.
 
 #### UX-28 · Selected-LoRA popup and sets

@@ -300,36 +300,126 @@ pub fn native_media_describe(paths: Vec<String>) -> Result<Vec<MediaEntry>, Stri
         .collect()
 }
 
-/// Thumbnail path for one image (decoded on the blocking pool); the UI falls back to the original on error.
-/// Opens the folder holding a browsed file in the system file manager (Windows and macOS also select
-/// the file). The path is passed as one argument, never through a shell, and must exist.
+fn reveal_target(path: &str, folder_only: bool) -> Result<PathBuf, String> {
+    let target = dunce::canonicalize(absolute(path)?).map_err(|e| format!("{path}: {e}"))?;
+    if folder_only && !target.is_dir() {
+        return target
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or("No parent folder".into());
+    }
+    Ok(target)
+}
+
+#[cfg(windows)]
+fn with_windows_shell<T>(action: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    use std::ptr::null;
+    use windows_sys::Win32::{
+        Foundation::RPC_E_CHANGED_MODE,
+        System::Com::{
+            CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE,
+        },
+    };
+    struct Apartment(bool);
+    impl Drop for Apartment {
+        fn drop(&mut self) {
+            if self.0 {
+                // SAFETY: this guard is dropped on the thread that initialized COM.
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+    // SAFETY: the reserved parameter is null and the apartment is scoped to this thread.
+    let status = unsafe {
+        CoInitializeEx(
+            null(),
+            (COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE) as u32,
+        )
+    };
+    if status < 0 && status != RPC_E_CHANGED_MODE {
+        return Err(format!(
+            "Could not initialize the Windows shell (0x{:08X})",
+            status as u32
+        ));
+    }
+    let _apartment = Apartment(status >= 0);
+    action()
+}
+
+#[cfg(windows)]
+struct WindowsShellItem(std::ptr::NonNull<windows_sys::Win32::UI::Shell::Common::ITEMIDLIST>);
+
+#[cfg(windows)]
+impl WindowsShellItem {
+    fn parse(path: &Path) -> Result<Self, String> {
+        use std::{os::windows::ffi::OsStrExt, ptr::null_mut};
+        use windows_sys::Win32::UI::Shell::SHParseDisplayName;
+        let path: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+        let mut item = null_mut();
+        // SAFETY: the path is NUL-terminated and item is writable output storage. The caller
+        // has initialized COM on this thread.
+        let status =
+            unsafe { SHParseDisplayName(path.as_ptr(), null_mut(), &mut item, 0, null_mut()) };
+        if status < 0 {
+            return Err(format!(
+                "Could not resolve the Windows shell item (0x{:08X})",
+                status as u32
+            ));
+        }
+        std::ptr::NonNull::new(item)
+            .map(Self)
+            .ok_or_else(|| "Windows returned no item to select".into())
+    }
+
+    fn select(&self) -> Result<(), String> {
+        use windows_sys::Win32::UI::Shell::SHOpenFolderAndSelectItems;
+        // SAFETY: with an empty selection array the absolute item ID opens its parent and
+        // selects the item. The parsed list stays alive, and COM is initialized on this thread.
+        let status = unsafe { SHOpenFolderAndSelectItems(self.0.as_ptr(), 0, std::ptr::null(), 0) };
+        if status < 0 {
+            return Err(format!(
+                "Could not select the Windows shell item (0x{:08X})",
+                status as u32
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsShellItem {
+    fn drop(&mut self) {
+        // SAFETY: the shell allocated this item list, and this object owns it.
+        unsafe { windows_sys::Win32::System::Com::CoTaskMemFree(self.0.as_ptr().cast()) };
+    }
+}
+
+/// Opens the parent of an existing file and selects it where the file manager supports selection.
 #[tauri::command]
-pub fn native_media_reveal(path: String) -> Result<(), String> {
-    let file = dunce::canonicalize(absolute(&path)?).map_err(|e| format!("{path}: {e}"))?;
+pub async fn native_media_reveal(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || reveal_path(&path))
+        .await
+        .map_err(|_| "File manager task failed".to_owned())?
+}
+
+fn reveal_path(path: &str) -> Result<(), String> {
+    let target = reveal_target(path, cfg!(target_os = "linux"))?;
     #[cfg(target_os = "linux")]
-    let mut cmd = {
-        let dir = if file.is_dir() {
-            file.as_path()
-        } else {
-            file.parent().ok_or("No parent folder")?
-        };
-        let mut c = std::process::Command::new("xdg-open");
-        c.arg(dir);
-        c
-    };
+    let result = std::process::Command::new("xdg-open")
+        .arg(&target)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string());
     #[cfg(target_os = "windows")]
-    let mut cmd = {
-        let mut c = std::process::Command::new("explorer");
-        c.arg(format!("/select,{}", file.display()));
-        c
-    };
+    let result = with_windows_shell(|| WindowsShellItem::parse(&target)?.select());
     #[cfg(target_os = "macos")]
-    let mut cmd = {
-        let mut c = std::process::Command::new("open");
-        c.arg("-R").arg(&file);
-        c
-    };
-    cmd.spawn().map(|_| ()).map_err(|e| {
+    let result = std::process::Command::new("open")
+        .arg("-R")
+        .arg(&target)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string());
+    result.map_err(|e| {
         let text = format!("Could not open the folder: {e}");
         crate::logs::push(
             crate::logs::Source::Deas,
@@ -339,6 +429,7 @@ pub fn native_media_reveal(path: String) -> Result<(), String> {
     })
 }
 
+/// Thumbnail path for one image (decoded on the blocking pool); the UI falls back to the original on error.
 #[tauri::command]
 pub async fn native_media_thumbnail(app: tauri::AppHandle, path: String) -> Result<String, String> {
     use tauri::Manager;
@@ -360,6 +451,54 @@ pub async fn native_media_thumbnail(app: tauri::AppHandle, path: String) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_only_reveal_preserves_literal_punctuation_in_the_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("[models], 外観");
+        std::fs::create_dir(&folder).unwrap();
+        let file = folder.join("[example], v1.safetensors");
+        std::fs::write(&file, b"fixture").unwrap();
+        assert_eq!(
+            reveal_target(file.to_str().unwrap(), true).unwrap(),
+            dunce::canonicalize(&folder).unwrap()
+        );
+        assert_eq!(
+            reveal_target(file.to_str().unwrap(), false).unwrap(),
+            dunce::canonicalize(&file).unwrap()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_resolves_the_exact_file_to_select() {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+        use windows_sys::Win32::UI::Shell::SHGetPathFromIDListEx;
+
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("[models], 外観");
+        std::fs::create_dir(&folder).unwrap();
+        let file = folder.join("[example] 例, v1.safetensors");
+        std::fs::write(&file, b"fixture").unwrap();
+        std::fs::write(folder.join("example.safetensors"), b"other fixture").unwrap();
+        let target = reveal_target(file.to_str().unwrap(), false).unwrap();
+        let selected = with_windows_shell(|| {
+            let item = WindowsShellItem::parse(&target)?;
+            let mut buffer = [0; 512];
+            // SAFETY: the item list is live and the writable buffer has the specified length.
+            let resolved = unsafe {
+                SHGetPathFromIDListEx(item.0.as_ptr(), buffer.as_mut_ptr(), buffer.len() as u32, 0)
+            };
+            if resolved == 0 {
+                return Err("Windows could not resolve the test item".into());
+            }
+            let length = buffer.iter().position(|&part| part == 0).unwrap();
+            Ok(PathBuf::from(OsString::from_wide(&buffer[..length])))
+        })
+        .unwrap();
+        assert_eq!(selected, target);
+    }
 
     #[test]
     fn classifies_media_by_extension_case_insensitively() {
@@ -427,8 +566,8 @@ mod tests {
         assert_eq!(dropped[0].kind, "directory");
         assert!(native_media_describe(vec!["relative".into()]).is_err());
         // Reveal refuses relative and missing paths before anything is spawned.
-        assert!(native_media_reveal("relative".into()).is_err());
-        assert!(native_media_reveal(root.path().join("nope").to_str().unwrap().into()).is_err());
+        assert!(reveal_path("relative").is_err());
+        assert!(reveal_path(root.path().join("nope").to_str().unwrap()).is_err());
     }
 
     #[test]

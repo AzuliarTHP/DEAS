@@ -3,6 +3,12 @@
 ## 0.3.12
 
 - **Dark Wizards: Prepare and run.** The Replace wizard has a second action. **Prepare and run** hands the draft to Generate and starts it there through Generate's own Run path — the same capture, uploads, prerequisites, queue, job history and Stop as pressing Run yourself; nothing runs by itself and the Run Plan stays the authority in Generate. The wizard follows only that one job: live step progress and the sampler preview while it draws, then the finished picture with its size, model, seed and duration, plus **Show in Generate** (the picture is also in Generate's queue and Media as usual). **Stop** on the wizard cancels just that job, never the queue. **Paint a mask (inpaint)** still only prepares: its mask is painted in Generate, so the wizard cannot run that method yet — SAM text-to-mask from *Replace what* is the next planned slice. Requires the desktop app; Beginner and every existing draft, intent and graph are unchanged.
+- **Library refresh and Fetch do less work.** Refresh checks the current folder or category by default. Missing-only Fetch reuses completed lookups and downloads missing covers from cached URLs. Completed batches reload the saved index once.
+- **Library Fetch saves redirected CivitAI previews.** With **Save preview locally** enabled, thumbnails served through the CivitAI blob CDN can be saved beside the model. Existing previews are kept.
+- **Studio Notes saves renamed drafts separately.** Saving under a different name creates a new note. Saving under the same name asks before overwriting. The editor shows the note folder in its top-right corner; **Move to folder** beside Seed moves a saved note to another folder on Save.
+- **Studio Notes folders use naming dialogs and saved manual order.** Drag to reorder siblings, move a folder into another folder, or move it to the root by dropping it on **All notes**. Chevrons appear on folders with children.
+- **Library file links reveal the model in Explorer.** The containing folder opens with the exact model file selected, including filenames with square brackets and other punctuation.
+- **Studio prompt actions leave the scrollbar clear.** The action buttons sit in a separate column beside the editor.
 
 ## 0.3.11
 

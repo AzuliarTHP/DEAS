@@ -23,9 +23,13 @@ export function MusicPrompts({endpoint,root,style,lyrics,onStyle,onLyrics,action
  return <>
   {fields.map(f=>{const title=t(`studio.music.${f.id}`);return <div className="wb-prompt" key={f.id} data-music-field={f.id}>
    <div className="wb-prompt-label"><label htmlFor={`run-music-${f.id}`}>{title}</label><small data-prompt-count={f.id}>{f.value.length} / {MUSIC_TEXT_LIMIT}</small></div>
-   <PromptTextarea root={root} target="generic" id={`run-music-${f.id}`} data-music-prompt={f.id} value={f.value} maxLength={MUSIC_TEXT_LIMIT} placeholder={t(`studio.music.${f.id}Hint`)} onChange={e=>f.set(e.target.value)}/>
-   <button type="button" className="wb-prompt-expand" data-prompt-expand={f.id} aria-label={t('studio.run.prompt.expand',{name:title})} title={t('studio.run.prompt.expand',{name:title})} aria-pressed={expanded===f.id} onClick={()=>setExpanded(expanded===f.id?null:f.id)}>⤢</button>
-   {actions(f.id,f.value,f.set)}{writer(f)}
+   <div className="wb-prompt-body">
+    <PromptTextarea root={root} target="generic" id={`run-music-${f.id}`} data-music-prompt={f.id} value={f.value} maxLength={MUSIC_TEXT_LIMIT} placeholder={t(`studio.music.${f.id}Hint`)} onChange={e=>f.set(e.target.value)}/>
+    <div className="wb-prompt-actions">
+     <button type="button" className="wb-prompt-expand" data-prompt-expand={f.id} aria-label={t('studio.run.prompt.expand',{name:title})} title={t('studio.run.prompt.expand',{name:title})} aria-pressed={expanded===f.id} onClick={()=>setExpanded(expanded===f.id?null:f.id)}>⤢</button>
+     {actions(f.id,f.value,f.set)}{writer(f)}
+    </div>
+   </div>
   </div>;})}
   {selected&&<PromptOverlay root={root} target="generic" key={selected.id} title={t(`studio.music.${selected.id}`)} value={selected.value} onChange={selected.set} onClose={()=>setExpanded(null)} placeholder={t(`studio.music.${selected.id}Hint`)} maxLength={MUSIC_TEXT_LIMIT} closeLabel={t('studio.run.prompt.close')}>{writer(selected)}</PromptOverlay>}
  </>;

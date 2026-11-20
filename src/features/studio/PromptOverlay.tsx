@@ -18,6 +18,6 @@ export function PromptOverlay({root,target,title,value,onChange,onClose,placehol
  };
  return <div ref={panel} className="wb-prompt-overlay" role="dialog" aria-label={title} style={pos?{left:pos.x,top:pos.y,transform:'none'}:undefined}>
   <div className="wb-prompt-overlay-bar" onPointerDown={drag}><span>{title}</span><small>{value.length} / {maxLength}</small><button type="button" aria-label={closeLabel} title={closeLabel} onClick={onClose}>✕</button></div>
-  <div className="wb-prompt-overlay-body"><PromptTextarea root={root} target={target} aria-label={title} autoFocus value={value} maxLength={maxLength} placeholder={placeholder} onChange={e=>onChange(e.target.value)}/>{children}</div>
+  <div className="wb-prompt-overlay-body"><PromptTextarea root={root} target={target} aria-label={title} autoFocus value={value} maxLength={maxLength} placeholder={placeholder} onChange={e=>onChange(e.target.value)}/>{children&&<div className="wb-prompt-actions">{children}</div>}</div>
  </div>;
 }

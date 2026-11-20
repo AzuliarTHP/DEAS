@@ -9,11 +9,11 @@ import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloa
 import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadJob, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
 import { isString, oneOf, usePref } from '../../lib/preferences';
 import { changeModelFiles, editLibraryLora, fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
-import { loadInstalledListing, rememberInstalledListing } from './installedListing';
+import { loadInstalledListing, reloadAfterFetch, rememberInstalledListing } from './installedListing';
 import { InstalledGallery } from './InstalledGallery';
 import { CatalogGallery,type CatalogCard } from './CatalogGallery';
 import { LibraryGlyph } from './LibraryGlyph';
-import type { LocalModel, LoraEdit, ModelScanScope, ModelScanStatus } from '../../lib/models';
+import type { LocalModel, LoraEdit, ModelRefreshScope, ModelScanScope, ModelScanStatus } from '../../lib/models';
 import './downloads.css';
 import {ModelAdvice} from '../../components/ModelAdvice';
 import {checkModel} from '../../lib/modelCheck';
@@ -103,7 +103,7 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
  const [savePreview,setSavePreview]=usePref('library.fetch.savePreview',false,(v):v is boolean=>typeof v==='boolean');
  const [listingBusy,setListingBusy]=useState(false);const listingEpoch=useRef(0);
  useEffect(()=>{if(!io.native)return;const epoch=++listingEpoch.current;setModels(null);setScanError(false);setSelected('');setListingBusy(true);loadInstalledListing(root).then(v=>{if(listingEpoch.current===epoch)setModels(v);},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});return()=>{listingEpoch.current++;};},[root,io.native,setModels]);
- const refreshListing=()=>{const epoch=++listingEpoch.current;setScanError(false);setListingBusy(true);loadInstalledListing(root,true).then(v=>{if(listingEpoch.current===epoch){setModels(v);setSelected(old=>v.some(m=>m.path===old)?old:'');}},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});};
+ const refreshListing=(scope?:ModelRefreshScope)=>{const epoch=++listingEpoch.current;setScanError(false);setListingBusy(true);loadInstalledListing(root,true,false,scope).then(v=>{if(listingEpoch.current===epoch){setModels(v);setSelected(old=>v.some(m=>m.path===old)?old:'');}},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});};
  const fetch=(m:LocalModel)=>void io.request(async()=>fetchModelInfo(m.path,(await readAuthStatus()).some(p=>p.providerId==='civitai'&&p.configured),savePreview),v=>{const updates=refreshModelPreviews([v]);setModels(old=>old?patchModels(old,updates):old);publishModelLibrary({root,updates});});
  const [scanScope,setScanScope]=useState<ModelScanScope>('all');
  const [scanStatus,setScanStatus]=useState<ModelScanStatus|null>(null);const [statusError,setStatusError]=useState(false);const scanEpoch=useRef(0);
@@ -145,7 +145,10 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
  useEffect(()=>{if(!io.native)return;let alive=true;let timer:ReturnType<typeof setTimeout>;let seenJob='';setScanStatus(null);
   const poll=async()=>{const epoch=scanEpoch.current;try{const value=await readModelScanStatus();if(!alive)return;
    if(epoch===scanEpoch.current){setScanStatus(value);setStatusError(false);
-    if(value.id&&value.root===root&&value.state!=='running'&&value.state!=='idle'&&seenJob!==value.id){seenJob=value.id;loadInstalledListing(root,false,true).then(models=>{if(alive)setModels(models);},()=>{if(alive)setScanError(true);});}
+    if(value.id&&value.root===root&&value.state!=='running'&&value.state!=='idle'&&seenJob!==value.id){
+     seenJob=value.id;
+     if(value.completed>value.failed)reloadAfterFetch(root,value.id).then(models=>{if(alive)setModels(models);},()=>{if(alive)setScanError(true);});
+    }
 
    }
   }catch{if(alive)setStatusError(true);}finally{if(alive)timer=setTimeout(()=>void poll(),1000);}};
@@ -161,9 +164,8 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
   </dl><p className="field-help">{t('downloads.installed.hashHelp')}</p>
   <button className="action-button" disabled={io.busy||locked||scanning||fileBusy||!scanStatus||statusError} onClick={()=>fetch(m)}>{t(m.info?'downloads.installed.refresh':'downloads.installed.fetch')}</button>
   {io.busy&&<p role="status"><span className="aio-spinner" aria-hidden="true"/> {t('downloads.pending')}</p>}{io.error&&<p role="alert">{t('downloads.installed.fetchError')}</p>}</div>;};
- return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||fileBusy||io.busy||listingBusy||!scanStatus||statusError} fileActions={io.native?{run:runFiles,disabled:locked||scanning||listingBusy||io.busy||fileBusy}:undefined} previewPreference={{save:savePreview,set:setSavePreview}} editLora={io.native?editLora:undefined}
+ return <InstalledGallery models={models??[]} loaded={models!==null} root={root} category={category} setCategory={setCategory} selected={selected} setSelected={setSelected} locked={locked} renderDetail={detail} onFetch={io.native?fetchBatch:undefined} fetchBusy={scanning||fileBusy||io.busy||listingBusy||!scanStatus||statusError} fileActions={io.native?{run:runFiles,disabled:locked||scanning||listingBusy||io.busy||fileBusy}:undefined} previewPreference={{save:savePreview,set:setSavePreview}} editLora={io.native?editLora:undefined} refresh={io.native?{run:refreshListing,disabled:locked||listingBusy||scanning||fileBusy||io.busy}:undefined}
   actions={<>
-   {io.native&&<button className="action-button library-refresh" type="button" disabled={locked||listingBusy||scanning||fileBusy||io.busy} onClick={refreshListing}><span aria-hidden="true">↻</span> {t('downloads.installed.refreshListing')}</button>}
    {io.native&&!!models&&models.length>0&&<div className="library-scan-tools">
     <label>{t('downloads.installed.scanScope')}<select data-scan-scope aria-label={t('downloads.installed.scanScope')} value={scanScope} disabled={locked||scanning||io.busy} onChange={e=>setScanScope(e.target.value as 'all'|'models'|'loras')}><option value="all">{t('downloads.installed.scopeAll')}</option><option value="models">{t('downloads.installed.scopeModels')}</option><option value="loras">{t('downloads.installed.scopeLoras')}</option></select></label>
     <button className="action-button" type="button" data-scan-files title={t('downloads.installed.scanAllHelp')} disabled={locked||scanning||fileBusy||io.busy||!scanStatus||statusError} onClick={startScan}>{t('downloads.installed.scanAll')}</button>

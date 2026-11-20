@@ -1,5 +1,44 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Library preview downloads and note overwrites
+
+An unauthenticated request for a public CivitAI model-version thumbnail
+returned HTTP 301 from the image CDN and HTTP 200 with JPEG bytes from
+the blob CDN. Native fixtures cover the redirect host restrictions and
+saving a cover without replacing an existing one. Notes fixtures cover
+confirmation, initial Cancel focus, preserving a cancelled draft, and
+saving a new note directly.
+
+The folder link regression tests send a literal path with square brackets,
+commas, and spaces through the native reveal action. The Windows test resolves
+the Shell item ID back to the exact synthetic model file beside a neighboring
+file. Notes tests cover
+saving under a different name and loading both notes after reopening. Folder
+tests cover naming, saved sibling order, moving a subtree with its notes, and
+rejecting a move into a descendant. The Chromium layout gate passed 472 checks
+with simulated IPC, including nesting a folder under an automatically expanded
+parent, moving a folder to the root, the note folder label, and both prompt
+editor layouts.
+
+## Scoped Library refresh and fetch
+
+Synthetic fixtures cover scoped index updates, cached provider misses, cover-only
+fetches, and loading the index once per completed fetch with successful work.
+On the 0.3.11 baseline, the frontend build passed along with 173 core tests,
+375 focused UI tests, and 74 Windows native Library and Media tests. Chromium
+passed 514 workspace layout checks with simulated IPC.
+
+Integration into 0.3.12 (PR #45 by AzuliarTHP, applied over the open 0.3.12
+working tree; added a global-search entry for the new Refresh scope control).
+Re-run on this host: `npm run typecheck` and `npm run test:core` passed;
+`npm run test:ui` 2388/2394 with 6 Workbench IPC tests timing out under full
+load, all 154 tests of those three files passing in an isolated re-run; strict
+Linux Clippy passed; serial `cargo test --lib` 1120 passed, 19 failed only
+because this host's `/tmp` is world-writable (all 85 affected tests passed with
+a private `TMPDIR`); `cargo xwin clippy --target x86_64-pc-windows-msvc --lib
+--tests -D warnings` passed; `tools/verify_workspace_layout.py` passed 514
+Chromium checks. The contributor's Windows native test counts were not re-run
+here (Windows host unreachable).
 
 ## Release 0.3.9 (published)
 

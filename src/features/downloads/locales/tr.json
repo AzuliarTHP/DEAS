@@ -254,6 +254,7 @@
   "library.versionId": "Sürüm kimliği",
   "library.aboutVersion": "Bu sürüm hakkında",
   "library.fetch": "Getir",
+  "library.refreshScope": "Yenileme kapsamı",
   "library.fetchTarget": "Kapsam",
   "library.fetchFiltered": "Geçerli filtre sonuçları",
   "library.fetchFolder": "Geçerli klasör ve alt klasörler",
