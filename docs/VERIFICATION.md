@@ -1,5 +1,33 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.13 (published)
+
+Published 2026-11-20 as `v0.3.13` (Latest, not a prerelease): https://github.com/darksidewalker/DEAS/releases/tag/v0.3.13.
+Follow-up to 0.3.12: PR #46's later commit (backend-only LoRAs behind the opt-in
+**Backend-only LoRAs** checkbox, off by default), merged with a global-search entry.
+Local unsigned build (hosted Verify/Release workflows are disabled), source commit
+`b3ac06d321c2e487422ab6509902b2e5162d6c4a`, tree `ebb46df81223b448ddb48eef9892688871873d8d`,
+rustc 1.97.0, node v22.23.5, `build-linux.sh --release`. Linux glibc floor 2.39, `ldd` clean;
+`dist/assets/index-iTLb8idj.js` is embedded in both binaries; benign LNK4099 on the MSVC link.
+`deas.exe` was not launched on Windows.
+
+Assets downloaded back from the release, `sha256sum -c SHA2564d63ae4762355ce21ae8e31050932ee8095152e1546c258e81c7c96513724001  BUILD-MANIFEST.json
+7e194c9fa03d633c6d06a2dfc540f2823af58196f685248f225a0053fdf36826  SHA256SUMS
+1c0e2247fc6ac11ea57d31503c4153ae2eb14ea13bc7ca858f8eb4f3d5af2181  deas-linux-amd64
+189ea950f0f41bf2527c4a9a1e8cc84d4b38d4513958e9c4edc7da3a92a770ec  deas.exe` OK:
+
+```
+4d63ae4762355ce21ae8e31050932ee8095152e1546c258e81c7c96513724001  BUILD-MANIFEST.json
+7e194c9fa03d633c6d06a2dfc540f2823af58196f685248f225a0053fdf36826  SHA256SUMS
+1c0e2247fc6ac11ea57d31503c4153ae2eb14ea13bc7ca858f8eb4f3d5af2181  deas-linux-amd64
+189ea950f0f41bf2527c4a9a1e8cc84d4b38d4513958e9c4edc7da3a92a770ec  deas.exe
+```
+
+Gates on the release tree: typecheck, `test:core`, full `test:ui` 2407/2408 (H3 REF2VA
+Workbench fixture under load, 88/88 alone), Chromium layout gate (517 checks),
+`cargo fmt --check`, strict Linux and Windows-MSVC Clippy, serial `cargo test --lib` with a
+private `TMPDIR` 1140/1142 (two backend shutdown-timing tests under load, passing alone).
+
 ## Release 0.3.12 (published)
 
 Published 2026-11-20 as `v0.3.12` (Latest, not a prerelease): https://github.com/darksidewalker/DEAS/releases/tag/v0.3.12.
