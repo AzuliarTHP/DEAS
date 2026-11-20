@@ -1,14 +1,20 @@
 use super::*;
 
 const MAX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
+const MAX_PREVIEW_REDIRECTS: usize = 3;
 
 pub(super) fn cdn_url(value: &str) -> Result<Url, String> {
     let url = Url::parse(value).map_err(|_| "Invalid CivitAI preview URL")?;
+    validate_cdn_url(url, false)
+}
+
+fn validate_cdn_url(url: Url, redirect: bool) -> Result<Url, String> {
+    let trusted_host = matches!(
+        url.host_str(),
+        Some("image.civitai.com" | "images.civitai.com")
+    ) || redirect && url.host_str() == Some("blobs-b2.civitai.com");
     if url.scheme() != "https"
-        || !matches!(
-            url.host_str(),
-            Some("image.civitai.com" | "images.civitai.com")
-        )
+        || !trusted_host
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port_or_known_default() != Some(443)
@@ -16,6 +22,13 @@ pub(super) fn cdn_url(value: &str) -> Result<Url, String> {
         return Err("Invalid CivitAI preview host".into());
     }
     Ok(url)
+}
+
+fn redirect_url(current: &Url, location: &str) -> Result<Url, String> {
+    let url = current
+        .join(location)
+        .map_err(|_| "Invalid CivitAI preview redirect")?;
+    validate_cdn_url(url, true)
 }
 
 pub(super) struct Cover {
@@ -40,9 +53,38 @@ fn image_extension(bytes: &[u8]) -> Option<&'static str> {
 }
 
 pub(super) async fn download(url: &str) -> Result<Cover, String> {
-    let url = cdn_url(url)?;
-    let client = client_for(false, Some(Duration::from_secs(20)))?;
-    let mut response = client.get(url).send().await.map_err(|_| network_error())?;
+    let mut url = cdn_url(url)?;
+    let timeout = Duration::from_secs(20);
+    let client = client_for(false, Some(timeout))?;
+    tokio::time::timeout(timeout, async {
+        for hop in 0..=MAX_PREVIEW_REDIRECTS {
+            // CivitAI thumbnail URLs can redirect to their blob CDN. Use a fresh
+            // unauthenticated request and validate each hop before following it.
+            let response = client
+                .get(url.clone())
+                .send()
+                .await
+                .map_err(|_| network_error())?;
+            if !response.status().is_redirection() {
+                return read_cover(response).await;
+            }
+            if hop == MAX_PREVIEW_REDIRECTS {
+                break;
+            }
+            let location = response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or("CivitAI preview redirect has no valid location")?;
+            url = redirect_url(&url, location)?;
+        }
+        Err("Too many CivitAI preview redirects".into())
+    })
+    .await
+    .map_err(|_| "CivitAI preview download timed out")?
+}
+
+async fn read_cover(mut response: reqwest::Response) -> Result<Cover, String> {
     if !response.status().is_success()
         || response
             .content_length()
@@ -64,6 +106,39 @@ pub(super) async fn download(url: &str) -> Result<Cover, String> {
 pub(super) fn publish(source: &Source, cover: Cover) -> Result<(), String> {
     let name = format!("{}.preview.{}", source.name, cover.extension);
     publish_bytes(source, &name, &cover.bytes, false)
+}
+
+pub(super) async fn fill_missing(
+    path: PathBuf,
+    expected: SourceFingerprint,
+    url: String,
+) -> Result<(), String> {
+    let opened = tokio::task::spawn_blocking(move || {
+        let source = Source::open(&path)?;
+        if source.stamp != expected {
+            return Err("Model changed before saving its preview".to_owned());
+        }
+        source.verify()?;
+        Ok((!index::has_local_preview(&path)).then_some((path, source)))
+    })
+    .await
+    .map_err(|_| "Preview lookup task failed")??;
+    let Some((path, source)) = opened else {
+        return Ok(());
+    };
+    let cover = download(&url).await?;
+    tokio::task::spawn_blocking(move || {
+        let _commit = CACHE_PUBLICATION
+            .lock()
+            .map_err(|_| "Cache lock poisoned")?;
+        source.verify()?;
+        if !index::has_local_preview(&path) {
+            publish(&source, cover)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|_| "Preview publication task failed")?
 }
 
 pub(super) const CUSTOM_COVER_SUFFIX: &str = ".deas-preview.png";
@@ -128,6 +203,28 @@ mod tests {
         }
         assert_eq!(image_extension(b"\x89PNG\r\n\x1a\n"), Some("png"));
         assert_eq!(image_extension(b"<svg></svg>"), None);
+    }
+
+    #[test]
+    fn previews_can_follow_civitai_blob_redirects_only_over_trusted_https() {
+        let initial = cdn_url("https://image.civitai.com/width=450/example.jpeg").unwrap();
+        let blob = redirect_url(
+            &initial,
+            "https://blobs-b2.civitai.com/fixture/example.jpeg",
+        )
+        .unwrap();
+        assert_eq!(blob.host_str(), Some("blobs-b2.civitai.com"));
+        assert!(redirect_url(&blob, "/fixture/example-2.jpeg").is_ok());
+        assert!(cdn_url(blob.as_str()).is_err());
+        for target in [
+            "https://blobs-b2.civitai.com.example.invalid/example.jpeg",
+            "http://blobs-b2.civitai.com/example.jpeg",
+            "https://blobs-b2.civitai.com:4430/example.jpeg",
+            "https://user@blobs-b2.civitai.com/example.jpeg",
+            "https://example.invalid/example.jpeg",
+        ] {
+            assert!(redirect_url(&initial, target).is_err());
+        }
     }
 
     #[test]

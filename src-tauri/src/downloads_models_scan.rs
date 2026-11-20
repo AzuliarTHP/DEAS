@@ -26,18 +26,28 @@ struct FetchSelection {
     index_directory: Option<PathBuf>,
 }
 
+#[derive(Debug, PartialEq)]
+enum Work {
+    Metadata,
+    Cover {
+        url: String,
+        source: SourceFingerprint,
+    },
+}
+
 fn selected_paths(
     root: &Path,
     paths: Vec<String>,
     missing_only: bool,
     save_preview: bool,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<(String, Work)>, String> {
     if paths.len() > MAX_LISTING {
         return Err("Too many files in Fetch selection".into());
     }
     let (root, _) = resolve_directory(root)?;
     let mut seen = std::collections::HashSet::new();
     let mut selected = vec![];
+    let mut preview_folders = index::PreviewFolders::new();
     for path in paths {
         if path.len() > 32768
             || path.chars().any(char::is_control)
@@ -55,19 +65,30 @@ fn selected_paths(
         if !seen.insert(resolved) {
             continue;
         }
-        if missing_only
-            && read_info(Path::new(&path)).is_some_and(|info| {
-                info.civitai.is_some_and(|c| {
-                    c.creator.is_some()
-                        && (!save_preview
-                            || c.preview.is_none()
-                            || index::has_local_preview(Path::new(&path)))
-                })
-            })
-        {
-            continue;
+        if missing_only {
+            if let Some(info) = read_info_from_source(&source) {
+                if let Some(url) = info
+                    .civitai
+                    .and_then(|c| c.preview)
+                    .filter(|url| save_preview && preview::cdn_url(url).is_ok())
+                    .filter(|_| {
+                        !index::has_indexed_local_preview(Path::new(&path), &mut preview_folders)
+                    })
+                {
+                    selected.push((
+                        path,
+                        Work::Cover {
+                            url,
+                            source: source.stamp.clone(),
+                        },
+                    ));
+                }
+                // A cached provider miss is a completed lookup for this model
+                // fingerprint. An explicit metadata refresh can retry it.
+                continue;
+            }
         }
-        selected.push(path);
+        selected.push((path, Work::Metadata));
     }
     Ok(selected)
 }
@@ -203,7 +224,7 @@ impl ModelScanEngine {
                     models
                         .into_iter()
                         .filter(|m| scope.includes(m))
-                        .map(|m| m.path)
+                        .map(|m| (m.path, Work::Metadata))
                         .collect()
                 })
             }
@@ -218,7 +239,7 @@ impl ModelScanEngine {
         // together with the provider's rate limit.
         const POOL: usize = 4;
         let mut tasks = tokio::task::JoinSet::new();
-        for model in models {
+        for (model, work) in models {
             while tasks.len() >= POOL {
                 if let Some(result) = tasks.join_next().await {
                     if let Some(path) = self.finish(result) {
@@ -233,9 +254,16 @@ impl ModelScanEngine {
             report(&status, "INFO", "processing");
             // Each fetch carries its own file handle and provider request; nothing is shared.
             tasks.spawn(async move {
-                let failed = fetch(&provider, path.clone().into(), header, save_preview)
-                    .await
-                    .is_err();
+                let failed = match work {
+                    Work::Metadata => fetch(&provider, path.clone().into(), header, save_preview)
+                        .await
+                        .is_err(),
+                    Work::Cover { url, source } => {
+                        preview::fill_missing(path.clone().into(), source, url)
+                            .await
+                            .is_err()
+                    }
+                };
                 (path, failed)
             });
         }
@@ -244,7 +272,7 @@ impl ModelScanEngine {
                 updated.push(path);
             }
         }
-        if let Some(directory) = directory {
+        if let Some(directory) = directory.filter(|_| !updated.is_empty()) {
             let result =
                 tokio::task::spawn_blocking(move || index::update_many(&directory, &updated)).await;
             if !matches!(result, Ok(Ok(()))) {
@@ -277,7 +305,7 @@ impl ModelScanEngine {
             &status,
             if failed { "ERROR" } else { "INFO" },
             if failed {
-                "metadata lookup/cache failed; check file access and CivitAI availability"
+                "metadata or preview fetch failed; check file access and CivitAI availability"
             } else {
                 "processed"
             },
@@ -369,7 +397,7 @@ mod tests {
         let file = path.to_string_lossy().into_owned();
         assert_eq!(
             selected_paths(&root, vec![file.clone(), file.clone()], false, false).unwrap(),
-            vec![file.clone()]
+            vec![(file.clone(), Work::Metadata)]
         );
         assert_eq!(
             selected_paths(&root, vec![file.clone()], true, false)
@@ -378,7 +406,7 @@ mod tests {
             1
         );
         let source = Source::open(&path).unwrap();
-        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","creator":"FixtureAuthor","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.jpg"})).unwrap()) };
+        let info = ModelInfo { sha256:"a".repeat(64), size:7, fetched_at:1, source:Some(source.stamp.clone()), civitai:Some(serde_json::from_value(serde_json::json!({"modelId":1,"versionId":2,"name":"Fixture","version":"v1","modelType":"LORA","category":"loras","nsfw":false,"trainedWords":[],"preview":"https://image.civitai.com/fixture.jpg"})).unwrap()) };
         publish_info(&source, &None, &info, || {}).unwrap();
         assert!(selected_paths(&root, vec![file.clone()], true, false)
             .unwrap()
@@ -391,12 +419,40 @@ mod tests {
         );
         assert_eq!(
             selected_paths(&root, vec![file.clone()], true, true).unwrap(),
-            vec![file.clone()]
+            vec![(
+                file.clone(),
+                Work::Cover {
+                    url: "https://image.civitai.com/fixture.jpg".into(),
+                    source: source.stamp.clone(),
+                }
+            )]
         );
         std::fs::write(folder.join("a.preview.png"), b"local preview").unwrap();
         assert!(selected_paths(&root, vec![file.clone()], true, true)
             .unwrap()
             .is_empty());
+        let expected = source
+            .dir
+            .cache(&format!("{}{SIDECAR}", source.name))
+            .unwrap()
+            .map(|(stamp, _)| stamp);
+        publish_info(
+            &source,
+            &expected,
+            &ModelInfo {
+                civitai: None,
+                ..info
+            },
+            || {},
+        )
+        .unwrap();
+        assert!(selected_paths(&root, vec![file.clone()], true, true)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            selected_paths(&root, vec![file.clone()], false, true).unwrap(),
+            vec![(file.clone(), Work::Metadata)]
+        );
         std::fs::write(&path, b"changed fixture").unwrap();
         assert_eq!(
             selected_paths(&root, vec![file.clone()], true, false)

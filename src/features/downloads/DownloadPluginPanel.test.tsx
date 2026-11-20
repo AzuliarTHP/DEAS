@@ -532,11 +532,14 @@ it('keeps the listing across navigation and refreshes only on explicit request',
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(1);
  response=[{...model,name:'new.pt',path:'/models/loras/new.pt'}];click('Refresh models');
  await screen.findByRole('button',{name:'new.pt'});
+ expect(invoke).toHaveBeenCalledWith('native_models_scan',{root:'/models',refresh:true,scope:{category:'loras'}});
  expect(screen.queryByRole('button',{name:'cached.pt'})).toBeNull();
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(2);
- fail=true;await waitFor(()=>expect((screen.getByRole('button',{name:'Refresh models'}) as HTMLButtonElement).disabled).toBe(false));click('Refresh models');
+ fail=true;await waitFor(()=>expect((screen.getByRole('button',{name:'Refresh models'}) as HTMLButtonElement).disabled).toBe(false));
+ fireEvent.change(screen.getByRole('combobox',{name:'Refresh scope'}),{target:{value:'all'}});click('Refresh models');
  await screen.findByText('The models folder could not be read.');
  expect(screen.getByRole('button',{name:'new.pt'})).toBeTruthy();
+ expect(invoke).toHaveBeenCalledWith('native_models_scan',{root:'/models',refresh:true});
  view.unmount();view=mountLibrary();await screen.findByRole('tab',{name:'Installed'});tab('Installed');
  await screen.findByRole('button',{name:'new.pt'});
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_models_scan')).toHaveLength(3);
@@ -581,6 +584,16 @@ it('does not update or continue polling an unmounted scan view',async()=>{
  await act(async()=>{});tab('Installed');await act(async()=>{});expect(resolve).toBeTypeOf('function');view.unmount();
  await act(async()=>{resolve({id:'job',state:'running',completed:0,total:1,remaining:1,failed:0});await vi.advanceTimersByTimeAsync(5000);});
  expect(vi.mocked(invoke).mock.calls.filter(([c])=>c==='native_model_scan_status')).toHaveLength(1);
+});
+
+it('does not reread the Library index for a Fetch with no work',async()=>{
+ const local={category:'loras',name:'cached.pt',path:'/models/loras/cached.pt',size:5,info:null};
+ const status={id:'no-work',root:'/models',state:'succeeded',file:null,completed:0,total:0,remaining:0,failed:0};
+ vi.mocked(invoke).mockImplementation(async command=>command==='native_download_catalog'?catalog:command==='native_auth_status'?[]:command==='native_models_scan'?[local]:command==='native_model_scan_status'?status:null);
+ render(<I18nProvider><DownloadPanel embedded installTarget="/env" modelsDir="/models"/></I18nProvider>);
+ await screen.findByRole('tab',{name:'Installed'});tab('Installed');
+ await screen.findByText(/0\/0 processed/);
+ expect(vi.mocked(invoke).mock.calls.filter(([command])=>command==='native_models_scan')).toHaveLength(1);
 });
 
 it.each([false,true])('passes the local preview preference (%s) to Fetch without rescanning the folder',async(savePreview)=>{

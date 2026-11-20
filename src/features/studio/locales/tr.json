@@ -1240,6 +1240,7 @@
   "notes.seed": "Not tohumu",
   "notes.positive": "Notun pozitif istemi",
   "notes.negative": "Notun negatif istemi",
+  "notes.confirmOverwrite": "“{name}” notunun üzerine yazılsın mı?",
   "notes.confirmDelete": "“{name}” notu silinsin mi?",
   "notes.confirmDeleteFolder": "“{name}” klasörü, tüm notları ve alt klasörleri silinsin mi?",
   "notes.expand": "{name} genişlet",

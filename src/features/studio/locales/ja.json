@@ -1240,6 +1240,7 @@
   "notes.seed": "ノートのシード",
   "notes.positive": "ノートの正プロンプト",
   "notes.negative": "ノートの負プロンプト",
+  "notes.confirmOverwrite": "ノート「{name}」を上書きしますか？",
   "notes.confirmDelete": "ノート「{name}」を削除しますか？",
   "notes.confirmDeleteFolder": "フォルダー「{name}」とすべてのノート、子フォルダーを削除しますか？",
   "notes.expand": "{name} を展開",

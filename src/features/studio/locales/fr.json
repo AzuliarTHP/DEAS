@@ -1240,6 +1240,7 @@
   "notes.seed": "Graine de la note",
   "notes.positive": "Prompt positif de la note",
   "notes.negative": "Prompt négatif de la note",
+  "notes.confirmOverwrite": "Écraser la note « {name} » ?",
   "notes.confirmDelete": "Supprimer la note « {name} » ?",
   "notes.confirmDeleteFolder": "Supprimer le dossier « {name} », toutes ses notes et ses sous-dossiers ?",
   "notes.expand": "Développer {name}",

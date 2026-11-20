@@ -254,6 +254,7 @@
   "library.versionId": "バージョンID",
   "library.aboutVersion": "このバージョンについて",
   "library.fetch": "取得",
+  "library.refreshScope": "更新範囲",
   "library.fetchTarget": "取得範囲",
   "library.fetchFiltered": "現在の絞り込み結果",
   "library.fetchFolder": "現在のフォルダーとサブフォルダー",

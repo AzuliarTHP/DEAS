@@ -11,7 +11,8 @@ export const modelTriggerWords=(model:LocalModel)=>model.triggerWords??model.inf
 export type LoraEdit={kind:'triggerWords';words:string[]}|{kind:'preview';png:number[]};
 export const editLibraryLora=(root:string,path:string,edit:LoraEdit)=>invoke<LocalModel>('native_model_edit_lora',{root,path,edit});
 /** Restores the native browsing index; explicit refresh checks file fingerprints. Run validates live files separately. */
-export const scanModels=(root:string,extraRoots:string[]=[],refresh=false)=>invoke<LocalModel[]>('native_models_scan',{root,...(extraRoots.length?{extraRoots}:{}),...(refresh?{refresh:true}:{})});
+export type ModelRefreshScope={category:string;folder?:string};
+export const scanModels=(root:string,extraRoots:string[]=[],refresh=false,scope?:ModelRefreshScope)=>invoke<LocalModel[]>('native_models_scan',{root,...(extraRoots.length?{extraRoots}:{}),...(refresh?{refresh:true}:{}),...(scope?{scope}:{})});
 /** Hashes the file once (cached), asks CivitAI by hash and writes `<file>.deas.json`. */
 export const fetchModelInfo=(path:string,authenticated:boolean,savePreview:boolean)=>invoke<LocalModel>('native_model_info',{path,authenticated,savePreview});
 /** Explicit source-bound declaration only; null restores automatic detection. Never hashes or fetches. */

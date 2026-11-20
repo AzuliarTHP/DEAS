@@ -1240,6 +1240,7 @@
   "notes.seed": "Notiz-Seed",
   "notes.positive": "Positiver Notiz-Prompt",
   "notes.negative": "Negativer Notiz-Prompt",
+  "notes.confirmOverwrite": "Notiz „{name}“ überschreiben?",
   "notes.confirmDelete": "Notiz „{name}“ löschen?",
   "notes.confirmDeleteFolder": "Ordner „{name}“ mit allen Notizen und Unterordnern löschen?",
   "notes.expand": "{name} aufklappen",

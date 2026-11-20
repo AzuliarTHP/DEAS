@@ -111,7 +111,7 @@ fn preview_path_valid(model: &str, preview: &str) -> bool {
             .is_some_and(|name| !name.to_string_lossy().chars().any(char::is_control))
 }
 
-type PreviewFolders = HashMap<PathBuf, HashMap<String, String>>;
+pub(super) type PreviewFolders = HashMap<PathBuf, HashMap<String, String>>;
 
 fn preview_bases(path: &Path) -> Option<[String; 3]> {
     let stem = path.file_stem()?.to_str()?;
@@ -129,6 +129,10 @@ pub(super) fn find_local_preview(path: &Path) -> Option<String> {
 
 pub(super) fn has_local_preview(path: &Path) -> bool {
     selected_preview(path, u64::MAX).is_some()
+}
+
+pub(super) fn has_indexed_local_preview(path: &Path, folders: &mut PreviewFolders) -> bool {
+    local_preview(path, folders, u64::MAX).is_some()
 }
 
 fn custom_preview(path: &Path, max_bytes: u64) -> Option<String> {
@@ -457,6 +461,63 @@ pub fn load(
     roots: Vec<PathBuf>,
     refresh: bool,
 ) -> Result<Vec<SnapshotModel>, String> {
+    load_scoped(directory, roots, refresh, None)
+}
+
+#[derive(Deserialize)]
+pub struct RefreshScope {
+    category: String,
+    folder: Option<String>,
+}
+
+impl RefreshScope {
+    fn includes(&self, category: &str) -> bool {
+        if self.category == "models" {
+            matches!(category, "checkpoints" | "diffusion_models")
+        } else {
+            category == self.category
+        }
+    }
+
+    fn folder(&self) -> Result<PathBuf, String> {
+        if self.category != "models"
+            && !crate::settings::MODEL_FOLDERS.contains(&self.category.as_str())
+        {
+            return Err("Invalid Library refresh category".into());
+        }
+        let Some(folder) = &self.folder else {
+            return Ok(PathBuf::new());
+        };
+        let mut relative = PathBuf::new();
+        if folder.is_empty() || folder.len() > 32768 || folder.chars().any(char::is_control) {
+            return Err("Invalid Library refresh folder".into());
+        }
+        for part in folder.split('/') {
+            let mut components = Path::new(part).components();
+            if part.starts_with('.')
+                || part.contains('\\')
+                || !matches!(components.next(), Some(std::path::Component::Normal(_)))
+                || components.next().is_some()
+            {
+                return Err("Invalid Library refresh folder".into());
+            }
+            relative.push(part);
+        }
+        if relative.components().count() > MAX_DEPTH {
+            return Err("Library refresh folder is too deep".into());
+        }
+        Ok(relative)
+    }
+}
+
+pub fn load_scoped(
+    directory: &Path,
+    roots: Vec<PathBuf>,
+    refresh: bool,
+    scope: Option<RefreshScope>,
+) -> Result<Vec<SnapshotModel>, String> {
+    let refresh = refresh || scope.is_some();
+    let relative = scope.as_ref().map(RefreshScope::folder).transpose()?;
     if roots.is_empty() || roots.len() > 32 || roots.iter().any(|p| !absolute_path_valid(p)) {
         return Err("Invalid model index roots".into());
     }
@@ -476,9 +537,12 @@ pub fn load(
             return Ok(payload(index));
         }
     }
-    let old: HashMap<_, _> = previous
-        .into_iter()
-        .flat_map(|i| i.records)
+    if scope.is_some() && previous.is_none() {
+        return Err("Refresh all models once before refreshing one folder".into());
+    }
+    let old_records = previous.map(|index| index.records).unwrap_or_default();
+    let old: HashMap<_, _> = old_records
+        .iter()
         .map(|r| ((r.model.category.clone(), r.model.path.clone()), r))
         .collect();
     let mut jobs = vec![];
@@ -488,15 +552,42 @@ pub fn load(
             return Err("Models folder could not be read; saved index retained".into());
         }
         for (category, base) in crate::settings::model_locations(root) {
-            walk(category, &base, &base, 0, &mut jobs, &mut remaining);
+            if scope
+                .as_ref()
+                .is_some_and(|scope| !scope.includes(category))
+            {
+                continue;
+            }
+            let target = relative
+                .as_ref()
+                .map_or_else(|| base.clone(), |folder| base.join(folder));
+            if scope.is_some() {
+                match std::fs::metadata(&target) {
+                    Ok(meta) if meta.is_dir() && resolve_directory(&target).is_ok() => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    _ => {
+                        return Err(
+                            "Could not read the selected Library folder; saved index retained"
+                                .into(),
+                        )
+                    }
+                }
+            }
+            let depth = relative
+                .as_ref()
+                .map_or(0, |folder| folder.components().count());
+            walk(category, &base, &target, depth, &mut jobs, &mut remaining);
         }
+    }
+    if scope.is_some() && remaining == 0 {
+        return Err("Invalid or oversized Library refresh scope; saved index retained".into());
     }
     if remaining == 0 {
         crate::logs::push(crate::logs::Source::Deas,
             "WARN: Library index operation=scan entry limit reached; narrow the configured model roots");
     }
     let chunk = jobs.len().div_ceil(4).max(1);
-    let records = std::thread::scope(|scope| {
+    let mut records = std::thread::scope(|scope| {
         let handles: Vec<_> = jobs
             .chunks(chunk)
             .map(|part| {
@@ -510,7 +601,7 @@ pub fn load(
                                 .get(&(category.to_string(), path.to_string_lossy().into_owned()))
                             {
                                 if stamp.is_some() && stamp == saved.stamp {
-                                    let mut saved = saved.clone();
+                                    let mut saved = (*saved).clone();
                                     saved.model.local_preview = local_preview(
                                         path,
                                         &mut preview_folders,
@@ -561,6 +652,18 @@ pub fn load(
     if records.len() < jobs.len() {
         crate::logs::push(crate::logs::Source::Deas, &format!("WARN: Library index operation=inspect skipped={} model files; check file access and metadata", jobs.len()-records.len()));
     }
+    if let Some(scope) = &scope {
+        let relative = relative.as_deref().unwrap_or(Path::new(""));
+        records.extend(
+            old_records
+                .iter()
+                .filter(|record| {
+                    !scope.includes(&record.model.category)
+                        || !Path::new(&record.model.name).starts_with(relative)
+                })
+                .cloned(),
+        );
+    }
     let mut seen = std::collections::HashSet::new();
     let records = records
         .into_iter()
@@ -604,6 +707,61 @@ pub fn load(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scoped_refresh_reconciles_only_the_selected_folder() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("models");
+        let cache = fixture.path().join("index");
+        let selected = root.join("loras/style");
+        let adjacent = root.join("loras/style-extra");
+        std::fs::create_dir_all(&selected).unwrap();
+        std::fs::create_dir_all(&adjacent).unwrap();
+        std::fs::create_dir_all(root.join("checkpoints")).unwrap();
+        let removed = selected.join("old.pt");
+        let added = selected.join("new.pt");
+        let untouched = adjacent.join("cached.pt");
+        let checkpoint = root.join("checkpoints/cached.pt");
+        for file in [&removed, &untouched, &checkpoint] {
+            std::fs::write(file, b"old").unwrap();
+        }
+        assert_eq!(load(&cache, vec![root.clone()], false).unwrap().len(), 3);
+        std::fs::remove_file(&removed).unwrap();
+        std::fs::write(&added, b"new").unwrap();
+        std::fs::write(&untouched, b"changed on disk").unwrap();
+        std::fs::remove_file(&checkpoint).unwrap();
+        let scope = RefreshScope {
+            category: "loras".into(),
+            folder: Some("style".into()),
+        };
+        let models = load_scoped(&cache, vec![root.clone()], true, Some(scope)).unwrap();
+        assert_eq!(models.len(), 3);
+        assert!(models.iter().any(|model| Path::new(&model.path) == added));
+        assert!(models
+            .iter()
+            .any(|model| Path::new(&model.path) == untouched && model.size == 3));
+        assert!(models
+            .iter()
+            .any(|model| Path::new(&model.path) == checkpoint));
+        assert!(models.iter().all(|model| Path::new(&model.path) != removed));
+        assert!(load_scoped(
+            &cache,
+            vec![root.clone()],
+            true,
+            Some(RefreshScope {
+                category: "loras".into(),
+                folder: Some("../checkpoints".into()),
+            })
+        )
+        .is_err());
+        let models = load(&cache, vec![root], true).unwrap();
+        assert!(models
+            .iter()
+            .any(|model| Path::new(&model.path) == untouched && model.size > 3));
+        assert!(models
+            .iter()
+            .all(|model| Path::new(&model.path) != checkpoint));
+    }
 
     #[test]
     fn cache_rejects_traversal_in_roots_models_and_previews() {

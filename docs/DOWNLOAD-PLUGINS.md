@@ -152,11 +152,12 @@ The **Fetch** control sits beside **Refresh models** in the collection header;
 its options expand below the compact action row. It works from the current saved listing. Choose current filtered
 results (including matching cards beyond Show more), current folder and descendants,
 current model category or the entire library. **Only missing metadata or previews**
-is enabled initially. Fetch skips current metadata with creator information and,
-when local saving is enabled, a local cover if the provider offers one. Uncheck it
-to refresh existing records. A no-match CivitAI result remains
-missing and can be retried explicitly. The count is an upper bound before native
-missing-record checks. In a card's popup, Fetch/Refresh metadata handles that file.
+is enabled initially. Fetch reuses completed lookups for unchanged files, including
+CivitAI no-match results. When only the local cover is missing, it downloads from
+the cached thumbnail URL without looking up the model again. Clear the checkbox
+or use **Refresh metadata** on one card to retry a completed lookup. The count is
+an upper bound before native checks. Fetch accepts up to 25,000 selected files
+per batch.
 
 **Start fetch** is explicit. It looks up CivitAI by SHA-256, reuses valid cached hashes
 and may read whole weight files when hashing is needed. Native code validates and
@@ -164,15 +165,18 @@ deduplicates the selected paths, keeps four requests in flight, reports progress
 and errors through central Logs, and continues when switching views. It caches
 metadata and preview URLs beside each model. **Save preview locally** sits beside
 **Start fetch**, defaults to off, and applies to batch and individual metadata
-fetches. When enabled, Fetch saves a missing CivitAI still image next to the model.
-An existing local preview is used as-is. If saving fails, the metadata and remote
+fetches. When enabled, Fetch saves a missing CivitAI still image next to the model,
+including thumbnails served through CivitAI’s blob CDN. Existing local previews
+are kept. If saving fails, the metadata and remote
 preview link are still available. Configured CivitAI credentials apply to metadata
 lookups. Closing DEAS stops in-flight work.
 
-Completed batches patch the native index once per saved index, then refresh the
-visible cards from that saved index. No recursive model-folder listing is triggered
-by Fetch or by returning to Library. **Scan Files** retains its older explicit
-whole-folder discovery workflow; **Refresh models** discovers local file changes.
+Completed batches patch the native index once per saved index, then reload the
+listing once for that batch. Library keeps the preview URLs for untouched cards.
+**Refresh models** checks for disk changes in the selected folder or category by
+default. Set **Refresh scope** to **Entire library** to check every category.
+Refresh reuses unchanged index records and reads local files only. **Scan Files**
+retains its explicit whole-folder metadata workflow.
 
 In a LoRA’s **Model details**, choose **Edit trigger words** and enter one word
 or phrase per line. Save an empty list to clear the words. The local list is used
@@ -186,7 +190,9 @@ when Civitai includes prompt metadata. Use **Refresh metadata** on an older
 cached entry to look for examples. Fetch stores the prompts and image URLs.
 Example thumbnails load from Civitai when viewed.
 
-In **Model details**, click the file path to open its containing folder. **View on
+In **Model details**, click the file path to open its containing folder. On
+Windows, Explorer selects the model file, including filenames with square
+brackets. **View on
 Civitai** opens the matched version and the creator name opens their profile when
 that information is available. Models flagged mature open on civitai.red, because
 civitai.com only shows a "moved to civitai.red" notice for them; other models open on

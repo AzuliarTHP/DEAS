@@ -16,14 +16,15 @@ function Host({models=[fox,lamp],onFetch,locked=false,editLora}:{models?:LocalMo
 beforeEach(()=>{vi.mocked(invoke).mockReset().mockResolvedValue(undefined);localStorage.clear();localStorage.setItem('deas.locale.v1','en');Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:vi.fn().mockResolvedValue(undefined)}});});
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 
-it('opens the exact file, model version and creator through the native actions',()=>{
- render(<Host/>);
- fireEvent.click(screen.getByRole('button',{name:fox.name}));
+it('reveals the literal model file and opens the model version and creator',()=>{
+ const entry={...fox,path:'D:\\Models\\[Characters], Final\\[fox], v2.safetensors'};
+ render(<Host models={[entry,lamp]}/>);
+ fireEvent.click(screen.getByRole('button',{name:entry.name}));
  const dialog=within(screen.getByRole('dialog',{name:'Model details'}));
- fireEvent.click(dialog.getByRole('button',{name:fox.path}));
+ fireEvent.click(dialog.getByRole('button',{name:entry.path}));
  fireEvent.click(dialog.getByRole('button',{name:'View on Civitai'}));
  fireEvent.click(dialog.getByRole('button',{name:'FixtureCreator'}));
- expect(invoke).toHaveBeenCalledWith('native_media_reveal',{path:fox.path});
+ expect(invoke).toHaveBeenCalledWith('native_media_reveal',{path:entry.path});
  expect(invoke).toHaveBeenCalledWith('native_open_civitai_model',{modelId:1,versionId:1,nsfw:true});
  expect(invoke).toHaveBeenCalledWith('native_open_civitai_creator',{username:'FixtureCreator',nsfw:true});
  fireEvent.click(dialog.getByRole('button',{name:'Close model details'}));

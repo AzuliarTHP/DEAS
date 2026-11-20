@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Library refresh and Fetch do less work.** Refresh checks the current folder or category by default. Missing-only Fetch reuses completed lookups and downloads missing covers from cached URLs. Completed batches reload the saved index once.
+- **Library Fetch saves redirected CivitAI previews.** With **Save preview locally** enabled, thumbnails served through the CivitAI blob CDN can be saved beside the model. Existing previews are kept.
+- **Studio Notes saves renamed drafts separately.** Saving under a different name creates a new note. Saving under the same name asks before overwriting. The editor shows the note folder in its top-right corner.
+- **Studio Notes folders use naming dialogs and saved manual order.** Drag to reorder siblings, move a folder into another folder, or move it to the root by dropping it on **All notes**. Chevrons appear on folders with children.
+- **Library file links reveal the model in Explorer.** The containing folder opens with the exact model file selected, including filenames with square brackets and other punctuation.
+- **Studio prompt actions leave the scrollbar clear.** The action buttons sit in a separate column beside the editor.
+
 ## 0.3.11
 
 - **New Studio tab: Dark Wizards, starting with Replace** ([guide](DARK-WIZARDS.md)). Give it the picture to change (B), optionally an object picture (A) whose content should go into B, plus *Replace what* / *With what*; it picks an installed model and prepares Generate, where the Run Plan shows the draft and you press Run. With a Qwen Image 2.1 (or Turbo) model, **Reference edit** sends B and A as prompt references `image 1` / `image 2` at B's aspect ratio (32-pixel grid), and **Paint a mask** opens B in Inpaint on the same Qwen model with B and A as references — no second model. Without Qwen, Paint a mask falls back to Flux.2, Z-Image, Flux.1 or SDXL with the replacement text only. Wizards are data (`src/wizards/builtin.json`), never guess unknown models, never run, upload or download anything themselves; without a fitting model **Find in Library** opens the Library catalog filtered to the preferred model. Advanced experience only for now.

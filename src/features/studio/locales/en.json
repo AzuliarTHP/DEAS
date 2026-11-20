@@ -1240,6 +1240,7 @@
   "notes.seed": "Note seed",
   "notes.positive": "Note positive prompt",
   "notes.negative": "Note negative prompt",
+  "notes.confirmOverwrite": "Overwrite note “{name}”?",
   "notes.confirmDelete": "Delete note “{name}”?",
   "notes.confirmDeleteFolder": "Delete folder “{name}” and all its notes and subfolders?",
   "notes.expand": "Expand {name}",

@@ -1240,6 +1240,7 @@
   "notes.seed": "笔记种子",
   "notes.positive": "笔记正向提示词",
   "notes.negative": "笔记负向提示词",
+  "notes.confirmOverwrite": "覆盖笔记“{name}”吗？",
   "notes.confirmDelete": "删除笔记“{name}”？",
   "notes.confirmDeleteFolder": "删除文件夹“{name}”及其全部笔记和子文件夹？",
   "notes.expand": "展开 {name}",

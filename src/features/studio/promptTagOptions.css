@@ -1,4 +1,4 @@
-.wb-prompt-expand.wb-prompt-tags { top:102px; display:grid; place-items:center; }
+.wb-prompt-expand.wb-prompt-tags { display:grid; place-items:center; }
 .tag-options-dialog { position:fixed; inset:0; margin:auto; width:min(28.5rem,calc(100vw - 1rem)); max-height:calc(100dvh - 1rem); padding:0; border:1px solid var(--line); border-radius:.6rem; background:var(--panel); color:var(--chalk); }
 .tag-options-dialog[open] { display:flex; flex-direction:column; }
 .tag-options-dialog::backdrop { background:#0006; }
@@ -24,7 +24,6 @@
 .tag-source-row small { display:block; color:var(--muted); font-size:.66rem; margin-top:.05rem; }
 .tag-options-flags { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:.65rem; }
 .tag-options-body .tag-options-footnote { padding-top:.45rem; border-top:1px solid var(--line); }
-.wb-prompt:has(.wb-prompt-tags) textarea { min-height:142px; }
 
 .tag-source-entry { display:flex; align-items:center; gap:.5rem; min-width:0; }
 .tag-source-entry .tag-source-row { flex:1; }

@@ -254,6 +254,7 @@
   "library.versionId": "版本 ID",
   "library.aboutVersion": "关于此版本",
   "library.fetch": "获取",
+  "library.refreshScope": "刷新范围",
   "library.fetchTarget": "获取范围",
   "library.fetchFiltered": "当前筛选结果",
   "library.fetchFolder": "当前文件夹及子文件夹",
