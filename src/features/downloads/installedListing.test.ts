@@ -1,6 +1,6 @@
 import { beforeEach,expect,it,vi } from 'vitest';
 import { scanModels,type LocalModel } from '../../lib/models';
-import { clearInstalledListing,loadInstalledListing,reloadAfterFetch } from './installedListing';
+import { claimDownloadRefresh,clearInstalledListing,downloadRefreshScope,loadInstalledListing,refreshAfterDownloads,reloadAfterFetch } from './installedListing';
 import { MODEL_LIBRARY_UPDATED,publishModelLibrary } from '../../lib/modelLibrary';
 vi.mock('../../lib/models',()=>({scanModels:vi.fn()}));
 const model:LocalModel={category:'loras',name:'style.pt',path:'/m/loras/style.pt',size:1,info:null};
@@ -64,4 +64,35 @@ it('only invalidates preview URLs within a scoped refresh',async()=>{
  expect(scanModels).toHaveBeenLastCalledWith('/m',[],true,scope);
  expect(result[0].previewRevision).toBeGreaterThan(full[0].previewRevision!);
  expect(result[1].previewRevision).toBe(full[1].previewRevision);
+});
+it('maps a finished download folder to a refresh scope under the models root',()=>{
+ expect(downloadRefreshScope('/m','/m/loras')).toEqual({category:'loras'});
+ expect(downloadRefreshScope('/m/','/m/loras/Krea2/style/')).toEqual({category:'loras',folder:'Krea2/style'});
+ expect(downloadRefreshScope('/m','/m')).toBe('all');
+ expect(downloadRefreshScope('/m','/models/loras')).toBe('outside');
+ expect(downloadRefreshScope('/m','/env/ComfyUI/user/default/workflows')).toBe('outside');
+ expect(downloadRefreshScope('/m','')).toBe('outside');
+ expect(downloadRefreshScope('C:\\AI\\models','c:/ai/MODELS/loras\\Style')).toEqual({category:'loras',folder:'Style'});
+});
+it('refreshes each finished download folder once, scoped, and publishes the new listing',async()=>{
+ await loadInstalledListing('/m');
+ const added={...model,name:'new.pt',path:'/m/loras/new.pt'};
+ vi.mocked(scanModels).mockResolvedValue([model,added]);
+ const receive=vi.fn();window.addEventListener(MODEL_LIBRARY_UPDATED,receive);
+ try{
+  expect(claimDownloadRefresh('job-1')).toBe(true);expect(claimDownloadRefresh('job-1')).toBe(false);
+  expect(refreshAfterDownloads('/m',['/elsewhere/workflows'])).toBeNull();
+  const models=await refreshAfterDownloads('/m',['/m/loras','/m/loras','/elsewhere'])!;
+  expect(vi.mocked(scanModels).mock.calls.at(-1)).toEqual(['/m',[],true,{category:'loras'}]);
+  expect(vi.mocked(scanModels).mock.calls.filter(call=>call[2])).toHaveLength(1);
+  expect(models.map(m=>m.path)).toEqual(['/m/loras/style.pt','/m/loras/new.pt']);
+  expect((receive.mock.calls.at(-1)![0] as CustomEvent).detail.models.map((m:LocalModel)=>m.path)).toContain('/m/loras/new.pt');
+  expect(await loadInstalledListing('/m')).toBe(models);
+ }finally{window.removeEventListener(MODEL_LIBRARY_UPDATED,receive);}
+});
+it('falls back to one full refresh when the index cannot serve the scoped refresh',async()=>{
+ vi.mocked(scanModels).mockImplementation(async(_root,_extra,_refresh,scope)=>{if(scope)throw new Error('Refresh all models once');return [model];});
+ const models=await refreshAfterDownloads('/m',['/m/loras/new'])!;
+ expect(models).toEqual([expect.objectContaining({path:model.path})]);
+ expect(vi.mocked(scanModels).mock.calls.map(call=>call[3]??'full')).toEqual([{category:'loras',folder:'new'},'full']);
 });

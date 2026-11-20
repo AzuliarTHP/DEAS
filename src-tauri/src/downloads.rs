@@ -491,6 +491,10 @@ pub struct DownloadJob {
     pub current_file: Option<String>,
     #[serde(default)]
     pub error: Option<String>,
+    /// Bytes on disk per resource, index-aligned with `resources`, so the queue can show
+    /// one line per file. Empty for queues persisted before per-file progress existed.
+    #[serde(default)]
+    pub file_bytes: Vec<u64>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -564,6 +568,8 @@ struct TransferRun<'a> {
     header: Option<HeaderValue>,
     cancel: &'a AtomicBool,
     job_id: &'a str,
+    /// Position of the resource in `DownloadJob::resources` (per-file progress).
+    index: usize,
 }
 
 #[derive(Clone)]
@@ -851,9 +857,12 @@ impl DownloadEngine {
         let path = dir.join("download-queue.json");
         let Ok(mut i) = self.inner.lock() else { return };
         i.persist_path = Some(path.clone());
-        let loaded = std::fs::read(&path).ok().filter(|text| text.len() <= MAX_JSON).and_then(|text| {
-            serde_json::from_str::<PersistedQueue>(&String::from_utf8_lossy(&text)).ok()
-        });
+        let loaded = std::fs::read(&path)
+            .ok()
+            .filter(|text| text.len() <= MAX_JSON)
+            .and_then(|text| {
+                serde_json::from_str::<PersistedQueue>(&String::from_utf8_lossy(&text)).ok()
+            });
         let mut restored = 0usize;
         for mut job in loaded.map(|q| q.jobs).unwrap_or_default() {
             if job.state == "running" {
@@ -885,7 +894,9 @@ impl DownloadEngine {
     /// throttled snapshot while bytes stream).
     fn persist(i: &mut Inner) {
         i.last_persist = Instant::now();
-        let Some(path) = i.persist_path.clone() else { return };
+        let Some(path) = i.persist_path.clone() else {
+            return;
+        };
         let Ok(text) = serde_json::to_string(&PersistedQueue {
             version: 1,
             jobs: i.jobs.clone(),
@@ -957,9 +968,8 @@ impl DownloadEngine {
             }
         }
         if i.jobs.len() + prepared.len() > MAX_JOBS {
-            i.jobs.retain(|j| {
-                !matches!(j.state.as_str(), "succeeded" | "cancelled" | "failed")
-            });
+            i.jobs
+                .retain(|j| !matches!(j.state.as_str(), "succeeded" | "cancelled" | "failed"));
             if i.jobs.len() + prepared.len() > MAX_JOBS {
                 let excess = i.jobs.len() + prepared.len() - MAX_JOBS;
                 i.jobs.drain(0..excess);
@@ -968,11 +978,7 @@ impl DownloadEngine {
         for p in &prepared {
             let label = match p.view.resources.len() {
                 1 => p.view.resources[0].label.clone(),
-                n => format!(
-                    "{} (+{} files)",
-                    p.view.resources[0].label.clone(),
-                    n - 1
-                ),
+                n => format!("{} (+{} files)", p.view.resources[0].label.clone(), n - 1),
             };
             i.jobs.push(DownloadJob {
                 id: p.view.id.clone(),
@@ -989,6 +995,7 @@ impl DownloadEngine {
                 total_bytes: p.view.total_known_bytes,
                 current_file: None,
                 error: None,
+                file_bytes: vec![0; p.view.resources.len()],
             });
         }
         Self::persist(&mut i);
@@ -1014,19 +1021,21 @@ impl DownloadEngine {
         self.enqueue(vec![plan_id], confirmed, auth)
     }
     /// Re-queue interrupted, cancelled or failed jobs; kept partial files resume where they stopped.
-    pub fn resume(&self, job_ids: Option<Vec<String>>, auth: &AuthState) -> Result<DownloadStatus, String> {
+    pub fn resume(
+        &self,
+        job_ids: Option<Vec<String>>,
+        auth: &AuthState,
+    ) -> Result<DownloadStatus, String> {
         let mut i = self
             .inner
             .lock()
             .map_err(|_| "Download state unavailable")?;
         let mut resumed = 0usize;
         for j in &mut i.jobs {
-            if matches!(
-                j.state.as_str(),
-                "cancelled" | "failed" | "interrupted"
-            ) && job_ids
-                .as_ref()
-                .is_none_or(|ids| ids.iter().any(|id| id == &j.id))
+            if matches!(j.state.as_str(), "cancelled" | "failed" | "interrupted")
+                && job_ids
+                    .as_ref()
+                    .is_none_or(|ids| ids.iter().any(|id| id == &j.id))
             {
                 j.state = "queued".into();
                 j.error = None;
@@ -1224,7 +1233,10 @@ impl DownloadEngine {
                 ),
                 Err(_) if cancel.load(Ordering::SeqCst) => crate::logs::push(
                     crate::logs::Source::Deas,
-                    &format!("Downloads: {} cancelled; partial files kept for resume.", job.label),
+                    &format!(
+                        "Downloads: {} cancelled; partial files kept for resume.",
+                        job.label
+                    ),
                 ),
                 Err(msg) => crate::logs::push(
                     crate::logs::Source::Deas,
@@ -1277,7 +1289,10 @@ impl DownloadEngine {
         cancel: &AtomicBool,
     ) -> Result<(), String> {
         let client = client_for(false, None)?;
-        for r in &job.resources {
+        // Resources are transferred in order and `completed` counts the published ones, so a
+        // resumed job continues after them; re-transferring a published file cannot publish
+        // again (no-overwrite) and would fail the whole job.
+        for (index, r) in job.resources.iter().enumerate().skip(job.completed) {
             self.transfer(
                 r,
                 target,
@@ -1287,6 +1302,7 @@ impl DownloadEngine {
                     header: header.clone(),
                     cancel,
                     job_id: &job.id,
+                    index,
                 },
             )
             .await?;
@@ -1316,12 +1332,19 @@ impl DownloadEngine {
         Ok(())
     }
     /// Small locked progress update for one queue job and the aggregate batch counters.
-    fn progress(&self, job_id: &str, placed: i64, transferred: i64) {
+    fn progress(&self, job_id: &str, index: usize, placed: i64, transferred: i64) {
         let Ok(mut i) = self.inner.lock() else { return };
         i.status.bytes_downloaded = (i.status.bytes_downloaded as i64 + transferred).max(0) as u64;
         i.status.bytes_placed = (i.status.bytes_placed as i64 + placed).max(0) as u64;
         if let Some(j) = i.jobs.iter_mut().find(|j| j.id == job_id) {
             j.bytes_placed = (j.bytes_placed as i64 + placed).max(0) as u64;
+            // Queues persisted before per-file progress have no slots yet.
+            if j.file_bytes.len() < j.resources.len() {
+                j.file_bytes.resize(j.resources.len(), 0);
+            }
+            if let Some(file) = j.file_bytes.get_mut(index) {
+                *file = (*file as i64 + placed).max(0) as u64;
+            }
         }
         if i.last_persist.elapsed() > Duration::from_secs(2) {
             Self::persist(&mut i);
@@ -1406,12 +1429,12 @@ impl DownloadEngine {
                         .and_then(|s| s.parse::<u64>().ok());
                     if from != Some(count) {
                         target.remove_partial(&name);
-                        self.progress(job_id, -((kept + attempt_placed) as i64), 0);
+                        self.progress(job_id, run.index, -((kept + attempt_placed) as i64), 0);
                         return Err("Resume range mismatch".into());
                     }
                 } else if count > 0 {
                     // 200: the server ignored Range and sent the whole file again.
-                    self.progress(job_id, -((kept + attempt_placed) as i64), 0);
+                    self.progress(job_id, run.index, -((kept + attempt_placed) as i64), 0);
                     attempt_placed = 0;
                     file.set_len(0).map_err(|_| "Cannot reset partial")?;
                     std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))
@@ -1437,7 +1460,7 @@ impl DownloadEngine {
                             return Err("Job exceeds the 256 GiB limit".into());
                         }
                     }
-                    self.progress(job_id, chunk.len() as i64, chunk.len() as i64);
+                    self.progress(job_id, run.index, chunk.len() as i64, chunk.len() as i64);
                     attempt_placed += chunk.len() as u64;
                     if r.size.is_some_and(|n| count > n) {
                         return Err("Download exceeds declared size".into());
@@ -1449,7 +1472,7 @@ impl DownloadEngine {
             }
             if r.size.is_some_and(|n| n != count) || length.is_some_and(|n| start + n != count) {
                 target.remove_partial(&name);
-                self.progress(job_id, -((kept + attempt_placed) as i64), 0);
+                self.progress(job_id, run.index, -((kept + attempt_placed) as i64), 0);
                 // Only a resumed prefix can fail verification (the remote file changed): retry clean.
                 if start > 0 {
                     continue;
@@ -1462,7 +1485,7 @@ impl DownloadEngine {
                 .is_some_and(|s| !s.eq_ignore_ascii_case(&actual))
             {
                 target.remove_partial(&name);
-                self.progress(job_id, -((kept + attempt_placed) as i64), 0);
+                self.progress(job_id, run.index, -((kept + attempt_placed) as i64), 0);
                 if start > 0 {
                     continue;
                 }

@@ -6,6 +6,7 @@ import { DownloadPanel, AuthPanel } from './DownloadPluginPanel';
 import { DownloadWorkspace } from './DownloadWorkspace';
 import { browseDownloads, formatBytes, percentOf, planDownloads, setAuthToken, removeAuthToken } from '../../lib/downloads';
 import { clearInstalledListing } from './installedListing';
+import { publishModelLibrary } from '../../lib/modelLibrary';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true)}));
 const resource={id:'file',label:'Remote file',kind:'file',url:'https://example.invalid/file',downloadable:true,size:23};
 const catalog={version:1,providers:[{id:'fixture',label:'Fixture provider',kind:'http',origin:'https://example.invalid',scopes:['index','repo'],anonymousNotice:'Fixture limits'}],entries:[{id:'curated',label:'Curated index',providerId:'fixture',scope:'index',locator:'https://example.invalid/index',kind:'file',target:'models'}]};
@@ -700,14 +701,14 @@ it('keeps the Library queue view alive across workspace tab switches without abo
   return {state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};
  });
  const view=render(<I18nProvider><DownloadWorkspace view="downloads" authRevision={0}/></I18nProvider>);
- const queue=await screen.findByText('Big model.safetensors');
+ const queue=await screen.findByText(/Big model\.safetensors/);
  expect(within(document.querySelector('[data-download-queue]') as HTMLElement).getAllByText(/25%/).length).toBeGreaterThan(0);
  view.rerender(<I18nProvider><DownloadWorkspace view={null} authRevision={0}/></I18nProvider>);
  // The panel stays mounted (hidden): the native download is never aborted by the tab switch.
  expect(vi.mocked(invoke).mock.calls.some(([c])=>c==='native_download_cancel')).toBe(false);
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1100));});
  view.rerender(<I18nProvider><DownloadWorkspace view="downloads" authRevision={0}/></I18nProvider>);
- await screen.findByText('Big model.safetensors');
+ await screen.findByText(/Big model\.safetensors/);
  expect((screen.getByRole('tab',{name:'Queue'}) as HTMLButtonElement).getAttribute('aria-selected')).toBe('true');
  const polled=polls;
  expect(polled).toBeGreaterThan(1); // polling continued while the Library tab was hidden
@@ -724,7 +725,7 @@ it('queues interrupted downloads in memory and resumes them from the queue view'
  });
  render(<I18nProvider><DownloadPanel embedded modelsDir="/configured"/></I18nProvider>);
  // Restored queue entries reopen the queue view instead of a blank catalog.
- await screen.findByText('Interrupted file');
+ await screen.findByText(/Interrupted file/);
  expect(within(document.querySelector('[data-download-queue]') as HTMLElement).getByText('Interrupted')).toBeTruthy();
  click('Resume interrupted downloads');
  await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_download_resume',{jobIds:null}));
@@ -749,4 +750,66 @@ it('a wizard search request fills the catalog search and selects Catalog without
  expect((await screen.findByLabelText('Search catalog & CivitAI') as HTMLInputElement).value).toBe('Qwen Image 2.1');
  expect(within(screen.getByRole('tablist',{name:'Library view'})).getByRole('tab',{name:'Catalog'}).getAttribute('aria-selected')).toBe('true');
  expect(vi.mocked(invoke).mock.calls.some(([c])=>['native_download_browse','native_download_plan','native_download_start','native_download_start_queue'].includes(c as string))).toBe(false);
+});
+it('lists a finished download in Installed without a restart, rescanning only its folder',async()=>{
+ const old={category:'loras',name:'old.safetensors',path:'/env/ComfyUI/models/loras/old.safetensors',size:3,info:null};
+ const added={...old,name:'new.safetensors',path:'/env/ComfyUI/models/loras/new.safetensors'};
+ let finished=false;const scans:unknown[]=[];
+ const job={id:'job-new',label:'group',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'/env/ComfyUI/models/loras',resources:[resource],state:'succeeded',completed:1,bytesPlaced:23,totalBytes:23,currentFile:null,error:null};
+ vi.mocked(invoke).mockImplementation(async(c,a)=>{
+  if(c==='native_download_catalog')return catalog;
+  if(c==='native_auth_status')return [];
+  if(c==='native_download_status')return finished?{state:'succeeded',completed:1,total:1,bytesDownloaded:23,error:null,jobs:[job]}:{state:'idle',completed:0,total:0,bytesDownloaded:0,error:null};
+  if(c==='native_models_scan'){scans.push(a);return finished?[old,added]:[old];}
+  if(c==='native_model_scan_status')return {id:'',root:'',state:'idle',file:null,completed:0,total:0,remaining:0,failed:0};
+  return null;
+ });
+ const panel=()=><I18nProvider><DownloadPanel embedded installTarget="/env"/></I18nProvider>;
+ let view=render(panel());
+ tab('Installed');await screen.findByRole('button',{name:'old.safetensors'});
+ view.unmount();
+ finished=true;
+ view=render(panel());
+ await waitFor(()=>expect(scans).toContainEqual({root:'/env/ComfyUI/models',refresh:true,scope:{category:'loras'}}));
+ tab('Installed');
+ expect(await screen.findByRole('button',{name:'new.safetensors'})).toBeTruthy();
+ view.unmount();view=render(panel());await screen.findByRole('tab',{name:'Installed'});
+ await waitFor(()=>expect(invoke).toHaveBeenCalledWith('native_download_status'));
+ expect(scans.filter(scan=>(scan as {refresh?:boolean}).refresh)).toHaveLength(1);
+});
+it('an open Installed view adopts a listing refreshed elsewhere for its root only',async()=>{
+ const old={category:'loras',name:'old.safetensors',path:'/env/ComfyUI/models/loras/old.safetensors',size:3,info:null};
+ vi.mocked(invoke).mockImplementation(async c=>c==='native_download_catalog'?catalog:c==='native_auth_status'?[]:c==='native_models_scan'?[old]:c==='native_model_scan_status'?{id:'',root:'',state:'idle',file:null,completed:0,total:0,remaining:0,failed:0}:c==='native_download_status'?{state:'idle',completed:0,total:0,bytesDownloaded:0,error:null}:null);
+ render(<I18nProvider><DownloadPanel embedded installTarget="/env"/></I18nProvider>);
+ tab('Installed');await screen.findByRole('button',{name:'old.safetensors'});
+ act(()=>{publishModelLibrary({root:'/other/models',models:[{...old,name:'foreign.safetensors',path:'/other/models/loras/foreign.safetensors'}]});});
+ expect(screen.queryByRole('button',{name:'foreign.safetensors'})).toBeNull();
+ act(()=>{publishModelLibrary({root:'/env/ComfyUI/models/',models:[old,{...old,name:'new.safetensors',path:'/env/ComfyUI/models/loras/new.safetensors'}]});});
+ expect(await screen.findByRole('button',{name:'new.safetensors'})).toBeTruthy();
+});
+
+it('lists every queued file on its own line with its own progress, not one cumulative row',async()=>{
+ const sized=(id:string,size:number)=>({...resource,id,label:`${id}.safetensors`,size});
+ const job={id:'multi',label:'Krea2 LoRAs',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'/configured/loras',resources:[sized('done',100),sized('active',200),sized('waiting',300)],state:'running',completed:1,bytesPlaced:150,totalBytes:600,currentFile:'active.safetensors',error:null,fileBytes:[100,50,0]};
+ vi.mocked(invoke).mockImplementation(async c=>c==='native_download_catalog'?catalog:c==='native_auth_status'?[]:c==='native_download_status'?{state:'running',completed:1,total:3,bytesDownloaded:150,error:null,bytesPlaced:150,totalBytes:600,jobs:[job]}:{state:'idle',completed:0,total:0,bytesDownloaded:0,error:null});
+ render(<I18nProvider><DownloadPanel embedded modelsDir="/configured"/></I18nProvider>);
+ await screen.findByText('active.safetensors');
+ const rows=[...document.querySelectorAll('[data-download-queue] [data-queue-file]')] as HTMLElement[];
+ expect(rows.map(row=>row.querySelector('strong')?.textContent)).toEqual(['done.safetensors','active.safetensors','waiting.safetensors']);
+ expect(rows.map(row=>within(row).getByRole('progressbar').getAttribute('aria-valuenow'))).toEqual(['100','25','0']);
+ expect(rows.map(row=>row.querySelector('em')?.textContent)).toEqual(['Succeeded','Running','Queued']);
+ expect(rows[1].textContent).toContain('50 B of 200 B');
+ expect(document.querySelector('[data-download-queue]')!.textContent).not.toMatch(/files ·|of 600 B/);
+});
+it('marks only the file where a job stopped as failed, with the error and Resume on that line',async()=>{
+ const job={id:'stopped',label:'group',provider:{id:'fixture',kind:'http',label:'Fixture provider',origin:'https://example.invalid'},target:'/configured/loras',resources:[{...resource,id:'a',label:'a.bin',size:10},{...resource,id:'b',label:'b.bin',size:10},{...resource,id:'c',label:'c.bin',size:10}],state:'failed',completed:1,bytesPlaced:14,totalBytes:30,currentFile:null,error:'Network request failed'};
+ vi.mocked(invoke).mockImplementation(async c=>c==='native_download_catalog'?catalog:c==='native_auth_status'?[]:c==='native_download_status'?{state:'failed',completed:1,total:3,bytesDownloaded:14,error:'Network request failed',jobs:[job]}:{state:'idle',completed:0,total:0,bytesDownloaded:0,error:null});
+ render(<I18nProvider><DownloadPanel embedded modelsDir="/configured"/></I18nProvider>);
+ await screen.findByText('b.bin');
+ const rows=[...document.querySelectorAll('[data-download-queue] [data-queue-file]')] as HTMLElement[];
+ expect(rows.map(row=>row.querySelector('em')?.textContent)).toEqual(['Succeeded','Failed','Queued']);
+ expect(within(rows[1]).getByRole('alert').textContent).toContain('Network request failed');
+ expect(rows[1].textContent).toContain('4 B of 10 B'); // legacy queue without fileBytes: active bytes derived from the job total
+ expect(within(rows[1]).getByRole('button',{name:'b.bin: resume download'})).toBeTruthy();
+ expect(document.querySelectorAll('[data-download-queue] [data-download-resume]')).toHaveLength(1);
 });

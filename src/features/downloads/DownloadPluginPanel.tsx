@@ -1,4 +1,4 @@
-import { publishModelLibrary,patchModels,refreshModelPreviews } from '../../lib/modelLibrary';
+import { MODEL_LIBRARY_UPDATED,modelPathKey,publishModelLibrary,patchModels,refreshModelPreviews,type ModelLibraryUpdate } from '../../lib/modelLibrary';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { SetStateAction } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
@@ -9,7 +9,7 @@ import { verifyAuthToken, importDownloadCatalog, restoreAuthToken, browseDownloa
 import type { AuthVerification, AuthMetadata, CatalogEntry, DownloadCatalog, DownloadJob, DownloadListing, DownloadPlan, DownloadResource, DownloadScope, DownloadStatus, PlanRequest } from '../../lib/downloads';
 import { isString, oneOf, usePref } from '../../lib/preferences';
 import { changeModelFiles, editLibraryLora, fetchModelInfo, readModelScanStatus, startModelScan } from '../../lib/models';
-import { loadInstalledListing, reloadAfterFetch, rememberInstalledListing } from './installedListing';
+import { claimDownloadRefresh, loadInstalledListing, refreshAfterDownloads, reloadAfterFetch, rememberInstalledListing } from './installedListing';
 import { InstalledGallery } from './InstalledGallery';
 import { CatalogGallery,type CatalogCard } from './CatalogGallery';
 import { LibraryGlyph } from './LibraryGlyph';
@@ -100,6 +100,8 @@ function InstalledModels({root,locked,category,setCategory,onCompanion}:{root:st
  const [models,setModelState]=useState<LocalModel[]|null>(null);
  const setModels=useCallback((change:SetStateAction<LocalModel[]|null>)=>setModelState(old=>{const next=typeof change==='function'?change(old):change;if(next)rememberInstalledListing(root,next);return next;}),[root]);
  useModelMetadataUpdates(setModels);const [scanError,setScanError]=useState(false);const [selected,setSelected]=useState('');
+ // A refresh started elsewhere (a finished download) publishes the whole listing; show it without reopening the view.
+ useEffect(()=>{const receive=(event:Event)=>{const change=(event as CustomEvent<ModelLibraryUpdate>).detail;if(!change.models||modelPathKey(change.root)!==modelPathKey(root))return;const next=change.models;setModels(next);setSelected(old=>next.some(m=>m.path===old)?old:'');};window.addEventListener(MODEL_LIBRARY_UPDATED,receive);return()=>window.removeEventListener(MODEL_LIBRARY_UPDATED,receive);},[root,setModels]);
  const [savePreview,setSavePreview]=usePref('library.fetch.savePreview',false,(v):v is boolean=>typeof v==='boolean');
  const [listingBusy,setListingBusy]=useState(false);const listingEpoch=useRef(0);
  useEffect(()=>{if(!io.native)return;const epoch=++listingEpoch.current;setModels(null);setScanError(false);setSelected('');setListingBusy(true);loadInstalledListing(root).then(v=>{if(listingEpoch.current===epoch)setModels(v);},()=>{if(listingEpoch.current===epoch)setScanError(true);}).finally(()=>{if(listingEpoch.current===epoch)setListingBusy(false);});return()=>{listingEpoch.current++;};},[root,io.native,setModels]);
@@ -184,6 +186,17 @@ const key=(r:DownloadResource)=>JSON.stringify([r.id,r.url,r.locator]);
 const views=['installed','catalog','queue'] as const;
 // A queue entry a "Resume" would restart; kept partial files continue where they stopped.
 const resumable=(state:string)=>state==='cancelled'||state==='failed'||state==='interrupted';
+/** One queue line per file. A job transfers its files in order: the first `completed` are placed,
+ * the next one is active (or where the job stopped), later ones wait. Queues saved before
+ * per-file progress (no `fileBytes`) derive the active file's bytes from the job total. */
+export function queueFile(job:DownloadJob,index:number):{state:DownloadJob['state'];placed:number;total:number}{
+ const resource=job.resources[index];
+ const state:DownloadJob['state']=job.state==='succeeded'||index<job.completed?'succeeded':index===job.completed?job.state:'queued';
+ const total=(job.resources.length===1?job.totalBytes||resource.size:resource.size)??0;
+ const placedBefore=job.resources.slice(0,job.completed).reduce((sum,item)=>sum+(item.size??0),0);
+ const placed=job.fileBytes?.[index]??(state==='succeeded'?total:index===job.completed?Math.max(0,job.bytesPlaced-placedBefore):0);
+ return {state,placed,total};
+}
 // The bundled DaSiWa catalog stays the default source; `civitai-creator-*` user entries add live creator listings.
 /** Brand name of the bundled catalog, not a translatable label. */
 const BUNDLED_SOURCE='DaSiWa';
@@ -221,6 +234,8 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
  const provider=catalog?.providers.find(p=>p.id===providerId);
  const queueJobs=status?.jobs??[];
  const queuePending=queueJobs.filter(j=>j.state!=='succeeded').length;
+ // A finished job that placed files re-reads its destination folder once, so Installed and Studio list the new models now.
+ useEffect(()=>{if(!io.native||!modelsRoot)return;const done=(status?.jobs??[]).filter(j=>j.completed>0&&['succeeded','failed','cancelled','interrupted'].includes(j.state)&&claimDownloadRefresh(j.id));if(!done.length)return;void refreshAfterDownloads(modelsRoot,done.map(j=>j.target))?.catch(()=>{});},[io.native,modelsRoot,status]);
  // Every successful queue job releases its files from the selection basket.
  const releaseBasket=useCallback((jobs:DownloadJob[])=>{const done=jobs.filter(j=>j.state==='succeeded');if(!done.length)return;setBasket(old=>old.filter(b=>!done.some(j=>j.resources.some(r=>key(r)===key(b.resource)))));},[]);
  const applyCatalog=(value:DownloadCatalog)=>{sourceEdit();setCatalog(value);setProviderId(value.providers[0]?.id??'');setScope(value.providers[0]?.scopes[0]??'index');setLocator('');setEntryId('');const first=categories(value)[0];setCategory(c=>initialCategory??(categories(value).includes(c)?c:first||''));};
@@ -295,7 +310,7 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
   void io.request(async()=>{const plans:DownloadPlan[]=[];for(const group of next){const plan=await planDownloads(group.request);if(!plan.canExecute)return{plan,status:null as DownloadStatus|null};plans.push(plan);}return {plan:null as DownloadPlan|null,status:await startDownloadsQueue(plans.map(p=>p.id))};},({plan,status})=>{if(status){published=true;publishStatus(status);setView('queue');}else setBlocked(plan);}).finally(()=>{if(!published){executionLock.current=false;setQueue([]);}});};
  // Transfer speed per queue job from consecutive status samples.
  const speedSamples=useRef(new Map<string,{time:number;bytes:number}>());
- const speedOf=(job:DownloadJob)=>{const now=Date.now();const previous=speedSamples.current.get(job.id);speedSamples.current.set(job.id,{time:now,bytes:job.bytesPlaced});if(job.state!=='running'||!previous||now<=previous.time||job.bytesPlaced<previous.bytes)return '';return ` · ${formatBytes(((job.bytesPlaced-previous.bytes)*1000)/(now-previous.time))}/s`;};
+ const speedOf=(job:DownloadJob,index:number,bytes:number)=>{const key=`${job.id}:${index}`;const now=Date.now();const previous=speedSamples.current.get(key);speedSamples.current.set(key,{time:now,bytes});if(job.state!=='running'||!previous||now<=previous.time||bytes<previous.bytes)return '';return ` · ${formatBytes(((bytes-previous.bytes)*1000)/(now-previous.time))}/s`;};
  const where=(b:Picked)=>{const d=placeOf(b.folder);return d?d.folderName||d.parentPath.split(/[\\/]/).pop():'';};
  const canStart=io.native&&!io.busy&&!running&&!queue.length&&basket.length>0&&basket.every(b=>placeOf(b.folder));
  const [present,setPresent]=useState<Set<string>>(new Set());
@@ -358,20 +373,15 @@ export function DownloadPanel({installTarget,modelsDir,authRevision=0,onStatus,e
    {view==='queue'&&<section className="download-queue" data-download-queue aria-label={t('downloads.view.queue')}>
     <p className="field-help">{t('downloads.queue.help')}</p>
     {!queueJobs.length&&!status&&<p role="status">{t('downloads.queue.empty')}</p>}
-    {status&&<div className="download-queue-summary" role="status">
-     {!queueJobs.length&&<strong>{t(`downloads.state.${status.state}`)}</strong>}
-     <span>{t('downloads.queue.summary',{done:status.completed,total:status.total||queueJobs.reduce((n,j)=>n+j.resources.length,0),placed:formatBytes(status.bytesPlaced??status.bytesDownloaded),totalBytes:status.totalBytes?formatBytes(status.totalBytes):t('downloads.unknown')})}</span>
-     {percentOf(status.bytesPlaced??status.bytesDownloaded,status.totalBytes??0)!==null&&<strong>{percentOf(status.bytesPlaced??status.bytesDownloaded,status.totalBytes??0)}%</strong>}
-    </div>}
-    {queueJobs.length>0&&<ul className="download-queue-list">{queueJobs.map(job=>{const pct=percentOf(job.bytesPlaced,job.totalBytes);return <li key={job.id} data-queue-job={job.id} className={`download-queue-item is-${job.state}`}>
-      <div className="download-queue-head"><strong>{job.label}</strong><em>{t(`downloads.state.${job.state}`)}</em><span className="download-queue-provider">{job.provider.label}</span></div>
-      <p className="download-identity">{job.target}</p>
-      <div className="download-queue-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} {...(pct===null?{}:{'aria-valuenow':pct})}><span style={{width:`${pct??100}%`}}/></div>
-      <p>{t('downloads.queue.itemStats',{done:job.completed,total:job.resources.length,placed:formatBytes(job.bytesPlaced),totalBytes:job.totalBytes?formatBytes(job.totalBytes):t('downloads.unknown')})}{pct!==null&&<> · <strong>{pct}%</strong></>}{speedOf(job)}</p>
-      {job.currentFile&&<p>{t('downloads.queue.file')}: <span className="download-identity">{job.currentFile}</span></p>}
-      {job.error&&<p role="alert">{t('downloads.error')}: {job.error}</p>}
-      {resumable(job.state)&&<button type="button" className="action-button" data-download-resume={job.id} disabled={io.busy||running} aria-label={t('downloads.queue.resumeName',{name:job.label})} onClick={()=>void io.request(()=>resumeDownloads([job.id]),publishStatus)}>{t('downloads.queue.resume')}</button>}
-    </li>;})}</ul>}
+    {status&&!queueJobs.length&&<div className="download-queue-summary" role="status"><strong>{t(`downloads.state.${status.state}`)}</strong><span>{t('downloads.queue.fileStats',{placed:formatBytes(status.bytesPlaced??status.bytesDownloaded),totalBytes:status.totalBytes?formatBytes(status.totalBytes):t('downloads.unknown')})}</span></div>}
+    {queueJobs.length>0&&<ul className="download-queue-list">{queueJobs.flatMap(job=>job.resources.map((resource,index)=>{const file=queueFile(job,index);const pct=percentOf(file.placed,file.total);const last=file.state===job.state&&resumable(job.state);return <li key={`${job.id}:${index}`} data-queue-job={job.id} data-queue-file={index} className={`download-queue-item is-${file.state}`}>
+      <div className="download-queue-head"><strong>{resource.label}</strong><em>{t(`downloads.state.${file.state}`)}</em><span className="download-queue-provider">{job.provider.label}</span></div>
+      <p className="download-identity">{job.label!==resource.label?`${job.label} · `:''}{job.target}</p>
+      <div className="download-queue-bar" role="progressbar" aria-label={resource.label} aria-valuemin={0} aria-valuemax={100} {...(pct===null?{}:{'aria-valuenow':pct})}><span style={{width:`${pct??(file.state==='succeeded'?100:0)}%`}}/></div>
+      <p>{t('downloads.queue.fileStats',{placed:formatBytes(file.placed),totalBytes:file.total?formatBytes(file.total):t('downloads.unknown')})}{pct!==null&&<> · <strong>{pct}%</strong></>}{file.state==='running'?speedOf(job,index,file.placed):''}</p>
+      {last&&job.error&&<p role="alert">{t('downloads.error')}: {job.error}</p>}
+      {last&&<button type="button" className="action-button" data-download-resume={job.id} disabled={io.busy||running} aria-label={t('downloads.queue.resumeName',{name:resource.label})} onClick={()=>void io.request(()=>resumeDownloads([job.id]),publishStatus)}>{t('downloads.queue.resume')}</button>}
+    </li>;}))}</ul>}
     <div className="aio-actions">
       {running&&<button className="action-button" data-download-cancel disabled={io.busy} onClick={()=>void io.request(cancelDownloads,publishStatus)}>{t('downloads.cancel')}</button>}
       {queueJobs.some(job=>resumable(job.state))&&<button className="action-button" data-download-resume-all disabled={io.busy||running} onClick={()=>void io.request(()=>resumeDownloads(),publishStatus)}>{t('downloads.queue.resumeAll')}</button>}

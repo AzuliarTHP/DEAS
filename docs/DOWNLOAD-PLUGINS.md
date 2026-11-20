@@ -187,6 +187,13 @@ default. Set **Refresh scope** to **Entire library** to check every category.
 Refresh reuses unchanged index records and reads local files only. **Scan Files**
 retains its explicit whole-folder metadata workflow.
 
+A finished download job that placed files inside the models folder refreshes its
+destination folder once (the whole library when it wrote to the models root, or
+when the saved index cannot serve a folder refresh yet). Installed and the Studio
+model lists show the new files without a restart, even when Installed is already
+open. Downloads outside the models folder, such as workflows or a custom parent
+folder, do not trigger a refresh.
+
 In a LoRA’s **Model details**, choose **Edit trigger words** and enter one word
 or phrase per line. Save an empty list to clear the words. The local list is used
 in Library search and Studio details and survives metadata refreshes.

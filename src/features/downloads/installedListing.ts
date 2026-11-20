@@ -41,11 +41,50 @@ export function reloadAfterFetch(root:string,id:string):Promise<LocalModel[]> {
  });
 }
 
+/** Where a finished download landed, relative to the models root: one category/folder,
+ * the whole library ('all') or nothing to rescan ('outside', e.g. workflows or a custom folder). */
+export function downloadRefreshScope(root:string,target:string):ModelRefreshScope|'all'|'outside' {
+ const norm=(path:string)=>path.replace(/\\/g,'/').replace(/\/+$/,'');
+ const base=norm(root),dest=norm(target);
+ if(!base||!dest||dest.length<base.length||modelPathKey(dest.slice(0,base.length))!==modelPathKey(base))return 'outside';
+ const rest=dest.slice(base.length);
+ if(rest&&!rest.startsWith('/'))return 'outside';
+ const parts=rest.split('/').filter(Boolean);
+ if(!parts.length)return 'all';
+ return {category:parts[0],...(parts.length>1?{folder:parts.slice(1).join('/')}:{})};
+}
+
+// One refresh per finished download job for this app session, run one after another.
+const refreshedDownloads=new Set<string>();
+let downloadRefresh:Promise<unknown>=Promise.resolve();
+export function claimDownloadRefresh(jobId:string){if(refreshedDownloads.has(jobId))return false;refreshedDownloads.add(jobId);return true;}
+/** Re-reads the folders that finished downloads wrote to, so Library and Studio list the new files without a restart.
+ * Scoped where possible; a scope the index cannot serve (first run, unknown category) falls back to one full refresh. */
+export function refreshAfterDownloads(root:string,targets:string[]):Promise<LocalModel[]>|null {
+ const plans=targets.map(target=>downloadRefreshScope(root,target)).filter(plan=>plan!=='outside');
+ if(!root||!plans.length)return null;
+ const scopes=[...new Map(plans.filter((plan):plan is ModelRefreshScope=>plan!=='all').map(scope=>[JSON.stringify(scope),scope])).values()];
+ const full=plans.includes('all')||scopes.length>4;
+ const run=async()=>{
+  if(listing?.root===root&&listing.pending)await listing.pending.catch(()=>{});
+  if(full)return loadInstalledListing(root,true);
+  let models:LocalModel[]=[];
+  for(const scope of scopes){
+   try{models=await loadInstalledListing(root,true,false,scope);}
+   catch{return loadInstalledListing(root,true);}
+  }
+  return models;
+ };
+ const next=downloadRefresh.then(run,run);
+ downloadRefresh=next.catch(()=>{});
+ return next;
+}
+
 export function rememberInstalledListing(root:string, models:LocalModel[]) {
  if(listing?.root===root)listing.models=models;
 }
 
-export function clearInstalledListing() { listing=undefined; }
+export function clearInstalledListing() { listing=undefined; refreshedDownloads.clear(); downloadRefresh=Promise.resolve(); }
 
 // Edit meta can be used from Studio while Library is unmounted.
 if(typeof window!=='undefined')window.addEventListener('deas:model-family-changed',event=>{

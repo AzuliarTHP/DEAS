@@ -426,7 +426,9 @@ fn cancellation_interrupts_stalled_stream_and_keeps_the_partial_for_resume() {
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(kept.len(), 2, "{kept:?}");
-    assert!(kept.iter().any(|n| n.starts_with("deas-") && n.ends_with(".partial")));
+    assert!(kept
+        .iter()
+        .any(|n| n.starts_with("deas-") && n.ends_with(".partial")));
     assert!(kept.iter().any(|n| n == "deas-download-job.json"));
     task.join().unwrap();
 }
@@ -1153,7 +1155,10 @@ fn queued_folder_groups_run_in_order_as_one_background_batch() {
     assert_eq!(status.bytes_downloaded, (bytes.len() * 2) as u64);
     assert_eq!(status.jobs.len(), 2);
     assert!(status.jobs.iter().all(|j| j.state == "succeeded"));
-    assert_eq!(std::fs::read(d.path().join("stage/tiny.bin")).unwrap(), bytes);
+    assert_eq!(
+        std::fs::read(d.path().join("stage/tiny.bin")).unwrap(),
+        bytes
+    );
     assert_eq!(
         std::fs::read(d2.path().join("stage2/tiny.bin")).unwrap(),
         bytes
@@ -1241,4 +1246,140 @@ fn cancelled_download_survives_app_restart_and_resumes_from_the_partial() {
         bytes
     );
     server.join().unwrap();
+}
+#[cfg(any(target_os = "linux", windows))]
+#[test]
+fn resumed_multi_file_job_skips_published_files_and_reports_per_file_bytes() {
+    let first = b"first file fully published".to_vec();
+    let second = b"second file cancelled halfway, then resumed".to_vec();
+    let half = second.len() / 2;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", listener.local_addr().unwrap());
+    let (a_body, b_body) = (first.clone(), second.clone());
+    let server = thread::spawn(move || {
+        let mut paths = vec![];
+        // a.bin in full.
+        let (mut s, _) = listener.accept().unwrap();
+        let req = request(&mut s);
+        paths.push(req.lines().next().unwrap().to_owned());
+        write!(
+            s,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            a_body.len()
+        )
+        .unwrap();
+        s.write_all(&a_body).unwrap();
+        drop(s);
+        // b.bin: half, then stall until the client cancels.
+        let (mut s, _) = listener.accept().unwrap();
+        let req = request(&mut s);
+        paths.push(req.lines().next().unwrap().to_owned());
+        write!(
+            s,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+            b_body.len()
+        )
+        .unwrap();
+        s.write_all(&b_body[..half]).unwrap();
+        s.flush().unwrap();
+        thread::sleep(Duration::from_millis(400));
+        drop(s);
+        // Resume: must ask for b.bin's remaining range, never a.bin again.
+        let (mut s, _) = listener.accept().unwrap();
+        let req = request(&mut s);
+        paths.push(req.lines().next().unwrap().to_owned());
+        let from = req
+            .rfind("bytes=")
+            .and_then(|i| req[i + 6..].split('-').next())
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        write!(
+            s,
+            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+            b_body.len() - from,
+            from,
+            b_body.len() - 1,
+            b_body.len()
+        )
+        .unwrap();
+        s.write_all(&b_body[from..]).unwrap();
+        paths
+    });
+    let p = provider(origin.clone());
+    let mut a = resource(
+        &origin,
+        Some(format!("{:x}", Sha256::digest(&first))),
+        Some(first.len() as u64),
+    );
+    a.id = "multi-a".into();
+    a.url = Some(format!("{origin}/a.bin"));
+    a.locator = Some("a.bin".into());
+    let mut b = resource(
+        &origin,
+        Some(format!("{:x}", Sha256::digest(&second))),
+        Some(second.len() as u64),
+    );
+    b.id = "multi-b".into();
+    b.url = Some(format!("{origin}/b.bin"));
+    b.locator = Some("b.bin".into());
+    let e = engine(p.clone(), &a);
+    {
+        let mut i = e.inner.lock().unwrap();
+        i.known.clear();
+        i.known
+            .insert((p.id.clone(), a.id.clone()), (a.clone(), "a.bin".into()));
+        i.known
+            .insert((p.id.clone(), b.id.clone()), (b.clone(), "b.bin".into()));
+    }
+    let target = scratch();
+    let plan = e
+        .plan(PlanRequest {
+            provider_id: "fixture".into(),
+            resources: vec![a.clone(), b.clone()],
+            parent_path: target.path().to_str().unwrap().into(),
+            folder_name: "stage".into(),
+            authenticated: false,
+        })
+        .unwrap();
+    e.start(plan.id, true, &AuthState::default()).unwrap();
+    let partial = target.path().join("stage/deas-b.bin.partial");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while std::fs::metadata(&partial).map(|m| m.len()).unwrap_or(0) < half as u64 {
+        assert!(
+            Instant::now() < deadline,
+            "second partial never reached half"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let running = e.status().unwrap();
+    assert_eq!(running.jobs[0].completed, 1);
+    assert_eq!(
+        running.jobs[0].file_bytes,
+        vec![first.len() as u64, half as u64]
+    );
+    e.cancel().unwrap();
+    assert_eq!(finished(&e).state, "cancelled");
+    e.resume(None, &AuthState::default()).unwrap();
+    let status = finished(&e);
+    assert_eq!(status.state, "succeeded", "{:?}", status.error);
+    assert_eq!(status.jobs[0].completed, 2);
+    assert_eq!(
+        status.jobs[0].file_bytes,
+        vec![first.len() as u64, second.len() as u64]
+    );
+    assert_eq!(
+        std::fs::read(target.path().join("stage/a.bin")).unwrap(),
+        first
+    );
+    assert_eq!(
+        std::fs::read(target.path().join("stage/b.bin")).unwrap(),
+        second
+    );
+    let paths = server.join().unwrap();
+    assert!(paths[0].starts_with("GET /a.bin"), "{paths:?}");
+    assert!(paths[1].starts_with("GET /b.bin"), "{paths:?}");
+    assert!(
+        paths[2].starts_with("GET /b.bin"),
+        "resume must not fetch a.bin again: {paths:?}"
+    );
 }

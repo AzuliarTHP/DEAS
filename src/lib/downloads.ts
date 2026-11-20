@@ -10,7 +10,7 @@ export interface DownloadListing { resources:DownloadResource[]; nextCursor:stri
 export interface PlanRequest { providerId:string; resources:DownloadResource[]; parentPath:string; folderName:string; authenticated:boolean }
 export interface DownloadPlan { id:string; target:string; resources:DownloadResource[]; totalKnownBytes:number; unknownSizeCount:number; warnings:string[]; canExecute:boolean }
 /** One background queue entry; persisted by the native engine and resumable after interruption. */
-export interface DownloadJob { id:string; label:string; provider:{id:string;kind:string;label:string;origin:string}; target:string; resources:DownloadResource[]; state:'queued'|'running'|'succeeded'|'failed'|'cancelled'|'interrupted'; completed:number; bytesPlaced:number; totalBytes:number; currentFile:string|null; error:string|null }
+export interface DownloadJob { id:string; label:string; provider:{id:string;kind:string;label:string;origin:string}; target:string; resources:DownloadResource[]; state:'queued'|'running'|'succeeded'|'failed'|'cancelled'|'interrupted'; completed:number; bytesPlaced:number; totalBytes:number; currentFile:string|null; error:string|null; fileBytes?:number[] }
 export interface DownloadStatus { state:'idle'|'running'|'succeeded'|'failed'|'cancelled'; completed:number; total:number; bytesDownloaded:number; error:string|null; bytesPlaced?:number; totalBytes?:number; jobs?:DownloadJob[] }
 export interface AuthMetadata { providerId:string; configured:boolean; persisted:boolean }
 export interface AuthVerification { providerId:string; status:'verified'|'rejected'|'unavailable'|'unsupported' }
