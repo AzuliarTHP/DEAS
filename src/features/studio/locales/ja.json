@@ -1473,6 +1473,8 @@
   "tagCompletion.minimum": "最小投稿数",
   "tagCompletion.shared": "正・負の両プロンプトに適用されます。タグはアップロードされません。",
   "studio.run.indexGap": "バックエンドには、このインデックスにないモデルファイルが {count} 件あります。「再読み込み」で設定済みのモデルフォルダーを確認します。",
-  "studio.run.backendOnlyLoras": "ローカルメタデータがないバックエンドの LoRA ファイルを {count} 件表示しています。「再読み込み」で設定済みのモデルフォルダーを確認します。",
+  "studio.run.backendOnlyLora": "ComfyUI が報告した LoRA です。ローカルメタデータはありません。",
+  "studio.run.backendOnlyLoras": "バックエンドの LoRA のみ",
+  "studio.run.backendOnlyLorasHelp": "ローカルインデックスにない LoRA のみ表示します。",
   "studio.run.opt.compile.noTriton": "この環境には GPU 用の Triton がないため、inductor バックエンドは実行できません。「バックエンド → アップグレード」でインストールされます。他のコンパイルバックエンドは引き続き使用できます。"
 }

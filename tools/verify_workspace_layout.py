@@ -4,6 +4,7 @@ Run: uv run --no-project --with playwright python tools/verify_workspace_layout.
 Owns its Vite/browser children; never accesses real models, media or backend services.
 """
 import json
+import re
 from pathlib import Path
 from playwright.sync_api import expect
 import verify_postprocessing as runner
@@ -88,6 +89,10 @@ window.__TAURI_INTERNALS__.invoke=async(c,a)=>{
   native_monitoring_sample:{at:0,source:'layout-fixture',cpu:null,ram:null,swap:null,disks:[],diskIo:null,gpus:[]}
  };
  if(c==='native_install_plan'){f.calls.push({command:c,args:clone(a??{})});return {id:'layout-reopen',reopenId:'checked',request:a.request,steps:[],warnings:[],unsupportedOptions:[],canExecute:true};}
+ if(c==='native_recipe_prerequisites'){
+  const result=await layoutInvoke(c,a);
+  return {...result,allowlist:{...result.allowlist,loras:['video-cover.safetensors','backend-only.safetensors']}};
+ }
  if(Object.hasOwn(read,c)){f.calls.push({command:c,args:clone(a??{})});return clone(read[c]);}
  return layoutInvoke(c,a);
 };
@@ -123,6 +128,31 @@ def verify(browser, url, shots):
         page.locator('[data-studio-tab="generate"]').click()
         checks.append('installed model preview decodes and plays an MP4')
         page.screenshot(path=str(shots/'checkpoint-native-desktop.png'))
+        page.locator('[data-dock-tab="loras"]').click()
+        backend_lora = page.get_by_role('button', name='backend-only.safetensors', exact=True)
+        indexed_lora = page.get_by_role('button', name='video-cover.safetensors', exact=True)
+        filter_backend = page.get_by_role('checkbox', name='Backend-only LoRAs')
+        expect(filter_backend).not_to_be_checked()
+        expect(indexed_lora).to_be_visible()
+        expect(backend_lora).to_have_count(0)
+        filter_backend.check()
+        expect(indexed_lora).to_have_count(0)
+        expect(backend_lora).to_have_accessible_description('Listed by ComfyUI. Local metadata is unavailable.')
+        expect(backend_lora).to_have_attribute('title', re.compile('Local metadata is unavailable'))
+        assert 'inset' in backend_lora.evaluate('el=>getComputedStyle(el).boxShadow')
+        expect(page.locator('#studio-index-gap')).to_have_count(0)
+        backend_lora.click()
+        expect(backend_lora).to_have_attribute('aria-pressed', 'true')
+        assert 'inset' in backend_lora.evaluate('el=>getComputedStyle(el).boxShadow')
+        filter_backend.uncheck()
+        expect(indexed_lora).to_be_visible()
+        expect(backend_lora).to_have_count(0)
+        filter_backend.check()
+        expect(backend_lora).to_have_attribute('aria-pressed', 'true')
+        backend_lora.click()
+        filter_backend.uncheck()
+        page.locator('[data-dock-tab="media"]').click()
+        checks.append('exclusive backend-only LoRA filter defaults off and preserves selection')
         for width in (1440, 390):
             page.set_viewport_size({'width':width,'height':900})
             assert_prompt_scrollbar(page.locator('[data-run-positive]'))

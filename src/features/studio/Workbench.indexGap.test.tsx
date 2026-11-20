@@ -41,7 +41,15 @@ test('shows a backend-only LoRA when Reload cannot index it and keeps its select
  vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,loras:[backendName,'../invalid.safetensors','styles/unsupported.gguf']}});
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
  dock('LoRAs');
+ const filter=screen.getByRole<HTMLInputElement>('checkbox',{name:'Backend-only LoRAs'});
+ expect(filter.checked).toBe(false);
+ await waitFor(()=>expect(checkRecipePrerequisites).toHaveBeenCalled());
+ expect(screen.queryByRole('button',{name:backendName})).toBeNull();
+ fireEvent.click(filter);
  const tile=await screen.findByRole('button',{name:backendName});
+ expect(tile.hasAttribute('data-backend-only')).toBe(true);
+ expect(tile.getAttribute('aria-description')).toBe('Listed by ComfyUI. Local metadata is unavailable.');
+ expect(document.getElementById('studio-index-gap')).toBeNull();
  expect(screen.queryByRole('button',{name:'../invalid.safetensors'})).toBeNull();
  expect(screen.queryByRole('button',{name:'styles/unsupported.gguf'})).toBeNull();
  fireEvent.click(tile);
@@ -56,8 +64,13 @@ test('shows a backend-only LoRA when Reload cannot index it and keeps its select
 
  vi.mocked(scanModels).mockResolvedValue([listed]);
  fireEvent.click(reload);
+ await waitFor(()=>expect(screen.queryByRole('button',{name:backendName})).toBeNull());
+ expect(screen.queryByRole('button',{name:localName})).toBeNull();
+ fireEvent.click(filter);
  const localTile=await screen.findByRole('button',{name:localName});
  expect(localTile.getAttribute('aria-pressed')).toBe('true');
+ expect(localTile.hasAttribute('data-backend-only')).toBe(false);
+ expect(localTile.hasAttribute('aria-description')).toBe(false);
  expect(screen.queryByRole('button',{name:backendName})).toBeNull();
 });
 
@@ -67,6 +80,7 @@ test('Reload reads the backend LoRA list even if the local index cannot be refre
  vi.mocked(checkRecipePrerequisites).mockResolvedValue(choices('old.safetensors'));
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
  dock('LoRAs');
+ fireEvent.click(screen.getByRole('checkbox',{name:'Backend-only LoRAs'}));
  await screen.findByRole('button',{name:'old.safetensors'});
  vi.mocked(scanModels).mockRejectedValueOnce(new Error('Fixture model folder is unavailable'));
  vi.mocked(checkRecipePrerequisites).mockResolvedValue(choices('updated.safetensors'));

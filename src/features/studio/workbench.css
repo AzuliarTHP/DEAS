@@ -177,6 +177,7 @@
 .wb-queue button, .wb-tiles button { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 6rem; padding: 3px; border: 1px solid transparent; border-radius: .5rem; background: transparent; color: inherit; text-align: center; }
 .wb-queue button:hover, .wb-tiles button:hover { background: rgb(var(--ink-rgb) / 0.063); }
 .wb-queue button[aria-current="true"], .wb-tiles button[aria-pressed="true"] { border-color: var(--ok); background: var(--ok-soft); }
+.wb-loras button[data-backend-only] { box-shadow: inset 0 0 0 1px rgb(var(--warn-rgb) / .7); }
 .wb-queue img, .wb-tiles :is(img,video), .wb-thumb { width: 5.6rem; height: 4rem; border-radius: .35rem; object-fit: cover; background: var(--field); display: grid; place-items: center; color: var(--muted); font-size: 1.3rem; }
 .wb-queue button[data-state="failed"] .wb-thumb, .wb-queue button[data-state="unknown"] .wb-thumb { color: var(--danger); }
 .wb-queue button { width: 100%; }

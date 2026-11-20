@@ -1473,6 +1473,8 @@
   "tagCompletion.minimum": "Nombre minimal de publications",
   "tagCompletion.shared": "Ces options s’appliquent aux prompts positifs et négatifs. Aucun tag n’est envoyé en ligne.",
   "studio.run.indexGap": "Le backend liste {count} fichier(s) de modèle absent(s) de cet index. « Recharger » vérifie les dossiers de modèles configurés.",
-  "studio.run.backendOnlyLoras": "Affichage de {count} fichier(s) LoRA du backend sans métadonnées locales. « Recharger » vérifie les dossiers de modèles configurés.",
+  "studio.run.backendOnlyLora": "Signalé par ComfyUI. Les métadonnées locales sont indisponibles.",
+  "studio.run.backendOnlyLoras": "LoRA du backend uniquement",
+  "studio.run.backendOnlyLorasHelp": "Afficher uniquement les LoRA absentes de l’index local.",
   "studio.run.opt.compile.noTriton": "Cet environnement n’a pas de Triton pour son GPU ; le backend inductor ne peut donc pas s’exécuter. Backend → Mettre à jour l’installe ; les autres backends de compilation restent disponibles."
 }

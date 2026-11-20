@@ -1473,6 +1473,8 @@
   "tagCompletion.minimum": "En az gönderi sayısı",
   "tagCompletion.shared": "Bu seçenekler pozitif ve negatif istemler için geçerlidir. Etiketler yüklenmez.",
   "studio.run.indexGap": "Backend, bu dizinde bulunmayan {count} model dosyası listeliyor. Yenile, yapılandırılmış model klasörlerini kontrol eder.",
-  "studio.run.backendOnlyLoras": "Backend’den gelen {count} LoRA dosyası yerel üst veriler olmadan gösteriliyor. Yenile, yapılandırılmış model klasörlerini kontrol eder.",
+  "studio.run.backendOnlyLora": "ComfyUI tarafından listelendi. Yerel üst veriler kullanılamıyor.",
+  "studio.run.backendOnlyLoras": "Yalnızca backend LoRA’ları",
+  "studio.run.backendOnlyLorasHelp": "Yalnızca yerel dizinde bulunmayan LoRA’ları göster.",
   "studio.run.opt.compile.noTriton": "Bu ortamda GPU'su için Triton yok, bu yüzden inductor backend'i çalışamaz. Backend → Güncelle onu kurar; diğer derleme backend'leri kullanılabilir kalır."
 }

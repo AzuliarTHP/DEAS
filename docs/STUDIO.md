@@ -60,11 +60,12 @@ When the backend lists checkpoints or diffusion models outside the index, the
 Models dock shows their count next to **Reload**. Reload checks the configured
 model folders and refreshes the backend model lists.
 
-Studio also shows Safetensors LoRAs reported by ComfyUI when they are outside the
-local index. These entries can be selected by their backend names. Their local
-metadata becomes available when Reload finds the files in a configured model
-folder. An existing selection survives the change from a backend entry to an
-indexed file.
+The LoRAs dock shows indexed files by default. Turn on **Backend-only LoRAs**
+to show only Safetensors LoRAs that ComfyUI lists outside the configured model
+index. A thin amber outline identifies these cards. Hover for a short explanation.
+The checkbox changes browsing only. LoRA selections and strengths stay active
+even when their cards are hidden. When Reload finds a file in a configured model
+folder, its card moves to the indexed view and keeps its selection.
 
 In Advanced Studio, the **Dials** settings button beside References and Continuity
 opens the steering controls for supported MiniMax H3 video pipelines. Files inside
