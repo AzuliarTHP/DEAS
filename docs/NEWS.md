@@ -1,5 +1,13 @@
 # News
 
+## 0.3.13
+
+### Backend-only LoRAs only when you ask for them
+
+0.3.12 mixed LoRAs that ComfyUI reports but the local index has not seen into the normal LoRA list. They now stay out of
+it unless you tick **Backend-only LoRAs** in the LoRAs dock, which then shows just those, outlined in amber. Your selected
+LoRAs keep working either way.
+
 ## 0.3.12
 
 ### Downloads: one line per file, and new models show up right away

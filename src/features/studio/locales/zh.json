@@ -1473,6 +1473,8 @@
   "tagCompletion.minimum": "最低帖子数",
   "tagCompletion.shared": "这些选项同时适用于正面和负面提示词。不会上传标签。",
   "studio.run.indexGap": "后端列出了 {count} 个不在此索引中的模型文件。重新加载会检查已配置的模型文件夹。",
-  "studio.run.backendOnlyLoras": "正在显示后端提供且没有本地元数据的 {count} 个 LoRA 文件。重新加载会检查已配置的模型文件夹。",
+  "studio.run.backendOnlyLora": "由 ComfyUI 列出。本地元数据不可用。",
+  "studio.run.backendOnlyLoras": "仅后端 LoRA",
+  "studio.run.backendOnlyLorasHelp": "仅显示本地索引中缺失的 LoRA。",
   "studio.run.opt.compile.noTriton": "此环境没有适用于其 GPU 的 Triton，因此 inductor 后端无法运行。“后端 → 升级”会安装它；其他编译后端仍可使用。"
 }

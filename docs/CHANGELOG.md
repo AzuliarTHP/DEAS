@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.13
+
+- **Backend-only LoRAs are an opt-in view.** The LoRAs dock shows indexed files by default again. Turn on **Backend-only LoRAs** to list only Safetensors LoRAs that ComfyUI reports outside the local index; those cards have a thin amber outline and a hover note. The switch changes browsing only: selected LoRAs and their strengths stay active while hidden, and a file Reload finds in a model folder moves to the indexed view with its selection. Found through global search (Ctrl+K). (PR #46 follow-up by @AzuliarTHP.)
+
 ## 0.3.12
 
 - **Download queue lists one line per file.** Each file in the Queue has its own row with its state, progress bar, percentage, bytes of its size and a live rate while it transfers, instead of one combined row per folder group. When a group stops, the error and **Resume** sit on the file where it stopped.
