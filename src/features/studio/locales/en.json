@@ -1472,6 +1472,7 @@
   "tagCompletion.contains": "Search inside tag names",
   "tagCompletion.minimum": "Minimum post count",
   "tagCompletion.shared": "These options apply to both positive and negative prompts. No tags are uploaded.",
-  "studio.run.indexGap": "The backend lists {count} model file(s) that this list does not show yet, for example files copied in by hand. Reload adds them.",
+  "studio.run.indexGap": "The backend lists {count} model file(s) outside this index. Reload checks the configured model folders.",
+  "studio.run.backendOnlyLoras": "Showing {count} LoRA file(s) from the backend without local metadata. Reload checks the configured model folders.",
   "studio.run.opt.compile.noTriton": "This environment has no Triton for its GPU, so the inductor backend cannot run. Backend → Upgrade installs it; other compile backends stay available."
 }

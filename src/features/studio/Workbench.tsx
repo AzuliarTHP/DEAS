@@ -5,7 +5,7 @@ import { ReferenceAssignmentBar } from './ReferenceAssignmentBar';
 import { StudioSelectionTools } from './StudioSelectionTools';
 import { BulkFamilyDialog,familyEditable } from './BulkFamilyDialog';
 import { useModelOrganization } from '../../lib/modelOrganization';
-import { MODEL_LIBRARY_UPDATED,applyLibraryUpdate,backendIndexGap,modelPathKey,type ModelLibraryUpdate } from '../../lib/modelLibrary';
+import { MODEL_LIBRARY_UPDATED,applyLibraryUpdate,backendIndexGap,backendModelNameKey,modelPathKey,type ModelLibraryUpdate } from '../../lib/modelLibrary';
 import { ModelPreview } from '../../components/models/ModelPreview';
 import { PromptNotesPanel } from './PromptNotesPanel';
 import { LoraSetsDialog,type SelectedLora } from './LoraSetsDialog';
@@ -20,7 +20,7 @@ import { type DownloadStatus } from '../../lib/downloads';
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { useI18n } from '../../i18n/I18nProvider';
-import { isGguf, clipLoaderName, nativeImageReferenceEncoders, nativeImageReferenceLimit, type DiagnosticImageIntentV1, type RecipeAllowlist } from '../../lib/execution';
+import { isGguf, clipLoaderName, nativeImageReferenceEncoders, nativeImageReferenceLimit, safeComfyModel, type DiagnosticImageIntentV1, type RecipeAllowlist } from '../../lib/execution';
 import { autoRefine, loadDiagnosticJobOutput, waitForWorkbenchJob, stopWorkbench, stopWorkbenchJob, runWorkbenchJob, readCurrentWorkbench, pollWorkbench, uploadMask, uploadInput, readH3Session, readRefMods, isImageIntent, type JobStatus, type JobIntent, type H3ImportedVideo } from '../../lib/jobs';
 import { chunkCount, defaultVideoOutput, h3LatentChanged, h3LatentDefaults, h3RegenerateTargets, h3Scalings, isH3Video, isVideoEnhanceIntent, isVideoIntent, latentUpscaleSize, regenerateSize, videoFrames, type H3LatentAdvanced, type H3RegenerateTarget, type H3Scaling, type VideoFamily, type VideoIntentV1, type VideoOutput } from '../../lib/videoIntent';
 import { defaultAbc, defaultMusicGeneration, isMusicIntent, isMusicPipeline, musicBounds, musicMaxDuration, type AbcSettings, type MusicGenerationSettings, type MusicIntentV1, type MusicPlanning } from '../../lib/musicIntent';
@@ -472,15 +472,19 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   try{
    const next=modelsDir?await (automatic?scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[]):scanModels(modelsDir,extraModelsKey?extraModelsKey.split('\n'):[],true))
     :await checkRecipePrerequisites(endpoint).then(e=>{if(live.current&&version===epoch.current)setChoices(e.allowlist);return [...e.allowlist.checkpoints.map(name=>({category:'checkpoints',name})),...(e.allowlist.loras??[]).map(name=>({category:'loras',name}))].map(m=>({...m,path:'',size:0,info:null}));});
-   if(live.current&&version===epoch.current){setModels(libraryChanges.current.reduce(applyLibraryUpdate,next));libraryChanges.current=[];if(modelsDir&&!automatic&&endpoint.trim())await refreshChoices();}
+   if(live.current&&version===epoch.current){setModels(libraryChanges.current.reduce(applyLibraryUpdate,next));libraryChanges.current=[];}
   }catch(e){if(live.current&&version===epoch.current)setError(e instanceof Error?e.message:String(e));}
-  finally{if(live.current&&version===epoch.current){modelLoading.current=false;setScanning(false);}}
+  finally{
+   if(live.current&&version===epoch.current&&modelsDir&&!automatic&&endpoint.trim())await refreshChoices();
+   if(live.current&&version===epoch.current){modelLoading.current=false;setScanning(false);}
+  }
  }
  // A new root supersedes a pending scan; old replies must not restore the previous folder.
  useEffect(()=>{setModels(null);if(modelsDir)void load(true);else setScanning(false);return()=>{epoch.current++;};},[modelsDir,extraModelsKey]); // eslint-disable-line react-hooks/exhaustive-deps
  // Files placed by hand reach the backend lists before the saved index knows them. Say so next to Reload;
  // scanning stays an explicit action (no implicit rescans, see the refocus fix).
- const indexGap=native&&modelsDir&&choices&&models&&!scanning?backendIndexGap(models,choices):'';
+ const indexGap=dockTab==='models'&&native&&modelsDir&&choices&&models&&!scanning
+  ?backendIndexGap(models,{checkpoints:choices.checkpoints,diffusionModels:choices.diffusionModels}):'';
  const indexGapCount=indexGap?indexGap.split('\n').length:0;
  useEffect(()=>{const receive=(event:Event)=>{const change=(event as CustomEvent<ModelLibraryUpdate>).detail;if(!modelsDir||modelPathKey(change.root)!==modelPathKey(modelsDir))return;if(modelLoading.current)libraryChanges.current.push(change);setModels(old=>old?applyLibraryUpdate(old,change):change.models??old);if(change.models&&endpoint.trim())void refreshChoices(false);};window.addEventListener(MODEL_LIBRARY_UPDATED,receive);return()=>window.removeEventListener(MODEL_LIBRARY_UPDATED,receive);},[modelsDir,endpoint,refreshChoices]);
  // Remembered picks are only valid while the folder still holds them.
@@ -670,7 +674,27 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const faceRefineAutoEnabled=h3Image?imageFaceRefine:faceRefine.auto;
  const textProjection=video.textProjection||recommended?.textProjections[0]||'';
  // Family labels filter browsing only. Every explicitly selected, present LoRA enters the intent.
- const allLoraModels=(models??[]).filter(m=>m.category==='loras').sort(byName);
+ const {allLoraModels,loraByName,backendOnlyCount}=useMemo(()=>{
+  const rows=(models??[]).filter(m=>m.category==='loras');
+  const byKey=new Map<string,LocalModel>();
+  for(const model of rows){
+   const key=backendModelNameKey(model.name);
+   if(!byKey.has(key))byKey.set(key,model);
+  }
+  let backendOnlyCount=0;
+  // These IDs are reported by ComfyUI. They never supply a host file path to Library actions.
+  for(const name of native&&modelsDir?choices?.loras??[]:[]){
+   const key=backendModelNameKey(name);
+   const model={category:'loras',name,path:'',size:0,info:null};
+   if(byKey.has(key)||!safeComfyModel(name)||!supportedLoraFormat(model))continue;
+   byKey.set(key,model);
+   rows.push(model);
+   backendOnlyCount++;
+  }
+  rows.sort((a,b)=>a.name.localeCompare(b.name));
+  return {allLoraModels:rows,loraByName:byKey,backendOnlyCount};
+ },[models,native,modelsDir,choices?.loras]);
+ const describeBackendLoras=dockTab==='loras'&&!scanning&&backendOnlyCount>0;
  const loraMatchesFamily=(m:LocalModel)=>!family||!m.family||m.family===(family.loraFamily??family.id);
  const loraModels=allLoraModels.filter(loraMatchesFamily);
  const {isFavorite,toggleFavorite,setFavorites,error:favoriteError}=useModelOrganization();
@@ -694,7 +718,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  // the ones the pack's catalog lists once it was read (Dials was opened on this backend), every file inside loras/dials/
  // while it was not (`isPickerDial`).
  const dialCatalogRead=dialInfo.map?{map:dialInfo.map,partial:dialInfo.partial}:undefined;
- const pickerLora=(m:LocalModel)=>!isPickerDial(m.name,dialCatalogRead)||loras.some(l=>l.name===m.name);
+ const pickerLora=(m:LocalModel)=>!isPickerDial(m.name,dialCatalogRead)||loras.some(l=>backendModelNameKey(l.name)===backendModelNameKey(m.name));
  const pickerLoraModels=allLoraModels.filter(pickerLora);
  const browsedLoraModels=favoriteView?pickerLoraModels.filter(m=>isFavorite(m.path)):hideOtherLoraFamilies&&!bulkSelecting?loraModels.filter(pickerLora):pickerLoraModels;
  const browsedModels=favoriteView?allModels.filter(m=>isFavorite(m.path)):allModels;
@@ -731,13 +755,17 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   :videoPost||faceRefine.auto?t('studio.run.streamDecode.fullImage')
   :['Animated WebP','Animated AVIF'].includes(optionsPref.output?.container??'Auto')?t('studio.run.streamDecode.container')
   :choices&&!choices.nodes.includes('DEAS_H3StreamVideoSave')?t('studio.run.streamDecode.nodeMissing'):'';
- const loraNames=allLoraModels.map(m=>m.name);
-
  // Explicit enables belong to this model draft; inherited selections keep family-filtered inactivity.
- const selectedLoras=loras.filter(l=>l.enabled!==false&&(l.enabled===true||!allLoraModels.some(m=>m.name===l.name&&!loraMatchesFamily(m))));
- const activeLoras=selectedLoras.filter(l=>loraNames.includes(l.name)).map(({name,strength})=>({name,strength}));
+ const selectedLoras=loras.filter(l=>{
+  const model=loraByName.get(backendModelNameKey(l.name));
+  return l.enabled!==false&&(l.enabled===true||!model||loraMatchesFamily(model));
+ });
+ const activeLoras=selectedLoras.flatMap(({name,strength})=>{
+  const model=loraByName.get(backendModelNameKey(name));
+  return model?[{name:model.name,strength}]:[];
+ });
  const previousUses=useRef<Set<string>|null>(null);
- const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=allLoraModels.find(m=>m.name===l.name);return m?[m]:[];})];
+ const appliedUsageModels=[...(model?[model]:[]),...activeLoras.flatMap(l=>{const m=loraByName.get(backendModelNameKey(l.name));return m?[m]:[];})];
  const appliedUsageKey=appliedUsageModels.map(modelUsageKey).join('\0');
  useEffect(()=>{if(!models){previousUses.current=null;return;}const next=new Set(appliedUsageModels.map(modelUsageKey));if(previousUses.current){for(const m of appliedUsageModels)if(!previousUses.current.has(modelUsageKey(m)))recordModelUse(m);}previousUses.current=next;},[models!==null,appliedUsageKey]);
 
@@ -780,8 +808,8 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   ...mossIssues.map(i=>t('studio.run.moss.plain',{name:i.name})),
   ...(imageRefs.length&&!referenceMethod?[t('studio.run.reference.inactive')]:[]),
   ...(imageRefs.length&&referenceMethod?(!choices?[]:(revisionOk?['CLIPVisionLoader','LoadImage','CLIPVisionEncode','unCLIPConditioning']:[promptEncoder,'LoadImage',...(qwenRefs?['ImageScale']:[])]).filter(n=>!choices.nodes.includes(n))):[]),
-  ...(models?selectedLoras.filter(l=>!loraNames.includes(l.name)).map(l=>`LoRA: ${l.name}`):[]),
- ...allLoraModels.filter(m=>(checkLoraForExecution(m).compatibility==='blocked'||!supportedLoraFormat(m))&&selectedLoras.some(l=>l.name===m.name)).map(m=>`${checkLoraForExecution(m).compatibility==='blocked'?modelCheckText(checkLoraForExecution(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
+  ...((models||choices)?selectedLoras.filter(l=>!loraByName.has(backendModelNameKey(l.name))).map(l=>`LoRA: ${l.name}`):[]),
+ ...allLoraModels.filter(m=>(checkLoraForExecution(m).compatibility==='blocked'||!supportedLoraFormat(m))&&selectedLoras.some(l=>backendModelNameKey(l.name)===backendModelNameKey(m.name))).map(m=>`${checkLoraForExecution(m).compatibility==='blocked'?modelCheckText(checkLoraForExecution(m),t):t('modelMeta.format')} LoRA: ${m.name}`),
   ...(split&&!split.encoders.includes(textEncoder)?[textEncoder||t('studio.run.textEncoder')]:[]),
   ...(dualClip&&split&&(!textEncoder2||!split.encoders.includes(textEncoder2))?[textEncoder2||t('studio.run.textEncoder2')]:[]),
   ...(dualClip&&choices?[...(!choices.nodes.includes(isGguf(textEncoder)||isGguf(textEncoder2)?'DualCLIPLoaderGGUF':'DualCLIPLoader')?[isGguf(textEncoder)||isGguf(textEncoder2)?'DualCLIPLoaderGGUF':'DualCLIPLoader']:[]),
@@ -1708,7 +1736,12 @@ const promptTools=forgeContext&&<>
   :media?(inputImage||(!editableSource&&pipeline==='ref2v'&&media.path)?tools(media):editableSource?null:<div className="wb-media-tools" data-media-tools><StarMediaButton item={media}/></div>)
   :null;
  const modelValue=(m:LocalModel)=>allModels.filter(other=>other.name===m.name).length>1?identity(m):m.name;
- const toggleLora=(name:string,on:boolean)=>setLoras(on?[...loras.filter(l=>l.name!==name),{name,strength:1,...(allLoraModels.some(m=>m.name===name&&!loraMatchesFamily(m))?{enabled:true}:{})}]:loras.filter(l=>l.name!==name));
+ const toggleLora=(name:string,on:boolean)=>{
+  const key=backendModelNameKey(name);
+  const model=loraByName.get(key);
+  const others=loras.filter(l=>backendModelNameKey(l.name)!==key);
+  setLoras(on?[...others,{name,strength:1,...(model&&!loraMatchesFamily(model)?{enabled:true}:{})}]:others);
+ };
  // Session drafts are independent of persisted global defaults and immutable submitted jobs.
  const scope=JSON.stringify([root,modelsDir,extraModelsKey,endpoint,roots.input,outputDir,project?.id]);
  const captureDraft=()=>{
@@ -2437,9 +2470,10 @@ const promptTools=forgeContext&&<>
    <div className="wb-dock-handle" role="separator" aria-orientation="horizontal" aria-label={t('studio.run.dockResize')} title={t('studio.run.dockResize')} tabIndex={0} aria-valuemin={120} aria-valuemax={dockMax} aria-valuenow={dockSize} data-locked={dockHidden||undefined} onKeyDown={e=>{if(!dockHidden)resizeKey(e,dockSize,120,dockMax,setDockHeight,true);}} onPointerDown={e=>{if(!dockHidden)dragPane(e,dockSize,120,dockMax,setDockHeight,true);}}/>
    {paneToggle(dockHidden,setDockHidden,'dock','studio-dock')}
    {dockTab==='media'?<MediaPanel selected={browsed??media} onSelect={setBrowsed} roots={roots} outputRevision={outputRevision} controls={{query,onQuery:setQuery,sort,onSort:setSort,view:dockView,onView:setDockView,type:dockType,onType:setDockType}} toolbar={dockNavigation} marks={marks} actions={mediaActions}/>:<div className="media-toolbar">{dockNavigation}
-    {(dockTab==='models'||dockTab==='loras')&&<><StudioSelectionTools active={bulkSelecting} count={bulkTargets.length} disabled={!modelsDir||!models?.length||scanning} anchorLabel={bulkAnchor?bulkLabel(bulkAnchor):undefined} onToggle={()=>{setBulkSelecting(v=>!v);setBulkPaths(new Set());setBulkAnchorPath('');}} onSelectMatching={()=>{if(bulkAnchor)setBulkPaths(new Set(bulkMatching.filter(m=>bulkLabel(m)===bulkLabel(bulkAnchor)).map(m=>m.path)));}} onClear={()=>{setBulkPaths(new Set());setBulkAnchorPath('');}} onFamily={()=>setBulkFamilyOpen(true)} onFavorite={value=>setFavorites(bulkTargets.map(m=>m.path),value)}/><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sortControl={<><ModelSortControl value={modelSort} onChange={setModelSort} onShuffle={()=>setShuffleSeed(n=>n+1)}/><ModelViewAllControl value={viewAllModels} onChange={setViewAllModels}/>{dockTab==='loras'&&!favoriteView&&!bulkSelecting&&<label className="model-view-all" title={t('studio.run.hideOtherLoraFamiliesHelp')}><input type="checkbox" data-hide-other-lora-families checked={hideOtherLoraFamilies} onChange={e=>setHideOtherLoraFamilies(e.target.checked)}/>{t('studio.run.hideOtherLoraFamilies')}</label>}</>}/><button type="button" className="wb-dock-action" data-run-load aria-describedby={indexGapCount?'studio-index-gap':undefined} data-attention={indexGapCount?'':undefined} disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models?'studio.run.reload':'studio.run.load')}</button></>}
+    {(dockTab==='models'||dockTab==='loras')&&<><StudioSelectionTools active={bulkSelecting} count={bulkTargets.length} disabled={!modelsDir||!models?.length||scanning} anchorLabel={bulkAnchor?bulkLabel(bulkAnchor):undefined} onToggle={()=>{setBulkSelecting(v=>!v);setBulkPaths(new Set());setBulkAnchorPath('');}} onSelectMatching={()=>{if(bulkAnchor)setBulkPaths(new Set(bulkMatching.filter(m=>bulkLabel(m)===bulkLabel(bulkAnchor)).map(m=>m.path)));}} onClear={()=>{setBulkPaths(new Set());setBulkAnchorPath('');}} onFamily={()=>setBulkFamilyOpen(true)} onFavorite={value=>setFavorites(bulkTargets.map(m=>m.path),value)}/><MediaControls query={query} onQuery={setQuery} sort={sort} onSort={setSort} view={dockView} onView={setDockView} sortControl={<><ModelSortControl value={modelSort} onChange={setModelSort} onShuffle={()=>setShuffleSeed(n=>n+1)}/><ModelViewAllControl value={viewAllModels} onChange={setViewAllModels}/>{dockTab==='loras'&&!favoriteView&&!bulkSelecting&&<label className="model-view-all" title={t('studio.run.hideOtherLoraFamiliesHelp')}><input type="checkbox" data-hide-other-lora-families checked={hideOtherLoraFamilies} onChange={e=>setHideOtherLoraFamilies(e.target.checked)}/>{t('studio.run.hideOtherLoraFamilies')}</label>}</>}/><button type="button" className="wb-dock-action" data-run-load aria-describedby={indexGapCount||describeBackendLoras?'studio-index-gap':undefined} data-attention={indexGapCount?'':undefined} disabled={!native||busy||(!modelsDir&&!endpoint.trim())} onClick={()=>void load()}>{t(models||(dockTab==='loras'&&backendOnlyCount>0)?'studio.run.reload':'studio.run.load')}</button></>}
    </div>}
-   {(dockTab==='models'||dockTab==='loras')&&indexGapCount>0&&<p id="studio-index-gap" className="field-help wb-index-gap" role="status" data-index-gap={indexGapCount}>{t('studio.run.indexGap',{count:indexGapCount})}</p>}
+   {indexGapCount>0&&<p id="studio-index-gap" className="field-help wb-index-gap" role="status" data-index-gap={indexGapCount}>{t('studio.run.indexGap',{count:indexGapCount})}</p>}
+   {describeBackendLoras&&<p id="studio-index-gap" className="field-help wb-index-gap" role="status" data-backend-loras={backendOnlyCount}>{t('studio.run.backendOnlyLoras',{count:backendOnlyCount})}</p>}
     {bulkFamilyOpen&&<BulkFamilyDialog models={bulkTargets} root={modelsDir!} onClose={()=>setBulkFamilyOpen(false)} onUpdated={paths=>setBulkPaths(old=>new Set([...old].filter(path=>!paths.includes(path))))}/>}
    {notesVisited.current&&<div className="wb-dock-panel wb-notes-panel" hidden={dockTab!=='notes'}><PromptNotesPanel/></div>}
    {dockTab==='presets'&&<div className="wb-dock-panel"><PresetPanel disabled={busy||!!current||autoPlan||resolving}/></div>}
@@ -2557,9 +2591,9 @@ const promptTools=forgeContext&&<>
 
    {dockTab==='options'&&<section className="wb-dock-panel" aria-label={t('studio.run.dock.options')}><OptionsPanel value={optionsPref} onChange={setOptions} allow={choices} family={family?.id} video={isVideo} imageInput={pipeline==='i2i'} onRead={loadChoices} canRead={native&&!!endpoint.trim()}/></section>}
    {(dockTab==='models'||dockTab==='loras')&&<section className="wb-dock-panel wb-model-browser-panel" aria-label={t(`studio.run.dock.${dockTab}`)}>
-    {!models&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
+    {!models&&!(dockTab==='loras'&&backendOnlyCount>0)&&<p className="media-help">{t(modelsDir?'studio.run.scanHelp':'studio.run.loadHelp')}</p>}
     {models&&dockTab==='models'&&(browsedModels.length===0?<div className="media-browser">{folderTree(allModels)}<p className="media-help">{t(favoriteView?'library.noFavorites':'studio.run.noModels')}</p></div>:<div className="media-browser">{folderTree(favoriteView?allModels:browsedModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles" data-run-checkpoint>{visibleModelTiles(browsedModels).map(m=>tile(m,m===model,()=>pickModel(m),undefined,pipeBlocked(m)))}</ul>{moreModelTiles(browsedModels)}</div></div>)}
-    {favoriteError&&<p role="alert">{t('library.organizationFailed')}</p>}{models&&dockTab==='loras'&&(browsedLoraModels.length===0?<div className="media-browser">{folderTree(pickerLoraModels)}<p className="media-help">{t(favoriteView?'library.noFavorites':'studio.run.noLoras')}</p></div>:<div className="media-browser">{folderTree(favoriteView?pickerLoraModels:browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const on=loras.find(l=>l.name===m.name);return tile(m,activeLoras.some(l=>l.name===m.name),()=>on&&(on.enabled===false||!selectedLoras.includes(on))?setLoras(loras.map(l=>l.name===m.name?{...l,enabled:true}:l)):toggleLora(m.name,!on),on&&<NumberField aria-label={t('studio.run.strength',{name:m.name})} text={String(on.strength)} onCommit={n=>setLoras(loras.map(l=>l.name===m.name?{...l,strength:n}:l))} min={-10} max={10} step={0.05}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
+    {favoriteError&&<p role="alert">{t('library.organizationFailed')}</p>}{(models||backendOnlyCount>0)&&dockTab==='loras'&&(browsedLoraModels.length===0?<div className="media-browser">{folderTree(pickerLoraModels)}<p className="media-help">{t(favoriteView?'library.noFavorites':'studio.run.noLoras')}</p></div>:<div className="media-browser">{folderTree(favoriteView?pickerLoraModels:browsedLoraModels)}<div className="studio-model-results" data-model-scroll><ul className="wb-tiles wb-loras">{visibleModelTiles(browsedLoraModels).map(m=>{const key=backendModelNameKey(m.name);const sameName=(l:Lora)=>backendModelNameKey(l.name)===key;const on=loras.find(sameName);return tile(m,activeLoras.some(l=>l.name===m.name),()=>on&&(on.enabled===false||!selectedLoras.includes(on))?setLoras(loras.map(l=>sameName(l)?{...l,enabled:true}:l)):toggleLora(m.name,!on),on&&<NumberField aria-label={t('studio.run.strength',{name:m.name})} text={String(on.strength)} onCommit={n=>setLoras(loras.map(l=>sameName(l)?{...l,strength:n}:l))} min={-10} max={10} step={0.05}/> ,'',!loraMatchesFamily(m)?'studio.run.loraFamilyMismatch':'');})}</ul>{moreModelTiles(browsedLoraModels)}</div></div>)}
    </section>}
   </div>
  </div>

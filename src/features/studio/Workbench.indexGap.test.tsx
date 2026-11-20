@@ -1,5 +1,5 @@
 import { dock, evidence } from './Workbench.testHarness';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { Workbench } from './Workbench';
 import { I18nProvider } from '../../i18n/I18nProvider';
@@ -31,4 +31,47 @@ test('hand-placed files the backend lists are announced next to Reload without a
  await waitFor(()=>expect(document.querySelector('[data-index-gap]')).toBeNull());
  expect(scanModels).toHaveBeenLastCalledWith('/m',[],true);
  expect(reload.hasAttribute('aria-describedby')).toBe(false);
+});
+
+test('shows a backend-only LoRA when Reload cannot index it and keeps its selection when it becomes local',async()=>{
+ const backendName='styles\\backend.safetensors';
+ const localName='styles/backend.safetensors';
+ const listed={category:'loras',name:localName,path:'/m/loras/styles/backend.safetensors',size:1,info:null};
+ vi.mocked(scanModels).mockResolvedValue([]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,loras:[backendName,'../invalid.safetensors','styles/unsupported.gguf']}});
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ dock('LoRAs');
+ const tile=await screen.findByRole('button',{name:backendName});
+ expect(screen.queryByRole('button',{name:'../invalid.safetensors'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'styles/unsupported.gguf'})).toBeNull();
+ fireEvent.click(tile);
+ expect(tile.getAttribute('aria-pressed')).toBe('true');
+ expect(document.querySelector('[data-index-gap]')).toBeNull();
+
+ const reload=document.querySelector<HTMLButtonElement>('[data-run-load]')!;
+ fireEvent.click(reload);
+ await waitFor(()=>expect(scanModels).toHaveBeenLastCalledWith('/m',[],true));
+ await waitFor(()=>expect(reload.disabled).toBe(false));
+ expect(screen.getByRole('button',{name:backendName}).getAttribute('aria-pressed')).toBe('true');
+
+ vi.mocked(scanModels).mockResolvedValue([listed]);
+ fireEvent.click(reload);
+ const localTile=await screen.findByRole('button',{name:localName});
+ expect(localTile.getAttribute('aria-pressed')).toBe('true');
+ expect(screen.queryByRole('button',{name:backendName})).toBeNull();
+});
+
+test('Reload reads the backend LoRA list even if the local index cannot be refreshed',async()=>{
+ const choices=(name:string)=>({...evidence,allowlist:{...evidence.allowlist,loras:[name]}});
+ vi.mocked(scanModels).mockResolvedValue([]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue(choices('old.safetensors'));
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ dock('LoRAs');
+ await screen.findByRole('button',{name:'old.safetensors'});
+ vi.mocked(scanModels).mockRejectedValueOnce(new Error('Fixture model folder is unavailable'));
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue(choices('updated.safetensors'));
+ fireEvent.click(document.querySelector<HTMLButtonElement>('[data-run-load]')!);
+ await screen.findByRole('button',{name:'updated.safetensors'});
+ expect(screen.queryByRole('button',{name:'old.safetensors'})).toBeNull();
+ expect(scanModels).toHaveBeenLastCalledWith('/m',[],true);
 });

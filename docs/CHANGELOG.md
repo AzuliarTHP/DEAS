@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **Installed Library supports MP4 previews.** Model cards and details can play local and cached CivitAI video covers. **Save preview locally** saves a missing MP4 beside the model as `model.mp4`.
+- **Studio shows backend LoRAs outside the local index.** Reload refreshes the backend list even if a local scan fails. Selected LoRAs stay selected when their local files are indexed.
 
 ## 0.3.12
 
