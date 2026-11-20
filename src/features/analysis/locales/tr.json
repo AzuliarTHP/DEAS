@@ -53,7 +53,7 @@
   "analysis.spaces": "Alt çizgi yerine boşluk",
   "analysis.copy": "Etiketleri kopyala",
   "analysis.open": "Medya Analizinde aç",
-  "analysis.videoByPath": "Videolar yapıştırılamaz. Video dosyasını buraya bırakın ya da Seç…'e basın.",
+  "analysis.videoByPath": "Yapıştırılan bu videonun dosya konumu yok. Video dosyasını dosya yöneticisinde kopyalayıp yapıştırın, buraya bırakın ya da Seç…'e basın.",
   "analysis.chooseTitle": "Bir resim ya da video seçin",
   "analysis.noneFound": "Hiç resim etiketleyici bulunamadı.",
   "analysis.lookedIn": "DEAS model klasörlerinize (taggers, onnx, animetimm ve adı bir etiketleyiciyi anan her klasör) ve custom_nodes içindeki ComfyUI etiketleyici düğümlerine baktı. Etiket listesiyle gelen her ONNX etiketleyici bulunduğu yerde kullanılır. Sizinki başka bir yerdeyse models/taggers içine taşıyıp Yeniden ara'ya basın.",

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import { useContext, useEffect, useRef, useState, type DragEvent } from 'react';
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -7,7 +7,7 @@ import { checkTagger, analysisError, analysisOverview, cancelAnalysisSetup, canc
 import { embeddedWorkflow, OpenComfyWorkflow, type ComfyWorkflow } from '../../lib/comfyWorkflow';
 import { nativeModelId } from '../../lib/forge';
 import { imageMetadataRows, readImageMetadata, type ImageMetadata } from '../../lib/imageMetadata';
-import { describeMedia, itemFromEntry, type MediaItem } from '../../lib/media';
+import { describeMedia, itemFromEntry, pastedPaths, type MediaItem } from '../../lib/media';
 import { isBoolean, isString, usePref } from '../../lib/preferences';
 import { hasLlmConfiguration } from '../../lib/llm';
 import { madeSummary, type ComfyMeta } from '../../lib/comfyMeta';
@@ -94,6 +94,7 @@ export function Analysis({ active = true, endpoint = '', roots, root, incoming, 
   const [converting, setConverting] = useState('');
   const [converted, setConverted] = useState<{ folder: string; note: string; error: boolean } | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const tabRef = useRef<HTMLElement>(null);
   const run = useRef(0);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -167,11 +168,26 @@ export function Analysis({ active = true, endpoint = '', roots, root, incoming, 
     try { const path = await pickMedia(t('analysis.chooseTitle')); if (path) await fromPath(path); }
     catch (e) { setError(analysisError(e)); }
   };
-  const paste = (e: ClipboardEvent) => {
-    const files = [...e.clipboardData.files];
-    const f = files.find(x => x.type.startsWith('image/')) ?? files.find(x => x.type.startsWith('video/'));
-    if (f) { e.preventDefault(); void fromFile(f); }
-  };
+  // Ctrl+V anywhere on the visible tab (focus is usually on the page, not inside it); text fields keep their own paste.
+  // A file copied in a file manager arrives as a path (so videos and the original metadata work); copied picture data as a file.
+  const pasted = useRef({ fromPath, fromFile }); pasted.current = { fromPath, fromFile };
+  useEffect(() => {
+    const paste = (e: globalThis.ClipboardEvent) => {
+      const el = tabRef.current, target = e.target;
+      if (e.defaultPrevented || !el || el.closest('[hidden]')) return;
+      if (target instanceof Element && target.closest('input, textarea, [contenteditable="true"]')) return;
+      const modal = document.querySelector('dialog[open], [aria-modal="true"]');
+      if (modal && !modal.contains(el)) return;
+      const paths = isTauri() ? pastedPaths(e.clipboardData) : [];
+      const path = paths.find(p => IMAGE.test(p) || VIDEO.test(p));
+      if (path) { e.preventDefault(); setError(''); void pasted.current.fromPath(path); return; }
+      const files = [...(e.clipboardData?.files ?? [])];
+      const f = files.find(x => x.type.startsWith('image/')) ?? files.find(x => x.type.startsWith('video/'));
+      if (f) { e.preventDefault(); setError(''); void pasted.current.fromFile(f); return; }
+      if (paths.length || files.length) { e.preventDefault(); setError(t('analysis.unsupported')); }
+    };
+    document.addEventListener('paste', paste); return () => document.removeEventListener('paste', paste);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const drop = (e: DragEvent) => { e.preventDefault(); setOver(false); void fromFile(e.dataTransfer.files[0]); };
   // Native webviews deliver OS file drops as paths for the whole window, never as DOM files.
   useEffect(() => {
@@ -278,7 +294,7 @@ export function Analysis({ active = true, endpoint = '', roots, root, incoming, 
     </li>)}</ul>
   </details>;
 
-  return <section className="analysis-tab" aria-label={t('studio.tab.analysis')} onPaste={paste}>
+  return <section ref={tabRef} className="analysis-tab" aria-label={t('studio.tab.analysis')}>
     <div className="forge-card analysis-picture" ref={box}>
       <div className="forge-card-head"><h3 className="forge-card-title">{t('analysis.picture')}</h3>
         {isTauri()

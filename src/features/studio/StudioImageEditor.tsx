@@ -1,7 +1,7 @@
 import {useEffect,useLayoutEffect,useImperativeHandle,useRef,useState,type Ref} from 'react';
 import {useI18n} from '../../i18n/I18nProvider';
 import {oneOf,usePref} from '../../lib/preferences';
-import {sourcePoint,zoomAt,stampStroke,maskBounds,floodRegion,flattenImages,hasPaint,uncoveredCells,type ImageLayer,type Point,type View} from './imageEditor';
+import {sourcePoint,zoomAt,stampStroke,maskBounds,floodRegion,flattenImages,hasPaint,uncoveredCells,sampleImages,type ImageLayer,type Point,type View} from './imageEditor';
 import {MEDIA_DRAG,draggedItem,type MediaItem} from '../../lib/media';
 import './imageEditor.css';
 export interface EditorSnapshot{source:Props['source'];masks:Mask[];base:ImageLayer;baseIndex:number;nextMask:number;active:string}
@@ -18,10 +18,15 @@ const toleranceOK=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger
 const opacityOK=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger(v)&&v>=0&&v<=100;
 const grayOK=(v:unknown):v is number=>typeof v==='number'&&Number.isInteger(v)&&v>=0&&v<=255;
 const hexOK=(v:unknown):v is string=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v);
+// Undo keeps whole-canvas snapshots of painted pixels, bounded by steps and memory.
+const HISTORY_STEPS=50,HISTORY_BYTES=256*1024*1024;
+type Edit={canvas:HTMLCanvasElement;pixels:HTMLCanvasElement};
+type Tool='select'|'brush'|'erase'|'wand'|'samPoint'|'samBox'|'pan'|'pick';
+const textEntry=(t:EventTarget|null)=>t instanceof HTMLElement&&(t.isContentEditable||t instanceof HTMLTextAreaElement||t instanceof HTMLSelectElement||(t instanceof HTMLInputElement&&!['range','checkbox','radio','button','color'].includes(t.type)));
 const palette=['#000000','#ffffff','#808080','#ff3b30','#ff9500','#ffcc00','#34c759','#00c7be','#007aff','#5856d6','#af52de','#8e5a3a'];
 /** Mounts a live canvas the strokes draw into directly (no per-stroke copy). */
 function Mounted({node}:{node:HTMLCanvasElement}){const ref=useRef<HTMLSpanElement>(null);useEffect(()=>{ref.current?.replaceChildren(node);},[node]);return <span ref={ref} className="sie-paint" aria-hidden="true"/>;}
-const icons={select:'M5 3l13 7-6 1.5L9 18z',brush:'M19 3l2 2-9 9-2-2zM9 13c-3 0-4 2-4 4s-1 3-3 3c3 1 8 1 9-4',erase:'M15 4l5 5-10 10H6l-3-3zM8.5 10.5l5 5M11 19h10',pan:'M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3',samPoint:'M12 3v6M12 15v6M3 12h6M15 12h6M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4',samBox:'M4 4h16v16H4z',wand:'M4 20L15 9M17 3v3M15.5 4.5h3M20 8l1 1M12 4l1 1M19 12h2',eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',eyeOff:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM4 4l16 16'};
+const icons={select:'M5 3l13 7-6 1.5L9 18z',brush:'M19 3l2 2-9 9-2-2zM9 13c-3 0-4 2-4 4s-1 3-3 3c3 1 8 1 9-4',erase:'M15 4l5 5-10 10H6l-3-3zM8.5 10.5l5 5M11 19h10',pan:'M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3',samPoint:'M12 3v6M12 15v6M3 12h6M15 12h6M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4',samBox:'M4 4h16v16H4z',wand:'M4 20L15 9M17 3v3M15.5 4.5h3M20 8l1 1M12 4l1 1M19 12h2',eye:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',eyeOff:'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM4 4l16 16',pick:'M13 5l6 6M16 3.5a2.1 2.1 0 0 1 3 0l1.5 1.5a2.1 2.1 0 0 1 0 3L18 10.5 13.5 6zM14.5 8L5 17.5 4 20l2.5-1L16 9.5'};
 const Icon=({d}:{d:string})=><svg viewBox="0 0 24 24" aria-hidden="true"><path d={d}/></svg>;
 function copyCanvas(source:HTMLCanvasElement){const canvas=document.createElement('canvas');canvas.width=source.width;canvas.height=source.height;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas unavailable');ctx.drawImage(source,0,0);return canvas;}
 export const copyImageLayer=(layer:ImageLayer):ImageLayer=>({...layer,...(layer.paint?{paint:copyCanvas(layer.paint)}:{})});
@@ -39,9 +44,10 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
   const viewport=useRef<HTMLDivElement>(null),world=useRef<HTMLDivElement>(null),overlay=useRef<HTMLCanvasElement>(null);
   const cursor=useRef<HTMLDivElement>(null);
   const operation=useRef(0),contentRevision=useRef(0);
-  useLayoutEffect(()=>{operation.current++;return()=>{operation.current++;};},[draftGeneration,source.src,source.width,source.height]);
+  const history=useRef<{undo:Edit[];redo:Edit[]}>({undo:[],redo:[]});
+  useLayoutEffect(()=>{operation.current++;history.current={undo:[],redo:[]};return()=>{operation.current++;};},[draftGeneration,source.src,source.width,source.height]);
   const [view,setView]=useState<View>({scale:1,x:0,y:0});
-  const [tool,setTool]=useState<'select'|'brush'|'erase'|'wand'|'samPoint'|'samBox'|'pan'>(maskMode?'brush':'select');
+  const [tool,setTool]=useState<Tool>(maskMode?'brush':'select');
   const [tolerance,setTolerance]=usePref('studio.editor.wandTolerance',32,toleranceOK);
   // Source pixels for the magic wand, read once per picture through a blob (an asset:// image would taint the canvas).
   const pixels=useRef<{src:string;data:Promise<ImageData>}|null>(null);
@@ -49,12 +55,9 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
   const [shape,setShape]=usePref('studio.editor.shape','round',oneOf('round','square'));
   const [opacity,setOpacity]=usePref('studio.editor.overlay',75,opacityOK);
   const [color,setColor]=usePref('studio.editor.color','#ff3b30',hexOK);const [hex,setHex]=useState(color);useEffect(()=>setHex(color),[color]);
-  const [picking,setPicking]=useState(false);const [pipetteHint,setPipetteHint]=useState('');
-  // EyeDropper: WebView2/Chromium; Tauri invoke: xdg-desktop-portal PickColor on Linux. Cancel keeps the previous colour.
-  const pickColor=async()=>{if(picking)return;const ed=(window as{EyeDropper?:new()=>{open():Promise<{sRGBHex:string}>}}).EyeDropper;
-   if(ed){setPicking(true);try{const r=await new ed().open();setColor(r.sRGBHex.toLowerCase());}catch{/* cancelled */}finally{setPicking(false);}return;}
-   if('__TAURI_INTERNALS__' in window){setPicking(true);try{setColor(String(await (window as{__TAURI_INTERNALS__:{invoke(c:string):Promise<unknown>}}).__TAURI_INTERNALS__.invoke('native_pick_screen_color')).toLowerCase());}catch(e){if(!/cancel/i.test(String(e)))setPipetteHint(label('pipetteUnsupported'));}finally{setPicking(false);}return;}
-   setPipetteHint(label('pipetteUnsupported'));};
+  // Eyedropper is an in-picture tool: the next click samples the visible picture stack (never masks) and returns to the previous tool.
+  const [pipetteHint,setPipetteHint]=useState('');const pickReturn=useRef<Tool>('brush');
+  const togglePick=()=>{finish();setPipetteHint('');if(tool==='pick'){setTool(pickReturn.current);return;}pickReturn.current=tool;setTool('pick');};
   const [gray,setGray]=usePref('studio.editor.maskValue',255,grayOK);
   const saved=snapshot&&snapshot.source.src===source.src&&snapshot.source.width===source.width&&snapshot.source.height===source.height?snapshot:undefined;
   const [masks,setMasks]=useState<Mask[]>(()=>saved?.masks.map(m=>({...m,canvas:copyCanvas(m.canvas)}))??[newMask(1,source.width,source.height)]);
@@ -84,6 +87,42 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
   const brushWheel=useRef<{diameter:number;set:(n:number)=>void}|null>(null);brushWheel.current=painting&&brushEnabled?{diameter,set:setDiameter}:null;
   function track(e:React.PointerEvent){const c=cursor.current,r=viewport.current?.getBoundingClientRect();if(c&&r){c.style.left=`${e.clientX-r.left}px`;c.style.top=`${e.clientY-r.top}px`;c.hidden=false;}}
   function fail(){setError(label('canvasError'));onMask(false);}
+  /** Records a canvas's pixels before an edit so Ctrl+Z can restore them. */
+  function remember(canvas:HTMLCanvasElement){
+    const h=history.current;h.undo.push({canvas,pixels:copyCanvas(canvas)});h.redo=[];
+    const bytes=()=>h.undo.reduce((n,e)=>n+e.pixels.width*e.pixels.height*4,0);
+    while(h.undo.length>HISTORY_STEPS||(h.undo.length>1&&bytes()>HISTORY_BYTES))h.undo.shift();
+  }
+  /** Undo (back) or redo one pixel edit; edits of removed masks/pictures are skipped. */
+  function step(back:boolean){
+    finish();const h=history.current,from=back?h.undo:h.redo,to=back?h.redo:h.undo;
+    for(let e=from.pop();e;e=from.pop()){
+      const target=e.canvas,mask=masksRef.current.find(m=>m.canvas===target),image=images.some(l=>l.paint===target);
+      if(!mask&&!image)continue;
+      const ctx=target.getContext('2d');if(!ctx){fail();return true;}
+      to.push({canvas:target,pixels:copyCanvas(target)});
+      ctx.clearRect(0,0,target.width,target.height);ctx.drawImage(e.pixels,0,0);
+      if(mask)settle(mask);else contentRevision.current++;
+      return true;
+    }
+    return false;
+  }
+  async function pickAt(p:Point){
+    const version=operation.current;
+    try{const hex=await sampleImages(images,p);if(operation.current!==version||!hex)return;setColor(hex);setPipetteHint('');setTool(t=>t==='pick'?pickReturn.current:t);}
+    catch{if(operation.current===version)setPipetteHint(label('pipetteFailed'));}
+  }
+  const section=useRef<HTMLElement>(null),keys=useRef({step,escape:()=>{}});keys.current={step,escape:()=>{if(tool==='pick')setTool(pickReturn.current);}};
+  useEffect(()=>{
+    const key=(e:KeyboardEvent)=>{
+      const el=section.current;if(!el||(el.checkVisibility&&!el.checkVisibility())||textEntry(e.target))return;
+      if(e.key==='Escape'){keys.current.escape();return;}
+      if(!(e.ctrlKey||e.metaKey)||e.altKey)return;
+      const k=e.key.toLowerCase(),redo=k==='y'||(k==='z'&&e.shiftKey);if(k!=='z'&&!redo)return;
+      e.preventDefault();keys.current.step(!redo);
+    };
+    window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
+  },[]);
   function redraw(changed=true){
     if(changed)contentRevision.current++;
     const c=overlay.current,ctx=c?.getContext('2d');if(!c||!ctx){fail();return;}
@@ -121,7 +160,7 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
       for(let i=0;i<region.length;i++)if(region[i]){const o=i*4;fill.data[o]=fill.data[o+1]=fill.data[o+2]=gray;fill.data[o+3]=255;}
       const stamp=document.createElement('canvas');stamp.width=img.width;stamp.height=img.height;stamp.getContext('2d')!.putImageData(fill,0,0);
       const ctx=mask.canvas.getContext('2d');if(!ctx)throw Error('canvas');
-      ctx.save();ctx.globalCompositeOperation=remove?'destination-out':'source-over';ctx.drawImage(stamp,0,0);ctx.restore();
+      remember(mask.canvas);ctx.save();ctx.globalCompositeOperation=remove?'destination-out':'source-over';ctx.drawImage(stamp,0,0);ctx.restore();
       settle(mask);
     }catch{if(operation.current===version){pixels.current=null;fail();}}
   }
@@ -239,6 +278,7 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
       }else{viewport.current?.setPointerCapture(e.pointerId);gesture.current={pointer:e.pointerId,kind:'samBox',start:p};setSamRect(selectionBox(p,p));}
       return;
     }
+    if(tool==='pick'&&e.button===0&&!layer){e.preventDefault();if(activeImage)void pickAt(point(e));return;}
     if(tool==='wand'&&e.button===0&&!layer){e.preventDefault();void wand(point(e),e.altKey);return;}
     const pan=e.button===1||tool==='pan';
     if(!pan&&!layer&&(!brushEnabled||(tool!=='brush'&&tool!=='erase')))return;
@@ -252,6 +292,7 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
       const c=l.paint??(()=>{const img=world.current?.querySelector<HTMLImageElement>(`[data-layer="${l.id}"] img`);const c=document.createElement('canvas');c.width=img?.naturalWidth||l.width;c.height=img?.naturalHeight||l.height;return c;})();
       const ctx=c.getContext('2d');if(!ctx){fail();return;}
       if(!l.paint)updateImages(images.map(v=>v.id===l.id?{...v,paint:c}:v));
+      remember(c);
       const k=c.width/l.width,map=(q:Point)=>({x:(q.x-l.x)*k,y:(q.y-l.y)*c.height/l.height});
       gesture.current={pointer:e.pointerId,kind:'paint',ctx,map,k,last:p,erase:tool==='erase',diameter,shape,color};
       stampStroke(ctx,map(p),map(p),diameter*k,shape,tool==='erase',color);contentRevision.current++;
@@ -259,7 +300,7 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
     else if(activeMask){
       const p=point(e);if(p.x<0||p.y<0||p.x>=source.width||p.y>=source.height)return;
       const ctx=activeMask.canvas.getContext('2d');if(!ctx){fail();return;}
-      const value=`rgb(${gray},${gray},${gray})`;
+      remember(activeMask.canvas);const value=`rgb(${gray},${gray},${gray})`;
       gesture.current={pointer:e.pointerId,kind:'paint',ctx,mask:activeMask,map:p=>p,k:1,last:p,erase:tool==='erase',diameter,shape,color:value};
       stampStroke(ctx,p,p,diameter,shape,tool==='erase',value);redraw();
     }
@@ -306,7 +347,7 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
     else{const next=[...images];next.splice(toImage,0,next.splice(fromImage,1)[0]);updateImages(next);}
   }
   function row(id:string,name:string,thumb:React.ReactNode,visible:boolean,choose:()=>void,toggle?:()=>void,remove?:()=>void){return <li key={id} draggable onDragStart={e=>{finish();draggedLayer.current=id;e.dataTransfer.setData(LAYER_DRAG,id);e.dataTransfer.effectAllowed='move';}} onDragEnd={()=>{draggedLayer.current=null;}} onDragOver={e=>{if(draggedLayer.current&&e.dataTransfer.types.includes(LAYER_DRAG)){e.preventDefault();e.dataTransfer.dropEffect='move';}}} onDrop={e=>dropLayer(e,id)}><button type="button" aria-pressed={active===id} onClick={()=>{finish();setActive(id);choose();}}>{thumb}<span>{name}</span></button>{toggle&&<button type="button" aria-label={t(`studio.editor.${visible?'hide':'show'}`,{name})} className="sie-eye" onClick={()=>{finish();toggle();}}><Icon d={visible?icons.eye:icons.eyeOff}/></button>}{remove&&<button type="button" aria-label={t('studio.editor.remove',{name})} onClick={()=>{finish();remove();}}>×</button>}</li>;}
-  return <section className="sie" aria-label={label('title')}>
+  return <section ref={section} className="sie" aria-label={label('title')}>
     <div className="sie-tools" role="toolbar" aria-label={label('title')}>
       <span className="sie-seg">{(maskMode?['select','brush','erase','wand','samPoint','samBox','pan'] as const:['select','brush','erase','pan'] as const).map(v=><button type="button" className="sie-tool" key={v} aria-pressed={tool===v} data-sam-tool={v==='samPoint'||v==='samBox'?v:undefined} title={v==='samPoint'||v==='samBox'?sam?.unavailable??(sam?.busy?t('setup.busy'):label(`${v}Help`)):undefined} disabled={((v==='samPoint'||v==='samBox')&&samDisabled)||((v==='brush'||v==='erase')&&!brushEnabled)||(v==='wand'&&!activeMask?.visible)} onClick={()=>{finish();setTool(v);}}><Icon d={icons[v]}/>{label(v)}</button>)}</span>
       <>
@@ -314,15 +355,15 @@ export function StudioImageEditor({ref,source,layers,onLayers,maskMode,onMask,on
       <label>{label('diameter')}<input type="number" min={1} max={1024} value={diameter} onChange={e=>{const n=Number(e.target.value);if(diameterOK(n))setDiameter(n);}}/></label>
       <input type="range" className="sie-diameter" aria-label={label('diameter')} min={1} max={1024} value={diameter} onChange={e=>setDiameter(Number(e.target.value))}/>
       <span className="sie-seg" role="group" aria-label={label('shape')}>{(['round','square'] as const).map(v=><button type="button" className="sie-tool" key={v} aria-pressed={shape===v} onClick={()=>setShape(v)}><i className={`sie-shape is-${v}`} aria-hidden="true"/>{label(v)}</button>)}</span>
-      {images.length>0&&<span className="sie-color" role="group" aria-label={label('color')}>
+      {activeImage&&<span className="sie-color" role="group" aria-label={label('color')}>
        <input type="color" aria-label={label('color')} value={color} onChange={e=>setColor(e.target.value)}/>
-       <button type="button" className={`sie-tool sie-pipette${picking?' is-active':''}`} aria-pressed={picking} aria-label={label('pipette')} disabled={picking} onClick={()=>void pickColor()}>{label('pipette')}</button>
+       <button type="button" className="sie-tool sie-pipette" aria-pressed={tool==='pick'} aria-label={label('pipette')} title={label('pipetteHelp')} disabled={!activeImage.visible} onClick={togglePick}><Icon d={icons.pick}/></button>
        <input type="text" className="sie-hex" aria-label={label('colorHex')} value={hex} size={7} maxLength={7} spellCheck={false} onChange={e=>{setHex(e.target.value);if(hexOK(e.target.value))setColor(e.target.value.toLowerCase());}}/>
        {palette.map(c=><button key={c} type="button" className="sie-swatch" aria-label={c} aria-pressed={color===c} style={{background:c}} onClick={()=>setColor(c)}/>)}
        {pipetteHint&&<small role="status">{pipetteHint}</small>}
       </span>}
       {maskMode&&activeMask&&<label>{label('maskValue')}<input type="range" className="sie-gray" min={0} max={255} value={gray} style={{'--gray':`rgb(${gray},${gray},${gray})`} as React.CSSProperties} onChange={e=>setGray(Number(e.target.value))}/></label>}
-      <button type="button" className="sie-tool" disabled={!brushEnabled} onClick={()=>{finish();const m=activeMask,l=activeImage;try{if(l?.paint){const ctx=l.paint.getContext('2d');if(!ctx)throw Error();ctx.clearRect(0,0,l.paint.width,l.paint.height);contentRevision.current++;return;}if(!m)return;const ctx=m.canvas.getContext('2d');if(!ctx)throw Error();ctx.clearRect(0,0,source.width,source.height);m.content=false;report(masks.some(v=>v.visible&&v.content));redraw();}catch{fail();}}}>{t('studio.run.edit.clear')}</button>
+      <button type="button" className="sie-tool" disabled={!brushEnabled} onClick={()=>{finish();const m=activeMask,l=activeImage;try{if(l?.paint){const ctx=l.paint.getContext('2d');if(!ctx)throw Error();remember(l.paint);ctx.clearRect(0,0,l.paint.width,l.paint.height);contentRevision.current++;return;}if(!m)return;const ctx=m.canvas.getContext('2d');if(!ctx)throw Error();remember(m.canvas);ctx.clearRect(0,0,source.width,source.height);m.content=false;report(masks.some(v=>v.visible&&v.content));redraw();}catch{fail();}}}>{t('studio.run.edit.clear')}</button>
       </>
       <span className="sie-view">
       <button type="button" data-image-restore disabled={!activeImage} onClick={restoreFrame}>{label('restoreFrame')}</button>

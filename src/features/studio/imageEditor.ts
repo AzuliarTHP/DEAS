@@ -66,6 +66,21 @@ export async function flattenLayer(l:ImageLayer):Promise<Uint8Array|null>{
  const blob=await new Promise<Blob|null>(done=>c.toBlob(done,'image/png'));if(!blob)throw new Error('canvas');
  return new Uint8Array(await blob.arrayBuffer());
 }
+/** Colour of the visible picture stack (pictures + their strokes, never masks) at a source pixel, or null where nothing is drawn. */
+export async function sampleImages(layers:readonly ImageLayer[],p:Point):Promise<string|null>{
+ const x=Math.floor(p.x),y=Math.floor(p.y);
+ const hit=layers.filter(l=>l.visible&&x>=l.x&&y>=l.y&&x<l.x+l.width&&y<l.y+l.height);if(!hit.length)return null;
+ const c=document.createElement('canvas');c.width=1;c.height=1;const ctx=c.getContext('2d');if(!ctx)throw new Error('canvas');
+ // A 1×1 canvas offset so source pixel (x,y) lands on (0,0); pictures are read through a blob so asset:// never taints it.
+ for(const l of hit){
+  const response=await fetch(l.src);if(!response.ok)throw new Error(`Image load failed: ${response.status}`);
+  const bitmap=await createImageBitmap(await response.blob());
+  try{ctx.drawImage(bitmap,l.x-x,l.y-y,l.width,l.height);}finally{bitmap.close();}
+  if(l.paint)ctx.drawImage(l.paint,l.x-x,l.y-y,l.width,l.height);
+ }
+ const [r,g,b,a]=ctx.getImageData(0,0,1,1).data;if(!a)return null;
+ return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 /** Snapshot image strokes/geometry before decoding; masks never enter this composite. */
 export async function flattenImages(layers:readonly ImageLayer[],width:number,height:number,fill?:string):Promise<Uint8Array>{
  const c=document.createElement('canvas');c.width=width;c.height=height;

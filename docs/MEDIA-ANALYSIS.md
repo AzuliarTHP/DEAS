@@ -7,7 +7,7 @@ Everything is read on this PC. Nothing is uploaded except the one picture Descri
 ## Opening a picture or video
 
 - **Drop** a file on the picture area (PNG, JPEG, WebP; MP4, MOV, M4V, MKV, WebM).
-- **Paste** a picture (Ctrl+V). Videos cannot be pasted; drop the file or use Choose….
+- **Paste** (Ctrl+V) anywhere on the tab, no click needed first: a picture copied from a browser or image viewer, or an image or video file copied in a file manager (it opens from its original location, so videos go to the frame picker). Video data without a file location cannot be pasted; copy the file itself, drop it or use Choose…. Text fields keep their own paste.
 - **Choose…** opens the system file dialog. The file is read where it is, never copied.
 - **Media → right-click → Open in Media Analysis** on any picture or video.
 

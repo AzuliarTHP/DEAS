@@ -53,7 +53,7 @@
   "analysis.spaces": "アンダースコアをスペースに",
   "analysis.copy": "タグをコピー",
   "analysis.open": "メディア解析で開く",
-  "analysis.videoByPath": "動画は貼り付けできません。動画ファイルをここにドロップするか、「選択…」を押してください。",
+  "analysis.videoByPath": "貼り付けた動画にはファイルの場所がありません。ファイルマネージャーで動画ファイルをコピーして貼り付けるか、ここにドロップするか、「選択…」を押してください。",
   "analysis.chooseTitle": "画像または動画を選択",
   "analysis.noneFound": "画像タガーが見つかりませんでした。",
   "analysis.lookedIn": "DEASはモデルフォルダ（taggers、onnx、animetimm、タガー名のフォルダ）と、custom_nodes内のComfyUIタガーノードを探しました。タグリスト付きのONNXタガーなら、その場所のまま使います。別の場所にある場合は models/taggers に移して「もう一度探す」を押してください。",

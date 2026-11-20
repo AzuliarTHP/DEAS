@@ -1,5 +1,19 @@
 # News
 
+## 0.3.10
+
+### Image editor: eyedropper and undo
+
+The brush colour has an **eyedropper** icon: click it, then click the picture to take a colour from it. It no longer
+depends on the desktop's screen picker, which never answered on some desktops, and zooming keeps working meanwhile.
+The colour controls only show while you paint on a picture, not on a mask. **Ctrl+Z** undoes brush strokes, magic-wand
+fills and Clear on masks and pictures; **Ctrl+Shift+Z** or **Ctrl+Y** redoes them.
+
+### Media Analysis takes pasted media
+
+Ctrl+V on the Media Analysis tab works again without clicking into it first. A picture copied from a browser loads
+directly, and a picture or video file copied in a file manager opens from its own location.
+
 ## 0.3.9
 
 ### Wan 2.2 GGUF video models work in Image → Video

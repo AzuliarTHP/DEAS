@@ -53,7 +53,7 @@
   "analysis.spaces": "Spaces instead of underscores",
   "analysis.copy": "Copy tags",
   "analysis.open": "Open in Media Analysis",
-  "analysis.videoByPath": "Videos cannot be pasted. Drop the video file here, or press Choose…",
+  "analysis.videoByPath": "This pasted video has no file location. Copy the video file in your file manager and paste it, drop it here, or press Choose…",
   "analysis.chooseTitle": "Choose a picture or video",
   "analysis.noneFound": "No image tagger was found.",
   "analysis.lookedIn": "DEAS looked in your models folders (taggers, onnx, animetimm and any folder named for a tagger) and in ComfyUI's tagger nodes in custom_nodes. Any ONNX tagger that comes with its tag list is used where it is. If you have one somewhere else, move it into models/taggers and press Look again.",

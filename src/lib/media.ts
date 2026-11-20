@@ -72,6 +72,19 @@ export async function pasteToInput(pictures:Blob[]):Promise<string[]> {
 }
 /** Picture files of a paste event; text fields keep their own paste. */
 export const pastedPictures=(event:ClipboardEvent)=>event.target instanceof Element&&event.target.closest('input, textarea, [contenteditable="true"]')?[]:[...(event.clipboardData?.files??[])].filter(f=>f.type.startsWith('image/'));
+/** Local paths of files copied in a file manager: `text/uri-list` (file:// URIs) or a plain-text list made only of absolute paths. Ordinary text yields []. */
+export function pastedPaths(data:DataTransfer|null|undefined):string[] {
+ if(!data)return [];
+ const fromUri=(uri:string)=>{try{const u=new URL(uri);if(u.protocol!=='file:')return null;const p=decodeURIComponent(u.pathname);return u.host&&u.host!=='localhost'?`//${u.host}${p}`:/^\/[A-Za-z]:\//.test(p)?p.slice(1):p;}catch{return null;}};
+ for(const type of ['text/uri-list','text/plain']){
+  let raw='';try{raw=data.getData(type)??'';}catch{/* unavailable type */}
+  const lines=raw.split(/\r?\n/).map(l=>l.trim()).filter(l=>l&&!l.startsWith('#'));
+  if(!lines.length)continue;
+  const paths=lines.map(l=>/^file:/i.test(l)?fromUri(l):/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(l)&&!/[\x00-\x1f]/.test(l)?l:null);
+  if(paths.every(Boolean))return paths as string[];
+ }
+ return [];
+}
 export function itemFromEntry(entry:MediaEntry):MediaItem|null {
  if(entry.kind!=='file'||!entry.media)return null;
  return {name:entry.name,path:entry.path,media:entry.media,src:isTauri()?convertFileSrc(entry.path):entry.path};

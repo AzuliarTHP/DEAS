@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.10
+
+- **Image editor eyedropper is an in-picture tool now.** The screen eyedropper relied on the desktop portal, which on some desktops never answered: the button stayed disabled, picked nothing and reported *This runtime has no screen eyedropper*. It is replaced by an eyedropper icon beside the brush colour: click it, then click the picture to take the colour of the visible picture stack (pictures and their strokes, never masks); the previous tool returns afterwards, and Esc or a second click on the icon cancels. Mouse-wheel zoom and middle-button pan keep working while it is active. The colour group (picker, eyedropper, hex, swatches) now appears only while a picture is the active layer, not while painting a mask.
+- **Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) undo and redo in the image editor.** Brush and erase strokes, magic-wand fills and Clear on masks and on picture paint can be undone step by step (up to 50 steps within a 256 MiB budget). Text fields keep their own undo; the history resets when another picture or draft is opened.
+- **Media Analysis accepts pasted media again.** Ctrl+V only reached the tab when keyboard focus was already inside it, which it usually is not after switching tabs, so a copied picture was silently ignored. The tab now takes the paste whenever it is visible (text fields keep their own paste). Files copied in a file manager are opened by their path, so copied videos open in the frame picker instead of being refused.
+
 ## 0.3.9
 
 - **GGUF video models no longer fail at the first sampling step with *cutlass_fp16_linear: K mismatch*.** Current ComfyUI runs the feed-forward layers of Wan, LTX, MiniMax H3, Qwen Image 2.1 and others through a new fused path. With **fp16 accumulation** on (a DEAS startup speed option), that path reads the layer's weight directly, which bypasses ComfyUI-GGUF's on-the-fly dequantization: the packed GGUF data reached the GPU's matrix multiply. DEAS now installs a small adapter (`deas_gguf_core_compat.py`, placed at backend start) that sends only GGUF layers through ComfyUI's own non-fused branch. Every other layer, and every other model, keeps the fast path. The fix takes effect the next time the backend starts. Until then, turning fp16 accumulation off in **Backend → Startup optimizations** avoids the error.

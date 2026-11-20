@@ -156,8 +156,38 @@ it('chooses a file through the native dialog and refuses a pasted video', async 
   fireEvent.click(await screen.findByRole('button', { name: 'Choose…' }));
   expect(await screen.findByText('1girl')).toBeTruthy();
   const video = new File(['x'], 'clip.mp4', { type: 'video/mp4' });
-  fireEvent.paste(document.querySelector('.analysis-tab')!, { clipboardData: { files: [video] } });
-  expect(await screen.findByText(/Videos cannot be pasted/)).toBeTruthy();
+  fireEvent.paste(document.querySelector('.analysis-tab')!, { clipboardData: { files: [video], getData: () => '' } });
+  expect(await screen.findByText(/pasted video has no file location/)).toBeTruthy();
+});
+
+const clip = (data: Record<string, string>, files: File[] = []) => ({ clipboardData: { files, getData: (type: string) => data[type] ?? '' } });
+it('accepts Ctrl+V with focus on the page: copied picture data, and files copied in a file manager by path', async () => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    const a = args as Record<string, any>;
+    if (command === 'native_analysis_overview') return overview;
+    if (command === 'native_analysis_stage') return '/inbox/pasted.png';
+    if (command === 'native_media_describe') return a.paths.map((path: string) => ({ kind: 'file', name: path.split('/').pop(), path, media: /\.mp4$/.test(path) ? 'video' : 'image' }));
+    if (command === 'native_analysis_tag') return { tagger: 'WD', rating: {}, general: [['1girl', 0.9]], character: [], ms: 1 };
+    if (command === 'native_media_metadata') return [];
+    if (command === 'native_analysis_frames_open') return new Promise(() => {});
+    throw new Error(`Unexpected ${command}`);
+  });
+  ui();
+  await screen.findByRole('button', { name: 'Choose…' });
+  // Nothing focused: the paste targets the body, outside the tab.
+  fireEvent.paste(document.body, clip({}, [Object.assign(new File(['png'], 'image.png', { type: 'image/png' }), { arrayBuffer: async () => new ArrayBuffer(3) })]));
+  await waitFor(() => expect(calls('native_analysis_tag')[0]).toMatchObject({ image: '/inbox/pasted.png' }));
+  fireEvent.paste(document.body, clip({ 'text/uri-list': 'file:///home/me/My%20Pictures/cat.webp\r\n' }, [new File(['x'], 'cat.webp', { type: 'image/webp' })]));
+  await waitFor(() => expect(calls('native_media_describe').at(-1)).toEqual({ paths: ['/home/me/My Pictures/cat.webp'] }));
+  await waitFor(() => expect(calls('native_analysis_tag').at(-1)).toMatchObject({ image: '/home/me/My Pictures/cat.webp' }));
+  fireEvent.paste(document.body, clip({ 'text/plain': 'file:///C:/clips/run.mp4' }));
+  await waitFor(() => expect(calls('native_analysis_frames_open')).toEqual([{ path: 'C:/clips/run.mp4' }]));
+  // Ordinary text and text fields are left alone.
+  const describes = calls('native_media_describe').length;
+  fireEvent.paste(document.body, clip({ 'text/plain': 'just a prompt' }));
+  const field = document.createElement('input'); document.querySelector('.analysis-tab')!.append(field);
+  fireEvent.paste(field, clip({ 'text/uri-list': 'file:///home/me/a.png' }));
+  expect(calls('native_media_describe').length).toBe(describes);
 });
 
 it('offers to convert a PyTorch-only animetimm checkpoint, says what it costs, and lists the copy once done', async () => {

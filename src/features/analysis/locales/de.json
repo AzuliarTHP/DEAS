@@ -53,7 +53,7 @@
   "analysis.spaces": "Leerzeichen statt Unterstriche",
   "analysis.copy": "Tags kopieren",
   "analysis.open": "In Medienanalyse öffnen",
-  "analysis.videoByPath": "Videos lassen sich nicht einfügen. Lege die Videodatei hier ab oder drücke Auswählen…",
+  "analysis.videoByPath": "Dieses eingefügte Video hat keinen Dateipfad. Kopiere die Videodatei im Dateimanager und füge sie ein, lege sie hier ab oder drücke Auswählen…",
   "analysis.chooseTitle": "Bild oder Video auswählen",
   "analysis.noneFound": "Es wurde kein Bild-Tagger gefunden.",
   "analysis.lookedIn": "DEAS hat in deinen Modellordnern gesucht (taggers, onnx, animetimm und jeder Ordner, der nach einem Tagger benannt ist) und in ComfyUIs Tagger-Nodes unter custom_nodes. Jeder ONNX-Tagger mit seiner Tag-Liste wird dort benutzt, wo er liegt. Liegt deiner woanders, verschiebe ihn nach models/taggers und drücke Erneut suchen.",

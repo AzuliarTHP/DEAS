@@ -20,7 +20,6 @@ window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebvie
   if(command==='plugin:event|listen')return ++callback;
   if(command==='plugin:event|unlisten')return null;
   if(command==='native_media_thumbnail')return args.path;
-  if(command==='native_pick_screen_color')return '#00ff00';
   if(command==='native_media_star_status')return {starred:false,unavailable:null};
   if(command==='native_wildcard_library')return '';
   if(command==='native_audio_enhance_capabilities')return {clean:true,deep:false,stems:false};
@@ -48,9 +47,9 @@ def open_editor(page):
     page.get_by_role('button', name='Inpaint', exact=True).click()
     page.locator('[data-editor-viewport]').wait_for()
     expect(page.get_by_role('button', name='Mask 1', exact=True)).to_have_attribute('aria-pressed', 'true')
-    # Fix: the colour group and screen pipette stay reachable while a mask layer is the active one.
-    expect(page.locator('.sie-pipette')).to_be_visible()
-    expect(page.locator('.sie-color input[type=color]')).to_be_visible()
+    # The colour group (incl. eyedropper) belongs to picture painting only; a selected mask hides it.
+    expect(page.locator('.sie-pipette')).to_have_count(0)
+    expect(page.locator('.sie-color input[type=color]')).to_have_count(0)
 
 
 def click_tool(page, name):
@@ -394,8 +393,14 @@ with sync_playwright() as p:
             click_tool(page,'Fit')
             paint(page,256,160,(384,240))
             click_tool(page,'Base image')
-            click_tool(page,'Screen eyedropper')
-            expect(page.locator('.sie-color input[type=color]')).to_have_value('#00ff00')
+            click_tool(page,'Eyedropper')
+            expect(page.locator('[data-editor-viewport]')).to_have_attribute('data-tool','pick')
+            page.mouse.wheel(0,-100)  # zoom stays usable while the eyedropper waits for a click
+            click_tool(page,'Fit')
+            r=page.get_by_test_id('editor-world').bounding_box()
+            page.mouse.click(r['x']+1000*r['width']/1024, r['y']+620*r['height']/640)
+            expect(page.locator('.sie-color input[type=color]')).to_have_value('#555555')
+            expect(page.locator('.sie-pipette')).to_have_attribute('aria-pressed','false')
             page.screenshot(path=str(ROOT/'assets'/f'deas-inpaint-fixture-{width}.png'), full_page=True)
         assert page.evaluate('window.__unexpected') == []
         page.close()

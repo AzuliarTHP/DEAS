@@ -53,7 +53,7 @@
   "analysis.spaces": "Espaces au lieu des tirets bas",
   "analysis.copy": "Copier les tags",
   "analysis.open": "Ouvrir dans Analyse de médias",
-  "analysis.videoByPath": "Une vidéo ne peut pas être collée. Déposez le fichier vidéo ici, ou appuyez sur Choisir…",
+  "analysis.videoByPath": "Cette vidéo collée n’a pas d’emplacement de fichier. Copiez le fichier vidéo dans votre gestionnaire de fichiers puis collez-le, déposez-le ici, ou appuyez sur Choisir…",
   "analysis.chooseTitle": "Choisir une image ou une vidéo",
   "analysis.noneFound": "Aucun tagger d'images n'a été trouvé.",
   "analysis.lookedIn": "DEAS a cherché dans vos dossiers de modèles (taggers, onnx, animetimm et tout dossier nommé d'après un tagger) et dans les nœuds tagger de ComfyUI sous custom_nodes. Tout tagger ONNX livré avec sa liste de tags est utilisé là où il se trouve. Si le vôtre est ailleurs, déplacez-le dans models/taggers puis appuyez sur Chercher à nouveau.",

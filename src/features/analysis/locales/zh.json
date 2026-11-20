@@ -53,7 +53,7 @@
   "analysis.spaces": "用空格代替下划线",
   "analysis.copy": "复制标签",
   "analysis.open": "在媒体分析中打开",
-  "analysis.videoByPath": "视频无法粘贴。请把视频文件拖到这里，或点“选择…”。",
+  "analysis.videoByPath": "粘贴的视频没有文件位置。请在文件管理器中复制视频文件后粘贴，或拖到这里，或点“选择…”。",
   "analysis.chooseTitle": "选择图片或视频",
   "analysis.noneFound": "没有找到图像标注器。",
   "analysis.lookedIn": "DEAS 查找了你的模型文件夹（taggers、onnx、animetimm 以及任何以标注器命名的文件夹）和 custom_nodes 中的 ComfyUI 标注器节点。任何附带标签列表的 ONNX 标注器都会在原位置直接使用。如果你的标注器在别处，请移到 models/taggers 后点“重新查找”。",

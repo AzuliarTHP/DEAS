@@ -506,16 +506,39 @@ test('Ctrl+wheel resizes the brush while painting; a plain wheel still zooms',()
  act(()=>{viewport.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,ctrlKey:true,cancelable:true}));});
  expect(diameter()).toBe('53'); // no brush active: Ctrl+wheel does not resize
 });
-test('screen pipette applies the picked colour, keeps it on cancel and explains unsupported runtimes',async()=>{
- mount();fireEvent.click(screen.getByRole('button',{name:'Base image'}));
- const swatch=document.querySelector('.sie-color input[type=color]') as HTMLInputElement;
- (window as any).EyeDropper=class{open(){return Promise.resolve({sRGBHex:'#00FF00'})};};
- await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Screen eyedropper'}));});
- expect((swatch as HTMLInputElement).value).toBe('#00ff00');
- (window as any).EyeDropper=class{open(){return Promise.reject(new Error('User cancelled'));};};
- await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'Screen eyedropper'}));});
- expect((swatch as HTMLInputElement).value).toBe('#00ff00');
- delete (window as any).EyeDropper;
- fireEvent.click(screen.getByRole('button',{name:'Screen eyedropper'}));
- expect(await screen.findByText(/no screen eyedropper/i)).toBeTruthy();
+test('eyedropper is an icon tool that samples the picture, keeps zoom usable and is hidden while a mask is active',async()=>{
+ mount();const vp=document.querySelector('[data-editor-viewport]') as HTMLElement;
+ expect(document.querySelector('.sie-pipette')).toBeNull(); // Mask 1 is active: no colour group
+ fireEvent.click(screen.getByRole('button',{name:'Base image'}));
+ vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,blob:async()=>new Blob()})));
+ vi.stubGlobal('createImageBitmap',vi.fn(async()=>({close:vi.fn()})));
+ vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(function(this:HTMLCanvasElement){const c=context(this);return (this.width===1&&this.height===1?{...c,getImageData:()=>({data:new Uint8ClampedArray([0,255,0,255])})}:c) as unknown as CanvasRenderingContext2D;});
+ const pick=screen.getByRole('button',{name:'Eyedropper'});
+ expect(pick.textContent).toBe('');expect(pick.querySelector('svg')).not.toBeNull();
+ fireEvent.click(pick);expect(vp.dataset.tool).toBe('pick');expect(pick.getAttribute('aria-pressed')).toBe('true');
+ const world=screen.getByTestId('editor-world'),before=world.style.transform;
+ act(()=>{vp.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,cancelable:true}));});
+ expect(world.style.transform).not.toBe(before);
+ await act(async()=>{pointer(vp,'pointerdown',20,20);pointer(vp,'pointerup',20,20);});
+ await vi.waitFor(()=>expect((document.querySelector('.sie-color input[type=color]') as HTMLInputElement).value).toBe('#00ff00'));
+ expect(vp.dataset.tool).toBe('select');expect(document.querySelector('[data-layer="base"] .sie-paint canvas')).toBeNull(); // picking never paints
+ fireEvent.click(pick);fireEvent.keyDown(window,{key:'Escape'});expect(vp.dataset.tool).toBe('select');
+ fireEvent.click(screen.getByRole('button',{name:'Mask 1'}));expect(document.querySelector('.sie-pipette')).toBeNull();
+});
+test('Ctrl+Z / Ctrl+Shift+Z undo and redo mask and picture strokes, not inside text fields',()=>{
+ const {onMask}=mount(),vp=document.querySelector('[data-editor-viewport]')!;
+ const covered=()=>context(document.querySelector('.sie-mask') as HTMLCanvasElement).pixels.size;
+ const key=(el:Element|Window,shift=false,k='z')=>act(()=>{fireEvent.keyDown(el,{key:k,ctrlKey:true,shiftKey:shift});});
+ paint(vp);const one=covered();paint(vp,300,300);const two=covered();
+ expect(one).toBeGreaterThan(0);expect(two).toBeGreaterThan(one);
+ key(screen.getByRole('spinbutton',{name:'Brush diameter (px)'}));expect(covered()).toBe(two); // field keeps its own undo
+ key(window);expect(covered()).toBe(one);
+ key(window);expect(covered()).toBe(0);expect(onMask).toHaveBeenLastCalledWith(false);
+ key(window);expect(covered()).toBe(0); // nothing left
+ key(window,true);expect(covered()).toBe(one);key(window,false,'y');expect(covered()).toBe(two);
+ fireEvent.click(screen.getByRole('button',{name:'Clear'}));expect(covered()).toBe(0);key(window);expect(covered()).toBe(two);
+ fireEvent.click(screen.getByRole('button',{name:'Base image'}));fireEvent.click(screen.getByRole('button',{name:'Brush'}));
+ paint(vp);const strokes=document.querySelector('[data-layer="base"] .sie-paint canvas') as HTMLCanvasElement;
+ expect(context(strokes).pixels.size).toBeGreaterThan(0);
+ key(window);expect(context(strokes).pixels.size).toBe(0);expect(covered()).toBe(two);
 });
