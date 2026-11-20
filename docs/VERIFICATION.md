@@ -1,5 +1,25 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+
+## Release 0.3.9 (published)
+
+- **Release:** [v0.3.9](https://github.com/darksidewalker/DEAS/releases/tag/v0.3.9), Latest, not draft, not prerelease. It rolls up 0.3.6–0.3.9 over v0.3.5.
+- **Source and tags:** commit `ce6a8dd8e434f258b781788796a2cccd309ca31a`, tree `7adc61afbee033b9460016ca24ca88d989014ee0`. Tag `v0.3.9` resolves to it on both remotes.
+- **Build:** local unsigned (the `Verify DEAS`/`Release DEAS` workflows are `disabled_manually`), `build-linux.sh --release`. rustc 1.97.0, node v22.23.5. Linux glibc floor 2.39, `ldd` clean. Both binaries embed `dist/assets/index-BQT7bvc8.js`. No NSIS/deb/AppImage (no `makensis`/`patchelf`).
+- **Assets:** downloaded back from the release; `sha256sum -c SHA256SUMS` passes and the files are byte-identical to the staged set:
+  ```
+  45e1749928bc44424e6e74a40154a521797afb4fbfa56b81ea3b42b3793502e5  BUILD-MANIFEST.json
+  61774ddeae1b22c3bf7dc0ed75d0f9b1b7775592b683cf8f973d9a1e42732e2a  deas.exe
+  0e8783f54eab9d9336203849b3b4fcc1f8e94cb16b07c4f75544618412eb4f8a  deas-linux-amd64
+  d0d140f05060b2be1a4c36c145de56ba36985414022cb28d88e4e61c80859782  SHA256SUMS
+  ```
+  The loose `artifacts/deas-linux-amd64` has the same hash as the release asset.
+- **Gates on the source commit's tree:** green: typecheck, test:core, `cargo clippy --locked --all-targets -D warnings` (Linux and xwin Windows).
+- **Load flakes (pass alone):** `test:ui` passed 2368/2369, with only `Workbench.part4` (H3 REF2VA timeout) failing; that file passes 88/88 alone. `cargo test --lib` passed 1134/1136, with only the two backend Python-shutdown tests failing; both pass alone.
+- **Node pack:** 0.5.60 (`59ab415`, pushed to both remotes). It reaches environments through **Upgrade → ComfyUI and node packs**.
+- **Issues:** #43 and #44 closed by `Fixes` in the source commit, each with an explanatory comment. #39 closed with a comment (reporter-confirmed).
+- **Windows:** the cross-built exe was not launched on Windows before publication. The self-update library and the llama-cpp/Vulkan parts are proven there separately (see the #43 and llama-cpp sections).
+
 ## Wan 2.2 GGUF with 5-D patch embedding (0.3.9)
 
 **Cause.** `DaSiWa_Wan22_I2V_14B_{HIGH,LOW}_v11_Q2_K-fix.gguf` (GGUF v3, `general.architecture=wan`, `modelspec.title` "Snatch Kiss v11 HIGH", quantized by DaSiWa Quant Station) stores `patch_embedding.weight` with 5 dims `(2, 2, 1, 36, 5120)`. `gguf_metadata` rejected any descriptor above 4 dims, so the whole file had no family.

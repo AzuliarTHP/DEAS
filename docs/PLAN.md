@@ -1162,7 +1162,7 @@ Fixes shipped in 0.3.4 for findings 1–4 of the 0.3.3 Windows session, plus Tri
 
 Root cause found in the reporters' 0.3.3 logs and fixed in 0.3.4: readiness succeeded, then Studio's 3 s capability poll superseded every slower `object_info` answer, so ComfyUI queued requests faster than it served them until every request timed out (evidence and RED/GREEN fixture: [VERIFICATION.md](VERIFICATION.md#issue-39--studio-capability-poll-livelock-on-slow-object_info-034)). The earlier 0.3.1 (45 s probe) and 0.3.3 (partner nodes off) changes stay; they reduced the payload but could not stop the livelock.
 
-- [ ] Windows host or reporter: on 0.3.4, Studio leaves *Backend not ready* within one `object_info` round after `operation=readiness … responded`; the `object_info … (slow response)` lines in Logs keep a roughly constant `elapsed_ms` instead of growing; the Comfy tab loads. Reply on issue #39 with the release and close it when a reporter confirms.
+- [x] Reporter confirmed on 0.3.4 ("The fix did work for me"); issue #39 closed with the 0.3.9 release. Open only if a second reporter's fresh log contradicts it.
 - [ ] Research: `object_info` takes 3.8–7 s for a 1.5 MB answer on the reporters' Windows machines (RTX 5070 Ti; fresh install, no linked folders) versus well under 2 s on this Linux host. Measure on the Windows test host which part dominates (model-folder listing per loader input, custom-node `INPUT_TYPES`, JSON serialization, antivirus scanning of the model folders) before changing anything; every Studio capability read, Backend → Test and recipe check pays it.
 
 #### B-09 · Issue #43 — Windows self-update: native acceptance
@@ -1171,7 +1171,6 @@ Root cause found in the reporters' 0.3.3 logs and fixed in 0.3.4: readiness succ
 
 0.3.7 replaces a running `deas.exe` by rename swap, with scan-lock retry, quarantine and tamper detection with rollback, a Controlled Folder Access diagnosis and a Restart now / Later question ([Application updates](APP-UPDATES.md)). The swap is proven on the Windows host by the library's own tests, including the live scan-lock swap ([VERIFICATION](VERIFICATION.md#issue-43--windows-self-update-037-not-native-accepted)); the GUI path is not.
 - [ ] Windows host: real click-through from a 0.3.7 scratch copy to the next release (Everything with an installed environment, then App only); check the restart question, both **Restart now** and **Later**, that `deas.exe.old` disappears after the next start, and that the backend resume state survives.
-- [ ] Reply on issue #43 with the release; close it when the reporter confirms.
 
 #### B-10 · AMD on Windows
 
