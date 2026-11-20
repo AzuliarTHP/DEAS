@@ -1,5 +1,29 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Release 0.3.12 (published)
+
+Published 2026-11-20 as `v0.3.12` (Latest, not a prerelease): https://github.com/darksidewalker/DEAS/releases/tag/v0.3.12.
+Rolls up the untagged 0.3.10 and 0.3.11 (last published release was `v0.3.9`), PR #45 and PR #46.
+Local unsigned build (hosted Verify/Release workflows are disabled), source commit
+`4de7136ced18007ad581b0ceec4a83fc5014c09e`, tree `d988638ce4eeecf19a5e4569744ba7e4521d4306`,
+rustc 1.97.0, node v22.23.5, `build-linux.sh --release`. Linux glibc floor 2.39, `ldd` clean;
+the current `dist/assets/index-bt_4dQl1.js` is embedded in both binaries. The MSVC cross-link
+prints the benign LNK4099 missing-debug-info warning. `deas.exe` was not launched on Windows.
+
+Assets downloaded back from the release, `sha256sum -c SHA256SUMS` OK:
+
+```
+0170db1a969f0b2e2ba542bd6ca1b2356e5560a602bd9e5f1755d4434c9f80e0  BUILD-MANIFEST.json
+7c0945097e86917097cc89f9bd4be0b5616d2ee262936845410d2d38f4186d1f  SHA256SUMS
+f0247664e58932c97da8fbf086aa17d98cc05664f8efb42dbea5ec139a992db0  deas-linux-amd64
+780e690af2e23ef2c6296319369c08f9e3478d5cff8d5cf2c557e02e5c790535  deas.exe
+```
+
+Gates on the release tree: typecheck, `test:core`, full `test:ui` (only load-sensitive H3
+Workbench fixtures failed under full load, passing alone), strict Linux and Windows-MSVC Clippy,
+`cargo fmt --check`, serial `cargo test --lib` with a private `TMPDIR` (two backend shutdown
+timing tests failed under load, passing alone), Chromium workspace layout gate (516 checks).
+
 ## Library preview downloads and note overwrites
 
 Chromium played the repository’s H.264 fixture in Model Details. Windows Library
