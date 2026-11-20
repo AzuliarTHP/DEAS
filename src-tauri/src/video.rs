@@ -46,6 +46,9 @@ pub enum Action {
     Seek {
         seconds: f64,
     },
+    Rate {
+        rate: f64,
+    },
     Crop {
         start: f64,
         end: f64,
@@ -78,6 +81,7 @@ impl Action {
                     && (0..=16384).contains(height)
             }
             Self::Seek { seconds } => seconds.is_finite() && (0.0..=86400.0).contains(seconds),
+            Self::Rate { rate } => rate.is_finite() && (1.0..=16.0).contains(rate),
             Self::Crop { start, end } => {
                 start.is_finite()
                     && end.is_finite()
@@ -540,6 +544,10 @@ mod tests {
         )
         .is_err());
         assert!(Action::Seek { seconds: f64::NAN }.validate().is_err());
+        assert!(Action::Rate { rate: 3.0 }.validate().is_ok());
+        for rate in [0.0, 17.0, f64::INFINITY, f64::NAN] {
+            assert!(Action::Rate { rate }.validate().is_err());
+        }
         assert!(Action::Volume { volume: 101.0 }.validate().is_err());
         assert!(Action::Bounds {
             x: 0,

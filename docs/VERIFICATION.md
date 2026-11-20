@@ -291,8 +291,16 @@ native WebKitGTK/WebView2 or real-GPU check has been made of either feature.
 Playback fixtures cover the replay delay, selecting the newest revision at
 clip boundaries, inactive cleanup, and decoder fallback. Chromium played
 synthetic H.264 clips with mocked IPC and verified that replay reuses the
-open video element. Live Windows WebView2, Linux playback, and GPU
-post-processing remain separate verification.
+open video element. The native observer fixture also covers a valid MP4
+being superseded between the job snapshot and the player opening its
+revision. The last advertised clip remains readable, and Stop or terminal
+execution releases the retained clips. Live Windows WebView2, Linux playback,
+and GPU post-processing remain separate verification.
+
+Integration into 0.3.14 (PR #47 by AzuliarTHP): on Linux the preview's `NativeVideo` opens with
+`autoPlay` fixed to the initial play state (as before the PR) instead of waiting for the first
+status poll to call `play()`; pause, seek and the stretched-preview `rate` stay transport actions,
+so toggling never reopens the libmpv player (`TemporalPreview.test.tsx` asserts the autoplay prop).
 
 ## Release 0.3.3 (published)
 

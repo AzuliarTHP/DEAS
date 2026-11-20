@@ -7,10 +7,10 @@ import './nativeVideo.css';
 export const nativeVideo = () => isTauri() && /Linux/.test(navigator.userAgent);
 export type VideoSource = {previewJobId:string;previewRevision:number} | {path:string} | {baseUrl:string;filename:string;subfolder:string;type:string};
 export type NativeVideoStatus = {position:number;duration:number;width:number;height:number;paused:boolean;muted:boolean;volume:number;ended?:boolean;error?:string};
-export type NativeVideoControl = {seek:(seconds:number)=>void;pause:()=>void;play:()=>void;playCrop:(start:number,end:number)=>void};
+export type NativeVideoControl = {seek:(seconds:number)=>void;setRate:(rate:number)=>void;pause:()=>void;play:()=>void;playCrop:(start:number,end:number)=>void};
 const clock=(seconds:number)=>{const whole=Math.max(0,Math.floor(seconds));return `${Math.floor(whole/60)}:${String(whole%60).padStart(2,'0')}`;};
 const initial:NativeVideoStatus={position:0,duration:0,width:0,height:0,paused:true,muted:false,volume:100};
-export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,onSize,onStatus,controlRef,muted,audioOnly=false,controls,resume}:{source:VideoSource;label:string;active?:boolean;autoPlay?:boolean;loop?:boolean;onSize?:(w:number,h:number)=>void;onStatus?:(status:NativeVideoStatus)=>void;controlRef?:RefObject<NativeVideoControl|null>;muted?:boolean;audioOnly?:boolean;controls?:ReactNode;resume?:number}) {
+export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,onSize,onStatus,controlRef,muted,audioOnly=false,controls,resume,onTogglePlayback}:{source:VideoSource;label:string;active?:boolean;autoPlay?:boolean;loop?:boolean;onSize?:(w:number,h:number)=>void;onStatus?:(status:NativeVideoStatus)=>void;controlRef?:RefObject<NativeVideoControl|null>;muted?:boolean;audioOnly?:boolean;controls?:ReactNode;resume?:number;onTogglePlayback?:()=>void}) {
  const {t}=useI18n();
  const surface=useRef<HTMLDivElement>(null),size=useRef(onSize);size.current=onSize;
  const report=useRef(onStatus);report.current=onStatus;
@@ -64,7 +64,7 @@ export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,
   return ()=>{disposed=true;owner.current='';clearInterval(timer);observer.disconnect();window.removeEventListener('resize',refresh);document.removeEventListener('visibilitychange',refresh);void close();};
  },[sourceKey,active,autoPlay,loop]);
  const control=(action:object)=>{const token=id;if(token&&active)void invoke('native_video_update',{id:token,action}).catch(e=>{if(owner.current===token)setError(String(e));});};
- useImperativeHandle(controlRef,()=>({seek:seconds=>control({kind:'seek',seconds}),pause:()=>control({kind:'pause',paused:true}),play:()=>control({kind:'pause',paused:false}),playCrop:(start,end)=>control({kind:'crop',start,end})}));
+ useImperativeHandle(controlRef,()=>({seek:seconds=>control({kind:'seek',seconds}),setRate:rate=>control({kind:'rate',rate}),pause:()=>control({kind:'pause',paused:true}),play:()=>control({kind:'pause',paused:false}),playCrop:(start,end)=>control({kind:'crop',start,end})}));
  useEffect(()=>{if(muted!==undefined)control({kind:'mute',muted});},[id,active,muted]);
  useEffect(()=>{report.current?.({...status,muted:muted===true||status.muted,...(error?{error}:{})});},[status,error,muted]);
  const enabled=!!id&&active&&!error;
@@ -75,7 +75,7 @@ export function NativeVideo({source,label,active=true,autoPlay=false,loop=false,
  useEffect(()=>{if(!maximized)return;const key=(e:KeyboardEvent)=>{if(e.key==='Escape')setMaximized(false);};document.addEventListener('keydown',key);return ()=>document.removeEventListener('keydown',key);},[maximized]);
  // Maximizing moves the same player into a full-window layer: the surface ref follows, the native player is not reopened.
  const player=<div className="native-video" data-native-video data-audio-only={audioOnly||undefined} data-maximized={maximized||undefined} role="group" aria-label={label}>
-  <div ref={surface} className="native-video-surface" style={{display:audioOnly?'none':undefined,aspectRatio:status.width&&status.height?`${status.width}/${status.height}`:'16/9'}} onClick={()=>{if(enabled)control({kind:'pause',paused:!status.paused});}}/>
+  <div ref={surface} className="native-video-surface" style={{display:audioOnly?'none':undefined,aspectRatio:status.width&&status.height?`${status.width}/${status.height}`:'16/9'}} onClick={()=>{if(enabled){if(onTogglePlayback)onTogglePlayback();else control({kind:'pause',paused:!status.paused});}}}/>
   {error&&<p role="alert" className="error-message">{t('studio.video.error')} {error}</p>}
   {controls??<div className="native-video-controls">
    <button type="button" disabled={!enabled} title={t(status.paused?'studio.video.play':'studio.video.pause')} aria-label={t(status.paused?'studio.video.play':'studio.video.pause')} onClick={()=>control({kind:'pause',paused:!status.paused})}><svg viewBox="0 0 24 24" aria-hidden="true">{status.paused?<path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none"/>:<path d="M8 5v14M16 5v14" strokeWidth="4"/>}</svg></button>

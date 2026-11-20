@@ -290,11 +290,21 @@ struct Live {
     max: u64,
     preview: Option<String>,
     temporal: Option<preview::Preview>,
+    // The UI opens an MP4 by revision after reading its snapshot. Keep the
+    // last advertised clip available across newer sampler updates.
+    advertised_preview_video: Option<(u64, Arc<tempfile::NamedTempFile>)>,
     preview_nodes: Vec<String>,
     preview_job: String,
     preview_revision: u64,
     // All Job clones share this owner; the observer task holds only a weak Live reference.
     observer: observer::Observer,
+}
+
+impl Live {
+    fn clear_temporal_preview(&mut self) {
+        self.temporal = None;
+        self.advertised_preview_video = None;
+    }
 }
 
 impl Job {
@@ -308,7 +318,7 @@ impl Job {
             live.stages.finish(self.state);
         }
         live.observer.cancel();
-        live.temporal = None;
+        live.clear_temporal_preview();
     }
     fn stop_observer_if_terminal(&self) {
         if self.terminal() {
@@ -329,12 +339,16 @@ impl Job {
             value["transition"] = json!(bridge);
         }
         if matches!(self.state, "queued" | "running") {
-            if let Ok(live) = self.live.lock() {
+            if let Ok(mut live) = self.live.lock() {
                 if live.max > 0 {
                     value["progress"] = json!({"value":live.value,"max":live.max});
                 }
                 if let Some(temporal) = &live.temporal {
                     value["temporalPreview"] = temporal.data.clone();
+                    live.advertised_preview_video = temporal
+                        .video
+                        .as_ref()
+                        .map(|file| (temporal.revision, Arc::clone(file)));
                 }
                 if let Some(preview) = &live.preview {
                     value["preview"] = json!(preview);
@@ -1707,6 +1721,12 @@ impl Jobs {
             .as_ref()
             .filter(|p| p.revision == revision)
             .and_then(|p| p.video.clone())
+            .or_else(|| {
+                live.advertised_preview_video
+                    .as_ref()
+                    .filter(|(advertised, _)| *advertised == revision)
+                    .map(|(_, file)| Arc::clone(file))
+            })
             .ok_or_else(|| "Preview revision is no longer held".into())
     }
 

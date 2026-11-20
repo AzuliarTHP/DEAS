@@ -68,8 +68,8 @@ test('optional status and transport refs expose native actions and clean up',asy
  const onStatus=vi.fn(),controlRef=createRef<NativeVideoControl>();
  const ui=render(<I18nProvider><NativeVideo source={{path:'/clip.webm'}} label="Clip" onStatus={onStatus} controlRef={controlRef}/></I18nProvider>);
  await waitFor(()=>expect(onStatus).toHaveBeenCalledWith(state));
- act(()=>{controlRef.current!.seek(2);controlRef.current!.pause();controlRef.current!.play();controlRef.current!.playCrop(1,3);});
- for(const action of [{kind:'seek',seconds:2},{kind:'pause',paused:true},{kind:'pause',paused:false},{kind:'crop',start:1,end:3}])expect(invoke).toHaveBeenCalledWith('native_video_update',expect.objectContaining({action}));
+ act(()=>{controlRef.current!.seek(2);controlRef.current!.setRate(3);controlRef.current!.pause();controlRef.current!.play();controlRef.current!.playCrop(1,3);});
+ for(const action of [{kind:'seek',seconds:2},{kind:'rate',rate:3},{kind:'pause',paused:true},{kind:'pause',paused:false},{kind:'crop',start:1,end:3}])expect(invoke).toHaveBeenCalledWith('native_video_update',expect.objectContaining({action}));
  ui.unmount();expect(controlRef.current).toBeNull();
 });
 test('control failures are reported through status without losing the visible error',async()=>{

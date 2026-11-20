@@ -338,7 +338,7 @@ pub(super) async fn watch(base: &reqwest::Url, client_id: &str, live: Arc<Mutex<
                                     event["type"].as_str().unwrap_or_default(),
                                     &event["data"],
                                 );
-                                live.temporal = None;
+                                live.clear_temporal_preview();
                             });
                             break;
                         }

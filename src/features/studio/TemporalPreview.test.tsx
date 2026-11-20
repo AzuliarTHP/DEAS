@@ -1,12 +1,19 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as renderTest, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { TemporalPreview } from './TemporalPreview';
 import { nativeVideo, type NativeVideo, type NativeVideoStatus } from './NativeVideo';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactElement } from 'react';
+import { I18nProvider } from '../../i18n/I18nProvider';
 import type { TemporalPreviewData } from '../../lib/jobs';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(),isTauri:vi.fn(()=>true)}));
-vi.mock('./NativeVideo',()=>({nativeVideo:vi.fn(()=>false),NativeVideo:vi.fn(({label,source,muted,loop,onStatus}:ComponentProps<typeof NativeVideo>)=>{emitStatus=onStatus;return <div aria-label={label} data-source={JSON.stringify(source)} data-muted={muted} data-loop={!!loop}/>;})}));
+vi.mock('./NativeVideo',()=>({nativeVideo:vi.fn(()=>false),NativeVideo:vi.fn(({label,source,muted,loop,autoPlay,onStatus,controlRef}:ComponentProps<typeof NativeVideo>)=>{emitStatus=onStatus;if(controlRef)controlRef.current=nativeControls;return <div aria-label={label} data-source={JSON.stringify(source)} data-muted={muted} data-loop={!!loop} data-autoplay={!!autoPlay}/>;})}));
+const nativeControls={seek:vi.fn(),setRate:vi.fn(),pause:vi.fn(),play:vi.fn(),playCrop:vi.fn()};
+const render=(element:ReactElement)=>renderTest(element,{wrapper:I18nProvider});
+const load=(player:HTMLVideoElement,duration=14)=>{
+ Object.defineProperty(player,'duration',{configurable:true,value:duration});
+ fireEvent.loadedMetadata(player);
+};
 let emitStatus:((status:NativeVideoStatus)=>void)|undefined;
 const nativeStatus={position:12,duration:14,paused:false,muted:true,volume:0,width:32,height:32};
 const frames:TemporalPreviewData={revision:1,nodeId:'node',width:32,height:32,fps:8,frames:[{src:'data:image/png;base64,red',durationMs:125},{src:'data:image/png;base64,blue',durationMs:125}]};
@@ -16,6 +23,8 @@ let draw:ReturnType<typeof vi.fn>, callbacks:FrameRequestCallback[];
 beforeEach(()=>{
  vi.clearAllMocks(); vi.mocked(nativeVideo).mockReturnValue(false); vi.mocked(isTauri).mockReturnValue(true);
  draw=vi.fn();callbacks=[];
+ vi.spyOn(HTMLMediaElement.prototype,'play').mockResolvedValue();
+ vi.spyOn(HTMLMediaElement.prototype,'pause').mockImplementation(()=>{});
  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue({drawImage:draw} as unknown as CanvasRenderingContext2D);
  vi.stubGlobal('requestAnimationFrame',vi.fn((cb:FrameRequestCallback)=>{callbacks.push(cb);return callbacks.length;}));
  vi.stubGlobal('cancelAnimationFrame',vi.fn());
@@ -38,6 +47,7 @@ describe('TemporalPreview',()=>{
   expect(container.querySelector('video')).toBeNull();
   expect(screen.getByLabelText('preview').getAttribute('data-muted')).toBe('true');
   expect(screen.getByLabelText('preview').getAttribute('data-loop')).toBe('false');
+  expect(screen.getByLabelText('preview').getAttribute('data-autoplay')).toBe('true');
   expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(video.video));
   expect(invoke).not.toHaveBeenCalled();
  });
@@ -120,10 +130,12 @@ describe('TemporalPreview',()=>{
  it('reuses the open Windows clip during a preview gap and cancels replay when playback becomes inactive',async()=>{
   vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
   vi.mocked(invoke).mockResolvedValue('data:video/mp4;base64,fixture');
-  const play=vi.spyOn(HTMLMediaElement.prototype,'play').mockResolvedValue();
+  const play=vi.mocked(HTMLMediaElement.prototype.play);
   const {container,rerender}=render(<TemporalPreview preview={video} active label="preview"/>);
   await act(async()=>{});
   const element=container.querySelector('video')!;
+  load(element);
+  play.mockClear();
   element.currentTime=10;
   fireEvent.ended(element);
   act(()=>vi.advanceTimersByTime(1000));
@@ -135,6 +147,113 @@ describe('TemporalPreview',()=>{
   rerender(<TemporalPreview preview={video} active={false} label="preview"/>);
   act(()=>vi.advanceTimersByTime(1000));
   expect(play).toHaveBeenCalledTimes(1);
+ });
+
+ it('allows manual playback when autoplay is blocked',async()=>{
+  vi.mocked(invoke).mockResolvedValue('data:video/mp4;base64,fixture');
+  const play=vi.mocked(HTMLMediaElement.prototype.play);
+  play.mockRejectedValueOnce(new DOMException('Blocked','NotAllowedError'));
+  const {container}=render(<TemporalPreview preview={video} active label="preview"/>);
+  const player=await waitFor(()=>{const found=container.querySelector('video');expect(found).not.toBeNull();return found!;});
+  load(player);
+  fireEvent.click(await screen.findByRole('button',{name:'Play'}));
+  expect(play).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button',{name:'Pause'})).toBeTruthy();
+  expect(container.querySelector('video')).toBe(player);
+ });
+ it('keeps a paused clip visible while steps arrive and scrubs the newest clip at the chosen time',async()=>{
+  vi.mocked(invoke).mockResolvedValueOnce('data:video/mp4;base64,first').mockResolvedValueOnce('data:video/mp4;base64,latest');
+  const play=vi.mocked(HTMLMediaElement.prototype.play),pause=vi.mocked(HTMLMediaElement.prototype.pause);
+  const make=(preview:TemporalPreviewData)=><TemporalPreview preview={preview} active label="preview"/>;
+  const {container,rerender}=render(make(video));
+  const first=await waitFor(()=>{const found=container.querySelector('video');expect(found).not.toBeNull();return found!;});
+  load(first);
+  fireEvent.click(screen.getByRole('button',{name:'Pause'}));
+  expect(pause).toHaveBeenCalled();
+  rerender(make(videoRevision(2)));
+  rerender(make(videoRevision(3)));
+  expect(container.querySelector('video')).toBe(first);
+  const slider=screen.getByRole('slider',{name:'Seek video'});
+  slider.focus();
+  fireEvent.change(slider,{target:{value:'5'}});
+  const latest=await waitFor(()=>{const found=container.querySelector('video');expect(found?.getAttribute('src')).toContain('latest');return found!;});
+  load(latest,8);
+  expect(latest.currentTime).toBe(5);
+  expect(document.activeElement).toBe(slider);
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(invoke).toHaveBeenLastCalledWith('native_video_open',expect.objectContaining({source:videoRevision(3).video}));
+  fireEvent.click(screen.getByRole('button',{name:'Play'}));
+  expect(play).toHaveBeenCalledTimes(2);
+ });
+ it('routes native pause and seek to the displayed clip and preserves pause on revision change',()=>{
+  vi.mocked(nativeVideo).mockReturnValue(true);
+  const make=(preview:TemporalPreviewData)=><TemporalPreview preview={preview} active label="preview"/>;
+  const {rerender}=render(make(video));
+  act(()=>emitStatus!(nativeStatus));
+  fireEvent.click(screen.getByRole('button',{name:'Pause'}));
+  expect(nativeControls.pause).toHaveBeenCalled();
+  rerender(make(videoRevision(2)));
+  expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(video.video));
+  fireEvent.change(screen.getByRole('slider',{name:'Seek video'}),{target:{value:'4'}});
+  expect(screen.getByLabelText('preview').getAttribute('data-source')).toBe(JSON.stringify(videoRevision(2).video));
+  act(()=>emitStatus!({...nativeStatus,position:0,paused:true}));
+  expect(nativeControls.seek).toHaveBeenLastCalledWith(4);
+  expect(screen.getByRole('button',{name:'Play'})).toBeTruthy();
+ });
+ it('seeks decoded frame previews without resuming them',async()=>{
+  render(<TemporalPreview preview={frames} active label="preview"/>);
+  await waitFor(()=>expect(callbacks).toHaveLength(1));
+  act(()=>callbacks.shift()!(0));
+  const pausedFrame=callbacks.shift();
+  fireEvent.click(screen.getByRole('button',{name:'Pause'}));
+  expect(cancelAnimationFrame).toHaveBeenCalled();
+  expect(pausedFrame).toBeDefined();
+  fireEvent.change(screen.getByRole('slider',{name:'Seek video'}),{target:{value:'0.2'}});
+  act(()=>callbacks.shift()!(200));
+  expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![1].src);
+  expect(callbacks).toHaveLength(0);
+  expect(screen.getByRole('button',{name:'Play'})).toBeTruthy();
+ });
+ it('shows a 45-second encoded MP4 on the 15-second job timeline',async()=>{
+  vi.mocked(invoke).mockResolvedValue('data:video/mp4;base64,fixture');
+  const {container}=render(<TemporalPreview preview={video} maxDuration={15} active label="preview"/>);
+  const player=await waitFor(()=>{const found=container.querySelector('video');expect(found).not.toBeNull();return found!;});
+  load(player,45);
+  expect(player.playbackRate).toBe(3);
+  const slider=screen.getByRole('slider',{name:'Seek video'});
+  expect(slider.getAttribute('max')).toBe('15');
+  fireEvent.change(slider,{target:{value:'5'}});
+  expect(player.currentTime).toBe(15);
+  fireEvent.timeUpdate(player);
+  expect(slider.getAttribute('aria-valuetext')).toBe('0:05 / 0:15');
+ });
+ it('leaves shorter MP4 previews at their encoded duration and playback speed',async()=>{
+  vi.mocked(invoke).mockResolvedValue('data:video/mp4;base64,fixture');
+  const {container}=render(<TemporalPreview preview={video} maxDuration={15} active label="preview"/>);
+  const player=await waitFor(()=>{const found=container.querySelector('video');expect(found).not.toBeNull();return found!;});
+  load(player,9);
+  expect(player.playbackRate).toBe(1);
+  expect(screen.getByRole('slider',{name:'Seek video'}).getAttribute('max')).toBe('9');
+ });
+ it('maps a stretched native preview timeline and scrubs in encoded seconds',()=>{
+  vi.mocked(nativeVideo).mockReturnValue(true);
+  render(<TemporalPreview preview={video} maxDuration={15} active label="preview"/>);
+  act(()=>emitStatus!({...nativeStatus,duration:45,position:15}));
+  expect(nativeControls.setRate).toHaveBeenCalledWith(3);
+  const slider=screen.getByRole('slider',{name:'Seek video'});
+  expect(slider.getAttribute('aria-valuetext')).toBe('0:05 / 0:15');
+  fireEvent.change(slider,{target:{value:'10'}});
+  expect(nativeControls.seek).toHaveBeenLastCalledWith(30);
+ });
+ it('plays decoded frame previews on the corrected timeline',async()=>{
+  render(<TemporalPreview preview={frames} maxDuration={.125} active label="preview"/>);
+  await waitFor(()=>expect(callbacks).toHaveLength(1));
+  act(()=>callbacks.shift()!(0));
+  expect(screen.getByRole('slider',{name:'Seek video'}).getAttribute('max')).toBe('0.125');
+  act(()=>callbacks.shift()!(65));
+  expect(draw.mock.calls.at(-1)?.[0].src).toBe(frames.frames![1].src);
+  act(()=>callbacks.shift()!(125));
+  expect(callbacks).toHaveLength(0);
  });
  it('ignores an outstanding open after playback is deactivated',async()=>{
   let settle!:(value:string)=>void;

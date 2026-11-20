@@ -94,6 +94,22 @@ async fn watch_temporal_preview_is_directed_node_bound_latest_owned_and_stop_cle
             2,
             "malformed replacement preserves the latest playable asset"
         );
+        // Revision 2 was reported to Studio. The next sampler update can arrive
+        // before the player opens that exact revision.
+        let clip = include_bytes!("../test-data/preview/preview.mp4");
+        peer.send(event("deas-preview-unique-plan-node", clip, "video/mp4"))
+            .await;
+        peer.ping().await;
+        let advertised = jobs.preview_video(id, 2).unwrap();
+        assert_eq!(advertised.path(), path);
+        assert_eq!(std::fs::read(advertised.path()).unwrap(), clip);
+        drop(advertised);
+        assert_eq!(job.snapshot()["temporalPreview"]["revision"], 3);
+        assert!(jobs.preview_video(id, 2).is_err());
+        peer.send(event("deas-preview-unique-plan-node", clip, "video/mp4"))
+            .await;
+        peer.ping().await;
+        assert!(jobs.preview_video(id, 3).is_ok());
         if terminal {
             peer.send(Message::Text(
                 json!({"type":"execution_success","data":{"prompt_id":"own-prompt"}})
@@ -105,8 +121,13 @@ async fn watch_temporal_preview_is_directed_node_bound_latest_owned_and_stop_cle
             job.stop_observer();
         }
         peer.closed().await;
-        assert!(job.live.lock().unwrap().temporal.is_none());
-        assert!(jobs.preview_video(id, 2).is_err());
+        {
+            let live = job.live.lock().unwrap();
+            assert!(live.temporal.is_none());
+            assert!(live.advertised_preview_video.is_none());
+        }
+        assert!(jobs.preview_video(id, 3).is_err());
+        assert!(jobs.preview_video(id, 4).is_err());
         assert!(
             path.exists(),
             "active player retains its lease through close"

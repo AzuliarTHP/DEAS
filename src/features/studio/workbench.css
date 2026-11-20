@@ -100,6 +100,15 @@
 .wb-stage .media-preview { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, auto); flex: 1; min-height: 0; min-width: 0; margin: 0; }
 .wb-stage .media-preview img, .wb-stage .media-preview video { width: 100%; height: 100%; min-height: 0; max-height: none; object-fit: contain; }
 .wb-stage .media-preview { position: relative; }
+.wb-temporal-preview { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; min-width: 0; }
+.wb-temporal-picture { min-height: 0; display: grid; place-items: center; overflow: hidden; }
+.wb-temporal-picture > :is(video, canvas) { cursor: pointer; }
+.wb-temporal-picture > canvas { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.wb-temporal-picture > .native-video { height: 100%; }
+.wb-temporal-preview .wb-temporal-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0 .35rem; padding: .15rem .45rem 0; background: var(--field); }
+.wb-temporal-controls button { height: 28px; min-height: 28px; width: 28px; min-width: 28px; border: 0; background: transparent; color: var(--text); }
+.wb-temporal-controls input[type="range"].native-video-seek { grid-column: 1 / -1; width: 100%; min-width: 0; height: 18px; }
+.wb-temporal-controls :is(button, input):focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 /* One bounded content row, including jobs with more than one product. The
    existing per-output Star controls remain associated with their filenames. */
 .wb-stage .wb-media-content { display: grid; grid-auto-rows: minmax(5rem, 1fr); min-height: 0; min-width: 0; overflow: auto; }

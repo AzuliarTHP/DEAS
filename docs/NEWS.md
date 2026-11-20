@@ -1,5 +1,13 @@
 # News
 
+## 0.3.14
+
+### Play, pause and scrub the running video preview
+
+The Enhanced Preview of a running video job has play/pause, the elapsed and total time, and a scrub bar. Scrubbing jumps
+to that moment in the newest preview clip and keeps it paused or playing as it was. Previews that a sampler encodes too
+long now play at the job's real length, so the clock and the scrub bar match the video you will get.
+
 ## 0.3.13
 
 ### Backend-only LoRAs only when you ask for them
