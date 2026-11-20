@@ -1,0 +1,7 @@
+# One repo-local Cargo cache by default.
+# A forgotten CARGO_TARGET_DIR otherwise silently recreates a multi-GB src-tauri/target
+# next to the checkout. Release/build scripts pin their own absolute CARGO_TARGET_DIR,
+# which always wins over this default. Relative paths resolve against this file's
+# directory, so cargo stays in .target no matter where inside the checkout it runs.
+[build]
+target-dir = ".target"

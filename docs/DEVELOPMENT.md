@@ -53,6 +53,17 @@ python tools/verify_lora_strength_input.py
 
 See [Windows/Linux path compatibility](PATH-COMPATIBILITY.md) for native paths versus exact ComfyUI identifiers, `CARGO_TARGET_DIR`, portable script arguments and Linux-only diagnostic exceptions.
 
+## Build cache hygiene
+
+The repository pins one default Cargo cache: `.cargo/config.toml` sets `build.target-dir = ".target"`
+(relative to that file, so any cargo invocation anywhere inside the checkout lands in the same cache and
+can no longer silently create a second multi-GB `src-tauri/target`). Release and packaging scripts keep
+working because they export an absolute `CARGO_TARGET_DIR`, which always overrides the config default.
+Debug/test profiles build with `debug = "line-tables-only"`: panic backtraces stay symbolized, but the
+per-variable debuginfo that roughly doubles artifact size is gone. Even with that, a long-lived cache
+accretes stale incremental units; run `tools/target_gc.sh [days]` (default 30) to delete cache files not
+written for `days` — cargo regenerates on demand whatever a later build still needs.
+
 ## Architecture
 
 - **React/TypeScript:** neural studio, local authoring state and feature manifests.

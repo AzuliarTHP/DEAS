@@ -54,6 +54,11 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Securit
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
+# Debug/test artifacts dominate the build cache; line tables keep panic backtraces
+# readable while dropping the per-variable debuginfo that doubles artifact sizes.
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 strip = true
 lto = true
