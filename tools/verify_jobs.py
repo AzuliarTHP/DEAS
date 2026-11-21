@@ -61,7 +61,7 @@ with sync_playwright() as p:
         page.locator('[data-recipe-compile]').click()
         jobs.locator('[data-job-prepare]').click()
         consent.wait_for()
-        for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
             set_locale(page, locale, '[data-node="studio"]')
             assert not consent.is_checked(), 'Locale changes cannot authorize a job'
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width, locale)
@@ -108,7 +108,7 @@ with sync_playwright() as p:
         assert '/fixture/exported-image.png' in jobs.text_content()
         assert page.evaluate("__calls.filter(x=>x.command==='native_job_output').length") == 1
         assert page.evaluate("__calls.filter(x=>x.command==='native_job_export').every(x=>x.args.jobId==='fixture-job'&&x.args.index===0&&typeof x.args.title==='string'&&!('path' in x.args)&&!('bytes' in x.args))")
-        for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
             set_locale(page, locale, '[data-node="studio"]')
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width, locale, 'completed')
         set_locale(page, 'en', '[data-node="studio"]')

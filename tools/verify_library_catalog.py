@@ -97,7 +97,7 @@ def verify(browser,url,shots):
         expect(page.get_by_role('button',name='Styles/local.safetensors',exact=True)).to_be_visible();centered(page)
         expect(page.locator('[data-installed-gallery] [role="alert"]')).to_have_count(0)
         page.screenshot(path=str(shots/'installed-placeholder.png'))
-        for locale in ['en','de','fr','ja','tr','zh']:
+        for locale in ['en','de','fr','ja','ru','tr','zh']:
             page.set_viewport_size({'width':1600,'height':1000})
             layout.collection.set_locale(page,locale,'[data-node="optional-downloads"]')
             page.locator('[data-library-tab="catalog"]').click()

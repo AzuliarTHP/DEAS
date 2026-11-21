@@ -1,0 +1,15 @@
+{
+  "settings.prompt.spellcheck": "Проверка орфографии промптов",
+  "settings.prompt.language": "Язык проверки орфографии",
+  "settings.prompt.autocomplete": "Автодополнение тегов",
+  "settings.prompt.spellcheckHelp": "Не зависит от языка интерфейса. DEAS сам проверяет поля промптов загруженным словарём Hunspell; ничего не покидает этот компьютер.",
+  "settings.prompt.autocompleteHelp": "Выключено по умолчанию. Использует локальную базу тегов Prompt Forge; требуется настроенное окружение и его данные тегов. Введите минимум два символа, выбирайте стрелками и Enter/Tab; Escape закрывает список.",
+  "settings.prompt.dictionaryMissing": "Для выбранного языка словарь не установлен.",
+  "settings.prompt.failed": "Не удалось настроить проверку орфографии. Подробности — в Логах.",
+  "settings.spellcheck.install": "Установить словарь",
+  "settings.spellcheck.installBusy": "Загрузка словаря…",
+  "settings.spellcheck.installed": "Словарь установлен. Поля промптов теперь проверяются.",
+  "settings.spellcheck.installHelp": "Загружает пару Hunspell для {language} ({size} МБ, {license}) в папку данных DEAS — без прав администратора, работает на Linux и Windows.",
+  "settings.spellcheck.unavailable": "Для этого языка словарь Hunspell не опубликован.",
+  "settings.spellcheck.failed": "Не удалось загрузить словарь. Подробности — в Логах."
+}

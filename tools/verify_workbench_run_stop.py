@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 from playwright.sync_api import expect, sync_playwright
 
-LOCALES = ('de', 'en', 'fr', 'ja', 'tr', 'zh')
+LOCALES = ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh')
 BROWSER_CASES = 18  # recovery, fixed, random, settled, partial, unreachable + 12 layouts
 FIXTURE = r"""
 // Skip the mandatory first-run experience dialog (Node selfcheck has no localStorage).

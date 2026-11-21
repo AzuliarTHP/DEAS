@@ -453,6 +453,7 @@ mod tests {
             "de",
             "fr",
             "ja",
+            "ru",
             "tr",
             "zh",
             "en-US",

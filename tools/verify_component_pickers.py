@@ -139,7 +139,7 @@ def main():
     header_mapping = 'qwen3-0.6b' in anima.get('components', {}).get('textEncoders', [])
     assert header_mapping, 'Anima Qwen header mapping is required for this verification'
     results = []
-    cases = [(w, l, False) for w in (1440, 768, 320) for l in ('de', 'en', 'fr', 'ja', 'tr', 'zh')]
+    cases = [(w, l, False) for w in (1440, 768, 320) for l in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh')]
     for width, locale, header_only in cases + [(1440, 'de', True)]:
             models = [m for m in MODELS if not header_only or m['name'] != 'qwen_3_600m.safetensors']
             manager = WebKit2.UserContentManager()

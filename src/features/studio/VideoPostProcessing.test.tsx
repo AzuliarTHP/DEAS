@@ -180,7 +180,7 @@ test.each([
 
 const dictionaries = import.meta.glob<Record<string, string>>('./locales/*.json', { eager: true, import: 'default' });
 const blockerCodes = ['cadenceUnknown', 'cadenceMismatch', 'interlaced', 'rotation', 'alpha', 'hdr', 'colorUnknown', 'unsupportedPixelFormat', 'multipleVideoStreams', 'unsupportedDimensions', 'fieldOrderUnknown', 'nonSquarePixels', 'pixelAspectUnknown'];
-test.each(['en', 'de', 'fr', 'ja', 'tr', 'zh'])('%s uses its own labels, chooser title and every localized blocker', async locale => {
+test.each(['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'])('%s uses its own labels, chooser title and every localized blocker', async locale => {
   const dictionary = dictionaries[`./locales/${locale}.json`];
   const expectedKeys = Object.keys(dictionaries['./locales/en.json']).filter(key => key.startsWith('studio.videoPost.'));
   expect(Object.keys(dictionary).filter(key => key.startsWith('studio.videoPost.')).sort()).toEqual(expectedKeys.sort());

@@ -31,6 +31,13 @@ test('writing aids default to detected system language independently of UI; expl
  fireEvent.change(screen.getByLabelText('Sprache der Rechtschreibprüfung'),{target:{value:''}});
  expect(state().language).toBe(initialLanguage);
 });
+test('the bundled Russian UI language is selectable as a spellcheck target even without a pinned dictionary',()=>{
+ render(<I18nProvider><LanguageSetting/><Probe/></I18nProvider>);
+ const selector=screen.getByLabelText('Spellcheck language') as HTMLSelectElement;
+ expect([...selector.options].some(o=>o.value==='ru')).toBe(true);
+ fireEvent.change(selector,{target:{value:'ru'}});
+ expect(state().language).toBe('ru');
+});
 test.each(['es-ES','en-GB','zh-Hant-TW'])('system spelling locale keeps %s independently of bundled UI languages',language=>{
  vi.spyOn(navigator,'languages','get').mockReturnValue([language]);
  render(<I18nProvider><LanguageSetting/><Probe/></I18nProvider>);

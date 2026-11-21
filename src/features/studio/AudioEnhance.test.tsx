@@ -215,7 +215,7 @@ test('failed install remains unavailable and can be retried with fresh consent',
   expect(vi.mocked(invoke).mock.calls.filter(([c]) => c === 'native_audio_enhance_install')).toHaveLength(2);
 });
 
-test.each(['en', 'de', 'fr', 'ja', 'tr', 'zh'])('Stems uses explicit Smule MIT code + checkpoint consent in %s, without a legacy weights gate', async locale => {
+test.each(['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'])('Stems uses explicit Smule MIT code + checkpoint consent in %s, without a legacy weights gate', async locale => {
   localStorage.setItem(LOCALE_STORAGE_KEY, locale);
   await mount({ sourceId: 'retained' });
   const button = document.querySelector('[data-audio-enhance-install="stems"]') as HTMLButtonElement;

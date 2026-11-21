@@ -379,7 +379,7 @@ with sync_playwright() as p:
         page.add_init_script(INIT)
         page.on('pageerror', lambda error: errors.append(str(error)))
         open_editor(page)
-        for locale in ('de','en','fr','ja','tr','zh'):
+        for locale in ('de','en','fr','ja','ru','tr','zh'):
             page.get_by_role('combobox', name='Fixture language', exact=True).select_option(locale)
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width,locale)
         page.get_by_role('combobox', name='Fixture language', exact=True).select_option('en')

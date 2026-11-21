@@ -246,6 +246,6 @@ test('the strip offers Presets only with a handler; in the rack dialog a loaded 
   expect(value).toEqual([{ dial: cold, strength: 1.5, on: true }]);
 });
 
-test('every native failure code has a sentence in all six locales', () => {
-  for (const locale of ['en', 'de', 'fr', 'ja', 'tr', 'zh']) for (const code of [...dialPresetErrorCodes, 'other']) expect(bundledCatalog.dictionaries[locale][`studio.dials.presets.error.${code}`], `${locale} ${code}`).toBeTruthy();
+test('every native failure code has a sentence in all seven locales', () => {
+  for (const locale of ['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh']) for (const code of [...dialPresetErrorCodes, 'other']) expect(bundledCatalog.dictionaries[locale][`studio.dials.presets.error.${code}`], `${locale} ${code}`).toBeTruthy();
 });

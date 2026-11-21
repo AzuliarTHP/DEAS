@@ -42,7 +42,7 @@ def main():
     results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for locale in ['en', 'de', 'fr', 'ja', 'tr', 'zh']:
+        for locale in ['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh']:
             for width in [1440, 960, 320]:
                 context = browser.new_context(viewport={'width': width, 'height': 1000})
                 page = context.new_page()

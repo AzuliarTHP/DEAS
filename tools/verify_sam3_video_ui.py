@@ -101,7 +101,7 @@ with sync_playwright() as p:
     assert 'sceneThreshold' not in page.evaluate('__facePlans[0]')
     for width in (1440,768,390):
         page.set_viewport_size({'width':width,'height':960})
-        for locale in ('en','de','fr','ja','tr','zh'):
+        for locale in ('en','de','fr','ja','ru','tr','zh'):
             page.get_by_role('combobox', name='Fixture language', exact=True).select_option(locale)
             group.locator('[data-sam-video="analyze"]').scroll_into_view_if_needed()
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width,locale)

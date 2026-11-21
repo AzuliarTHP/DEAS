@@ -52,7 +52,7 @@ def main():
     results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for locale in ['en', 'de', 'fr', 'tr', 'ja', 'zh']:
+        for locale in ['en', 'de', 'fr', 'tr', 'ja', 'ru', 'zh']:
             for width, pipeline, source_kind in [(w,p,k) for w in [1440,1100,320] for p,k in [('t2v','checkpoint'),('t2v','video'),('t2v','local-video'),('i2v','checkpoint'),('v2v','checkpoint'),('ref2v','checkpoint')]]:
                 context = browser.new_context(viewport={'width': width, 'height': 1000})
                 page = context.new_page()

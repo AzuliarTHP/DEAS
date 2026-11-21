@@ -22,7 +22,7 @@ WAV=buffer.getvalue()
 reports = []
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-    for locale in (['en'] if len(sys.argv)>3 else ['en', 'de', 'fr', 'ja', 'tr', 'zh']):
+    for locale in (['en'] if len(sys.argv)>3 else ['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh']):
         for width, height in ([(1920,1080)] if len(sys.argv)>3 else [(1920,1080),(1440,900),(1280,720),(1024,768)]):
             print(f'REFERENCE_CASE {locale} {width}',flush=True)
             context = browser.new_context(viewport={'width':width,'height':height},user_agent='DEAS Windows Chromium fixture')

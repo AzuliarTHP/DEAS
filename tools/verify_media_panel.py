@@ -30,7 +30,7 @@ with sync_playwright() as p:
         page = browser.new_page(viewport={'width': width, 'height': 960}, reduced_motion='reduce')
         page.add_init_script(fixture)
         page.goto(URL, wait_until='networkidle')
-        for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
             page.locator('[data-node="settings"]').click()
             page.locator('#language-select').select_option(locale)
             page.locator('[data-node="studio"]').click()

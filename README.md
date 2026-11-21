@@ -17,7 +17,7 @@ A Rust/Tauri desktop workstation for ComfyUI and DaSiWa tools: generation, model
 | **Media & Monitoring** | Every result kept with its full generation metadata for one-click reuse; live CPU/RAM/GPU telemetry |
 | **Comfy** | The original workflow editor, one tab away when you need it |
 
-Six languages, themed throughout. See [current status and limitations](docs/PLAN.md).
+Seven languages, themed throughout. See [current status and limitations](docs/PLAN.md).
 
 [Documentation](docs/README.md) · [Getting started](docs/GETTING-STARTED.md) · [News](docs/NEWS.md) · [Changelog](docs/CHANGELOG.md) · [Credits](docs/CREDITS.md)
 

@@ -37,7 +37,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 reports = []
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-    for locale in ['en', 'de', 'fr', 'tr', 'ja', 'zh']:
+    for locale in ['en', 'de', 'fr', 'tr', 'ja', 'ru', 'zh']:
         for width in [1440, 700, 320]:
             context = browser.new_context(viewport={'width': width, 'height': 1000})
             page = context.new_page()

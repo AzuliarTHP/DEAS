@@ -50,7 +50,7 @@ if args.workflow:
 results = []
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-    cases = [(1440, 'en')] if args.comfy_url else product((1440, 1024, 768, 390, 320), ('de', 'en', 'fr', 'ja', 'tr', 'zh'))
+    cases = [(1440, 'en')] if args.comfy_url else product((1440, 1024, 768, 390, 320), ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'))
     for width, locale in cases:
         page = browser.new_page(viewport={'width': width, 'height': 960}, reduced_motion='reduce')
         page.context.grant_permissions(['local-network-access'], origin=args.url)

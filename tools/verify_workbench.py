@@ -77,7 +77,7 @@ with sync_playwright() as p:
         if width >= 768:
             nav_box, files_box = [wb.locator(s).bounding_box() for s in ('.media-folders', '.media-files')]
             assert nav_box['x'] + nav_box['width'] <= files_box['x']
-        for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
             set_locale(page, locale, '[data-node="studio"]')
             page.locator('[data-studio-tab="generate"]').click()
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width, locale)

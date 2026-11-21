@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 from deas_locale import set_locale, dismiss_experience
 root=Path(__file__).resolve().parents[1]
 url=sys.argv[1] if len(sys.argv)>1 else 'http://127.0.0.1:1420'
-names={'de':'Deutsch','en':'English','fr':'Français','ja':'日本語','tr':'Türkçe','zh':'中文'}
+names={'de':'Deutsch','en':'English','fr':'Français','ja':'日本語','ru':'Русский','tr':'Türkçe','zh':'中文'}
 strings={}
 for locale in names:
  strings[locale]={}
@@ -25,7 +25,7 @@ with sync_playwright() as p:
   dismiss_experience(page)  # first-run experience choice; the locale stays unpersisted by this choice
   page.locator('[data-node="settings"]').click()
   select=page.locator('#language-select')
-  assert select.locator('option').count()==7 and select.input_value()==''
+  assert select.locator('option').count()==8 and select.input_value()==''
   for locale,name in names.items():assert select.locator(f'option[value="{locale}"]').inner_text()==f'{name} ({locale})'
   set_locale(page,'en','[data-node="settings"]')
   page.get_by_label('Director',exact=True).check()

@@ -29,7 +29,7 @@ with sync_playwright() as p:
         page.add_init_script(fixture)
         page.goto(URL, wait_until='networkidle')
         page.locator('[data-node="studio"]').click()
-        for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
             page.locator('[data-node="settings"]').click()
             page.locator('#language-select').select_option(locale)
             page.locator('[data-node="studio"]').click()
@@ -146,7 +146,7 @@ with sync_playwright() as p:
     page.get_by_label('Token', exact=True).fill('draft-only-not-a-credential')
     for width in (1440, 1024, 768, 390, 320):
         page.set_viewport_size({'width': width, 'height': 960})
-        for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
             page.locator('#language-select').select_option(locale)
             styles = []
             for name in ('startup', 'llm', 'auth'):

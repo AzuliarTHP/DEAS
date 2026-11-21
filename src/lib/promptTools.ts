@@ -17,7 +17,7 @@ const defaults: PromptTools = { spellcheck: true, autocomplete: false, language:
 const valid = (v: unknown): v is PromptTools => {
  if (!v || typeof v !== 'object') return false;
  const s = v as PromptTools;
- return typeof s.spellcheck === 'boolean' && typeof s.autocomplete === 'boolean' && typeof s.language === 'string' && ['', 'de', 'en', 'fr', 'ja', 'tr', 'zh'].includes(s.language);
+ return typeof s.spellcheck === 'boolean' && typeof s.autocomplete === 'boolean' && typeof s.language === 'string' && ['', 'de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'].includes(s.language);
 };
 /** Global writing aids stay independent of project drafts and the interface language. */
 export function usePromptTools() {

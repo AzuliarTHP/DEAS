@@ -2,7 +2,7 @@
 
 ## Bundled language set
 
-The selector displays each native name with its ISO 639-1 code: **Deutsch (de), English (en), Français (fr), 日本語 (ja), Türkçe (tr), 中文 (zh)**. Chinese uses Simplified Chinese UI translations under the generic language code `zh`; Japanese uses its native script. Selector suffixes are derived from stable locale IDs rather than translated text. No transliteration is used for the native names.
+The selector displays each native name with its ISO 639-1 code: **Deutsch (de), English (en), Français (fr), 日本語 (ja), Русский (ru), Türkçe (tr), 中文 (zh)**. Chinese uses Simplified Chinese UI translations under the generic language code `zh`; Japanese uses its native script. Selector suffixes are derived from stable locale IDs rather than translated text. No transliteration is used for the native names.
 
 ## Layout
 
@@ -16,11 +16,11 @@ A manifest accepts only these fields. Executable entrypoints, scripts and unknow
 
 Each owning UI module keeps its texts beside its code:
 
-- `src/locales/{de,en,fr,ja,tr,zh}.json`: application chrome.
+- `src/locales/{de,en,fr,ja,ru,tr,zh}.json`: application chrome.
 - `src/components/*/locales/`: shared components (for example `setup`, `neural`, `models`).
 - `src/features/*/locales/`: one folder per feature (for example `studio`, `downloads`, `forge`, `chat`, `llm`, `logs`, `media`, `presets`, `projects`, `settings`, `wildcards`).
 
-Every `locales/` folder carries all six languages.
+Every `locales/` folder carries all seven languages.
 
 Files are flat string-only dictionaries, with namespaced keys such as `setup.prepare`. Keep backend enum values, feature IDs, references, paths, saved choices and graph IDs language-independent.
 
@@ -48,6 +48,6 @@ All static user-facing UI text, accessibility labels, menu choices and metadata 
 
 ## Regression checks
 
-`tests/i18n.test.ts` validates all six bundled manifests/native names, dictionary shape, duplicates, fallback, nonempty text, interpolation-placeholder parity and global key parity. It also audits production TypeScript/JSX for missing literal resource keys, unreferenced text and literal accessibility labels/placeholders. Symbol-only visual marks are exempt. Dynamic keys require explicit model/UI tests, not an assumption that the static audit covers them.
+`tests/i18n.test.ts` validates all seven bundled manifests/native names, dictionary shape, duplicates, fallback, nonempty text, interpolation-placeholder parity and global key parity. It also audits production TypeScript/JSX for missing literal resource keys, unreferenced text and literal accessibility labels/placeholders. Symbol-only visual marks are exempt. Dynamic keys require explicit model/UI tests, not an assumption that the static audit covers them.
 
-`tools/verify_ui.py` checks DE/EN switching, preserved choices and draft persistence at five viewport widths, without making backend requests or installing anything. `tools/verify_languages.py` exercises all six languages at those widths, asserting native selector names/ISO suffixes, selected-choice preservation, locale persistence, translated optional-download controls, browser fail-closed behavior and no horizontal overflow. It does not contact provider/backend services. Translation correctness still benefits from native-speaker review.
+`tools/verify_ui.py` checks DE/EN switching, preserved choices and draft persistence at five viewport widths, without making backend requests or installing anything. `tools/verify_languages.py` exercises all seven languages at those widths, asserting native selector names/ISO suffixes, selected-choice preservation, locale persistence, translated optional-download controls, browser fail-closed behavior and no horizontal overflow. It does not contact provider/backend services. Translation correctness still benefits from native-speaker review.

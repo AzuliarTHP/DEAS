@@ -1054,7 +1054,7 @@ test.each(['qwen-image-2.1','qwen-image-2.1-turbo','krea-2','moss-image'])('refe
 
 test.each([
  ['en','Reference 1'],['de','Referenz 1'],['fr','Référence 1'],
- ['ja','参照 1'],['tr','Referans 1'],['zh','参考图 1'],
+ ['ja','参照 1'],['ru','Референс 1'],['tr','Referans 1'],['zh','参考图 1'],
 ])('reference controls are localized and duplicate attachments remain independent (%s)',async(locale,position)=>{
  localStorage.setItem('deas.locale.v1',locale);localStorage.setItem('deas.pref.studio.run.checkpoint','"qwen.safetensors"');
  vi.mocked(scanModels).mockResolvedValue(referenceModels());
@@ -1428,7 +1428,7 @@ test('stars every queued result and repairs output locations without changing it
  expect(runWorkbenchJob).toHaveBeenCalledTimes(1);
 });
 
-test.each([['de','Abgebrochen'],['en','Cancelled'],['fr','Annulé'],['ja','キャンセル済み'],['tr','İptal edildi'],['zh','已取消']])('cancelled job is a terminal localized result without output actions (%s)',async(locale,label)=>{
+test.each([['de','Abgebrochen'],['en','Cancelled'],['fr','Annulé'],['ja','キャンセル済み'],['ru','Отменено'],['tr','İptal edildi'],['zh','已取消']])('cancelled job is a terminal localized result without output actions (%s)',async(locale,label)=>{
  localStorage.setItem('deas.locale.v1',locale);
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',family:'sdxl',path:'/m/a',size:1,info:null}]);
  vi.mocked(checkRecipePrerequisites).mockResolvedValue(evidence);
@@ -1445,7 +1445,7 @@ test.each([['de','Abgebrochen'],['en','Cancelled'],['fr','Annulé'],['ja','キ�
 });
 
 test.each([
- ...['de','en','fr','ja','tr','zh'].map(locale=>({locale,generationMs:13310,state:'succeeded' as const,filename:'result.png'})),
+ ...['de','en','fr','ja','ru','tr','zh'].map(locale=>({locale,generationMs:13310,state:'succeeded' as const,filename:'result.png'})),
  {locale:'en',generationMs:0,state:'succeeded' as const,filename:'zero.png'},
  {locale:'en',generationMs:null,state:'succeeded' as const,filename:'unknown.png'},
  {locale:'en',generationMs:13310,state:'failed' as const,filename:'failed.png'},
