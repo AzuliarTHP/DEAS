@@ -14,6 +14,7 @@ export const isUploadedMask = (name: string) => /^deas-masks\/[0-9a-f]{8}-[0-9a-
 // Same grammar as native `model_name`; backend IDs can use either path separator.
 const safeModel = (id: unknown): id is string => typeof id === 'string' && new TextEncoder().encode(id).length <= 255 && id.split('/').every(segment =>
   segment.length > 0 && segment !== '.' && segment !== '..' && segment.trim() === segment && !/[\p{Cc}\\:%]/u.test(segment));
+export const animaLoraNode = 'DEAS_AnimaLoraLoader';
 export const safeComfyModel = (id: unknown): id is string => typeof id === 'string' && safeModel(id.replace(/\\/g, '/'));
 
 export interface DiagnosticImageIntentV1 {
@@ -31,6 +32,7 @@ export interface DiagnosticImageIntentV1 {
   readonly sampler: string;
   readonly scheduler: string;
   readonly lyingSigma?: LyingSigmaSettings;
+  readonly animaLoraRemap?: boolean;
   readonly outputPrefix: string;
   /** Optional LoRA chain applied after the checkpoint; strength feeds both model and CLIP. */
   readonly loras?: readonly { readonly name: string; readonly strength: number }[];
@@ -185,8 +187,9 @@ function validateIntent(input: unknown): DiagnosticImageIntentV1 {
     throw new RecipeCompileError('INVALID_INPUT', field, message, remedy);
   };
   for (const key of Object.keys(input)) {
-    if (!fields.includes(key) && !['lyingSigma', 'loras', 'inputImage', 'denoise', 'diffusion', 'family', 'inputResize', 'inputMask', 'maskBlur', 'inpaintCrop', 'inputLayers', 'options', 'sigmas', 'wildcard', 'upscaleModel', 'refine', 'imageFormat', 'imageCompression', 'imageReference', 'nativeImageReference', 'skipLayers'].includes(key)) invalid(key, 'Unknown domain intent field.', 'Remove unsupported fields; do not pass widget or canvas state.');
+    if (!fields.includes(key) && !['lyingSigma', 'animaLoraRemap', 'loras', 'inputImage', 'denoise', 'diffusion', 'family', 'inputResize', 'inputMask', 'maskBlur', 'inpaintCrop', 'inputLayers', 'options', 'sigmas', 'wildcard', 'upscaleModel', 'refine', 'imageFormat', 'imageCompression', 'imageReference', 'nativeImageReference', 'skipLayers'].includes(key)) invalid(key, 'Unknown domain intent field.', 'Remove unsupported fields; do not pass widget or canvas state.');
   }
+  if (Object.hasOwn(input,'animaLoraRemap')&&typeof input.animaLoraRemap!=='boolean') invalid('animaLoraRemap','Expected a boolean.','Turn Anima LoRA compatibility on or off.');
   if (Object.hasOwn(input,'lyingSigma')&&!isLyingSigma(input.lyingSigma)) invalid('lyingSigma','Invalid Lying Sigma settings.','Use factor -0.999..1 and 0 <= startPercent < endPercent <= 1.');
   for (const field of fields) {
     if (!Object.hasOwn(input, field)) invalid(field, 'Missing required intent field.', 'Supply this explicit DEAS-owned intent field; no defaults are inferred.');
@@ -353,6 +356,8 @@ export function compileRecipe(input: unknown, verified: unknown, models:readonly
   const recipe = recipeList.find(f => f.id === intent.family) ?? recipeList.find(f => f.id === d?.family) ?? recipeList.find(f => d !== undefined && f.clipType === d.clipType);
   if (recipe?.temporalLatent && intent.refine?.tiled) throw new RecipeCompileError('INVALID_INTENT', 'refine.tiled', 'Tiled diffusion does not support temporal latent families.', 'Disable tiled refine for the selected family.');
   const loras = intent.loras ?? [];
+  if (intent.animaLoraRemap&&(d?.clipType!=='stable_diffusion'||(intent.family??d.family)!=='anima'||(d.family!==undefined&&d.family!=='anima'))) throw new RecipeCompileError('INVALID_INTENT','animaLoraRemap','Anima LoRA compatibility requires an Anima image model.','Select Anima or turn the compatibility option off.');
+  const loraLoader = intent.animaLoraRemap ? animaLoraNode : 'LoraLoader';
   if (isGguf(intent.checkpoint) && !d) throw new RecipeCompileError('INVALID_INTENT','checkpoint','GGUF requires a diffusion recipe with separate text encoder and VAE.','Select a compatible split-model family.');
   if (d && isGguf(d.vae)) throw new RecipeCompileError('INVALID_INTENT','diffusion.vae','GGUF VAE is unsupported.','Select a supported VAE file.');
   if (loras.some(l => !/\.safetensors$/i.test(l.name))) throw new RecipeCompileError('INVALID_INTENT','loras','LoRA files must be safetensors; GGUF LoRA is unsupported.','Select a safetensors LoRA.');
@@ -384,7 +389,7 @@ export function compileRecipe(input: unknown, verified: unknown, models:readonly
   const vae: ApiLink = d ? ['V', 0] : ['1', 2];
   loras.forEach((lora, n) => {
     const id = `L${n + 1}`;
-    chain[id] = { class_type: 'LoraLoader', inputs: { model, clip, lora_name: lora.name, strength_model: lora.strength, strength_clip: lora.strength } };
+    chain[id] = { class_type: loraLoader, inputs: { model, clip, lora_name: lora.name, strength_model: lora.strength, strength_clip: lora.strength } };
     model = [id, 0]; clip = [id, 1];
   });
   // Patches chain after the LoRAs; compile last so it sees every other patch.

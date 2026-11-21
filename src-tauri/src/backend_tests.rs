@@ -352,7 +352,7 @@ for baseline in [object(), 'saved.png']:
 fn image_prompting_installed_before_owned_child_start() {
     let script = SERVER.replace(
         "args=sys.argv[1:]",
-        "assert os.path.isfile('custom_nodes/deas_image_prompting.py')\nargs=sys.argv[1:]",
+        "assert os.path.isfile('custom_nodes/deas_image_prompting.py') and os.path.isfile('custom_nodes/deas_anima_lora.py')\nargs=sys.argv[1:]",
     );
     let (tmp, approved) = fixture(&script);
     let lifecycle = Lifecycle::default();
@@ -385,6 +385,10 @@ fn image_prompting_installed_before_owned_child_start() {
         fs::read(directory.join("deas_gguf_core_compat.py")).unwrap(),
         include_bytes!("gguf_core_compat.py")
     );
+    assert_eq!(
+        fs::read(directory.join("deas_anima_lora.py")).unwrap(),
+        include_bytes!("anima_lora.py")
+    );
     let mut entries: Vec<_> = fs::read_dir(&directory)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
@@ -393,6 +397,7 @@ fn image_prompting_installed_before_owned_child_start() {
     assert_eq!(
         entries,
         [
+            "deas_anima_lora.py",
             "deas_gguf_core_compat.py",
             "deas_h3_stream_video.py",
             "deas_image_postprocess.py",

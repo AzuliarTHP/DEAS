@@ -6,6 +6,9 @@
 .lora-sets-dialog>header h2 { margin:0; }
 .lora-sets-body { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); flex:1; min-height:0; gap:1.5rem; padding:1rem; overflow:hidden; }
 .lora-sets-body section { min-width:0; min-height:0; overflow:auto; }
+.lora-selected-heading { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.4rem; margin:0 0 .7rem; }
+.lora-selected-heading h3, .lora-selected-heading .lora-anima-remap { margin:0; }
+.lora-selected-heading .lora-anima-remap input { padding:0; }
 .lora-sets-body label { display:grid; gap:.35rem; margin-bottom:.7rem; font-size:.8rem; }
 .lora-sets-body input,.lora-sets-body select { box-sizing:border-box; width:100%; min-width:0; padding:.5rem; color:inherit; background:var(--field); border:1px solid var(--line); border-radius:.35rem; }
 .lora-sets-body ul { padding:0; list-style:none; }

@@ -751,6 +751,14 @@ impl Lifecycle {
             include_bytes!("image_postprocess.py"),
         )?;
         install_lying_sigma(root);
+        if let Err(error) =
+            install_adapter(root, "deas_anima_lora.py", include_bytes!("anima_lora.py"))
+        {
+            crate::logs::push(
+                crate::logs::Source::Deas,
+                &format!("WARN backend.anima-lora install: {error}"),
+            );
+        }
         install_adapter(
             root,
             "deas_sam3_video_window.py",
