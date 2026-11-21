@@ -1,5 +1,43 @@
 # DEAS verification — native baseline, optional capabilities and languages
 
+## Russian localization (PR #48 by Djeks, 0.3.15 unreleased) — 2026-11-21
+
+Merged into `main` as `7f02c6e3` (head `44de96f1`). Adds `Русский (ru)` as the seventh bundled
+language per `docs/LOCALIZATION.md`: 20 module-owned `locales/ru.json` dictionaries plus
+`src/locales/ru.json`, `src/languages/ru/manifest.json` (manifest fields identical to the other
+languages — no executable entrypoints), the Russian beginner model-guide overlay
+(`modelGuides.ts::localizedGuide`, English base authoritative; guide download data untouched),
+and `'ru'`/"seven" updates across 14 test files and 37 `tools/verify_*.py` scripts. No Rust
+production code, no CI, no dependency and no behavior changes beyond locale registration
+(`src/languages/*/manifest.json` is auto-discovered by the i18n catalog glob).
+
+Security review before merge: full diff audited — locale JSON parses, strict key and
+placeholder parity against every English source dictionary, no HTML/URL/injection payloads
+(the only literal URL mirrors the EN `http://127.0.0.1:8188` help text), non-Cyrillic glyphs
+verified to mirror EN decorative punctuation (`✧ ⟶ ≥ ≤ −`), no secret patterns, no
+bi-directional/zero-width characters.
+
+Integration fixes folded into the merge commit: `promptTools.ts` validator now accepts `ru`
+(the Settings spellcheck-language selector offers every bundled language, so `ru` appeared
+there but was previously discarded silently — same no-pinned-dictionary situation as the
+already-offered `ja`/`zh`); a `PromptTools.test.tsx` regression asserts `ru` is selectable as a
+spellcheck target; the Rust `accepts_bundled_languages…` sample gained `"ru"`; `docs/PLAN.md`
+acceptance wording moved six→seven.
+
+Gates on the merged tree (`main` + PR + fixes, isolated worktree): typecheck; `test:core`
+(seven-locale strict key/placeholder parity); full `test:ui` 2426/2427 (the known load-sensitive
+H3 REF2VA Workbench fixture, 88/88 alone and 88/88 on the base tree); `tools/tests` unittests
+17/17 (37 touched verify scripts); `cargo fmt --check`; strict Clippy `--all-targets -D`;
+serial `cargo test --lib` 1140/1142 with a private `TMPDIR` (the same two backend
+shutdown-timing tests as the 0.3.13 release record — green in isolation and on base); 17
+further failures were host `TMPDIR` policy (`/tmp` group/world-writable) and reproduce
+identically on the base tree. `tools/verify_languages.py` passed all seven languages at
+1440/1024/768/390/320 px with Chromium (native selector names, locale persistence, translated
+optional-download controls, no overflow). These are Chromium fixtures, not native WebView
+acceptance, and the translations are machine-assisted: native-speaker review remains desirable,
+as `docs/LOCALIZATION.md` states. Russian has no pinned Hunspell dictionary; the Settings panel
+explains it like ja/zh.
+
 ## Release 0.3.13 (published)
 
 Published 2026-11-20 as `v0.3.13` (Latest, not a prerelease): https://github.com/darksidewalker/DEAS/releases/tag/v0.3.13.
@@ -5501,3 +5539,17 @@ remains open.
 - **Tests:** `src/features/studio/Workbench.wizard.test.tsx` — run hand-over → the intent actually submitted carries the wizard's checkpoint, prompt, fixed size and `nativeImageReference:{method:'qwen-image-2.1',images:['deas-inputs/street.png']}` with no `inputImage`, and the report is `{state:'running',value:3,max:20}` (never a bare prepare, so no tab switch); succeeded poll result → one terminal report with `picture.path='/out/DEAS/replace/done.png'` and `ms=4200`; succeeded-without-output → `error: 'The run finished without a picture file.'` and no picture. `src/features/wizards/DarkWizards.test.tsx` — `run:true` hand-over with 32-px grid size and no wizard-side IPC beyond scan/describe/pick; mask method disables Run with the mask reason; progress text `Drawing… 4/20`, preview image, both actions disabled while running, Stop → `native_workbench_interrupt_running {jobId:'wizard-run',confirmed:true}`; terminal state renders `asset://`-converted picture path with the `1216×672 · <model> · seed 7 · 4.2 s` caption and `Show in Generate`; a failed run shows Generate's reason and no image.
 - **Gates:** `npm run typecheck`, focused `vitest run src/features/wizards/DarkWizards.test.tsx src/features/studio/Workbench.wizard.test.tsx` (16 passed), `npm run test:core`, `npm run test:ui`, `npm run build`, `git diff --check`. Version 0.3.12 in `package.json`, both `package-lock.json` entries, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock`.
 - **Not covered:** real model run of the one-click path (GPU gate in UX-22b GPU: the wizard's picture must be the job's own file, Stop must interrupt just that job), native WebKitGTK/WebView2 click-through of the new buttons, masked-method run (UX-22b2).
+
+### Dark Wizards: SAM 3.1 mask for Prepare and run (UX-22b2, 0.3.15)
+
+- **Implemented (CPU/fixture verified).** `WizardHandoff.mask` (`src/lib/wizards.ts`) carries the trimmed *Replace what* text only for a masked strategy with `run`; `DarkWizards.tsx` enables `[data-wizard-run]` for `needsMask` when *Replace what* is filled and Generate's SAM reason (new `sam` prop) is empty, otherwise its title is `wizards.run.maskTarget` or that reason (`studio.sam.checking` while unknown). Generate reports `samUnavailable` through the new `onSamAvailability` prop; `App.tsx` passes it to the wizard. In Workbench the apply effect stores `wizardMask {n, targets:samTargets(mask)}` (or reports the SAM reason as a run error with the draft still prepared) and reports `{state:'queued', masking:true}`; a second effect waits for `inpaint`, `editableSource`, the mounted editor and free admission/serial state, refuses an off-grid picture (`sizeError`) before spending a SAM pass, then calls the existing `maskWithSam(undefined, targets)` — the same `sam3-mask` intent, upload, `runWorkbenchJob`/`waitForWorkbenchJob`/`loadDiagnosticJobOutput` and `editor.addMask` as the SAM **Mask** button, with Generate's selected checkpoint/threshold; only the target list is overridden, so the saved `studio.run.samTargets` preference stays untouched. `maskWithSam` now resolves to the number of layers added. Zero layers → `wizards.run.noMask` error, no drawing job; otherwise `wizardStart` runs Generate's `run()` as in UX-22b1. The `wizardStart` effect now also waits while `admissionBlocked`/`samBusy`/`nativeRefining`/`scanning` (after an admitted SAM job, `finishRun` clears `recovered` until the observer re-reads the native queue; without the wait the run silently did not start).
+- **Two defects fixed on the way.** (1) The UX-22b1 running reports carried no `job`, so the wizard's Stop had nothing to target until the terminal report; start and queued/running reports now include `job`, and Stop renders only when a job is held (not during masking). (2) A wizard picture to edit outside the ComfyUI input/output roots left Generate at `studio.run.pipe.needsInput`; Workbench now keeps it as `wizardPicture` (like `projectInput`) — displayed as its file name, uploaded with `uploadInput` at Run (`postFor` passes `image:''` so Refine/Upscale of that picture upload by path as for browsed dock files).
+- **Tests:** `src/features/studio/Workbench.wizard.test.tsx` — masked run hand-over with `SAM3_Detect` and a SAM 3.1 checkpoint: `sam3-mask` intent with `prompt:'the red car'`, `checkpoint` = Generate's SAM checkpoint, 1024×640; then the inpaint intent with `inputMask`, `inputImage:'deas-inputs/street.png'` from `uploadInput(…, '/pics/street.png')`, running report with `job`; SAM targets preference unchanged; no-match (empty mask) → exact `noMask` error, only the SAM job submitted, draft and editor kept; missing `SAM3_Detect` → SAM reason reported, nothing uploaded or submitted. `src/features/wizards/DarkWizards.test.tsx` — run disabled with Generate's SAM reason, with `maskTarget` until *Replace what* is filled, enabled with `mask:'the red car'` (whitespace collapsed), plain prepare without `mask`, masking status text without Stop, error with **Show in Generate**; no wizard-side IPC beyond scan/describe/pick.
+- **Not covered:** SAM 3.1 mask quality on real pictures and the masked one-click run end to end (UX-22b GPU gate), native WebKitGTK/WebView2 click-through.
+
+### Dark Wizards in Beginner (UX-22b3, 0.3.16)
+
+- **Implemented (CPU/fixture verified).** `BeginnerPage` gains `'wizards'` (`src/features/beginner/Experience.tsx`); `AiOSetup` lists it in the Beginner band (`[data-beginner-tab="wizards"]`, label `beginner.wizards`); `App.tsx::wizardsVisible` shows the one `DarkWizards` instance for `tab==='wizards'` or Beginner on `generate` + page `wizards` (Beginner keeps the studio tab on Generate), and `openGenerate` returns to Beginner's Generation page for a plain prepare / **Show in Generate**. Workbench drops the `wizards.handoff.beginner` refusal (key removed from all seven locales) and instead refuses models without `beginnerTarget` (no family starting settings) with `wizards.handoff.model`. **Contract recorded (the former Beginner-alignment checkbox):** a hand-over carries pipeline, checkpoint, positive prompt, picture/references, edit mode and — reference edits only — a fixed size; Beginner presents the fixed size as a `fixed` Quality option labelled `beginner.wizard.size` rather than mapping it to an aspect preset (Beginner's Auto aspect exists only for media pipelines, and the first Qwen reference fixes the output geometry, so a nearest preset would distort). Beginner's model-change effect (`startingSettings` + per-model LoRA draft) runs after the hand-over: the hand-over writes an empty `beginner.loras` draft for that model and stores `wizardBeginnerSize`, which the effect re-applies after `startingSettings` (cleared when the model is unchanged, so it never resurfaces later). The Beginner authored-pref effect skips `studio.run.resolution` while it is `fixed`, so the wizard size is not persisted into the shared Advanced/Beginner resolution key. The composer shows `[data-beginner-wizard-draft]` (masked edit / wizard pictures) with `[data-beginner-wizard-clear]`, which clears `imageRefs` and sets edit back to `resample`. Leaving Beginner restores Advanced's references/edit through the existing isolation snapshot. Two search entries (band tab, clear button), six keys in seven Beginner locales.
+- **Tests:** `Workbench.wizard.test.tsx` — Beginner reference run hand-over: submitted intent has the Qwen checkpoint, prompt, 1216×672 and the uploaded reference, no LoRAs; after the Beginner reset the Quality select is `fixed` with `Wizard size 1216×672`, the chip lists `street.png`, the stored resolution is not `fixed`, Clear removes the chip; Beginner masked hand-over → Inpaint editor with Mask 1 and the *Masked edit (inpaint)* chip, Clear removes the mask layer; Beginner refuses a family-less model. `AiOSetup.test.tsx` — band order `generate, models, collection, wizards` and the Wizards click. `App.test.tsx` — Beginner Wizards page shows the wizard section and hides the composer, studio tab stays `generate`, Generation returns.
+- **Gates:** `npm run typecheck`, `npm run test:core`, `npm run test:ui` (the known load-sensitive H3 REF2VA fixture alone failed under load and passes alone), `npm run build`, `npm run test:layout` and `tools/verify_beginner_layout.py` (Chromium, both EXIT 0).
+- **Not covered:** native WebKitGTK click-through, real model runs from Beginner.

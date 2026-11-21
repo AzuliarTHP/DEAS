@@ -781,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "deas"
-version = "0.3.14"
+version = "0.3.16"
 dependencies = [
  "base64 0.22.1",
  "claxon",

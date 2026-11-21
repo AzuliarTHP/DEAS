@@ -1,5 +1,26 @@
 # News
 
+## 0.3.16
+
+### Wizards in Beginner
+
+Beginner now has a **Wizards** page next to Generation, Models and Media. The Replace wizard works there just like in
+Advanced: describe what to swap, press **Prepare and run**, and watch the result arrive. Generation shows what the wizard
+set up, and **Clear wizard draft** takes you back to a plain draft.
+
+## 0.3.15
+
+### Replace with a mask, in one click
+
+The Replace wizard's **Prepare and run** now also handles **Paint a mask**: SAM 3.1 finds what you typed in *Replace
+what*, and Generate inpaints only that area. If SAM cannot find it, nothing is drawn and the draft waits in Generate for
+you to paint the mask yourself. You need a SAM 3.1 checkpoint and an up-to-date backend; the wizard says when one is
+missing. The wizard's **Stop** now also works while its job is drawing.
+
+### DEAS speaks Russian
+
+The interface now ships in Russian as its seventh language. Pick **Русский (ru)** under Settings → Language: every panel, help text and error message is translated, and the Beginner model guides read in Russian too. Russian also works as a prompt spellcheck target language.
+
 ## 0.3.14
 
 ### Play, pause and scrub the running video preview

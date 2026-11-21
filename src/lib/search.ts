@@ -14,7 +14,7 @@ export interface SearchEntry {
   panel?: SearchPanel;
   libraryView?: 'catalog' | 'installed' | 'queue';
   /** Beginner page that must be selected before the target exists. */
-  beginnerTab?: 'generate' | 'models' | 'collection';
+  beginnerTab?: 'generate' | 'models' | 'collection' | 'wizards';
   /** Studio bottom-dock tab that must be selected before the target exists. */
   dockTab?: 'options' | 'post' | 'loras' | 'presets' | 'wildcards' | 'media' | 'models';
   /** Breadcrumb tab → section → control, all locale keys. */
@@ -53,6 +53,8 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'beginner.navigation', section: 'beginner.generate', label: 'beginner.generate', target: '[data-beginner-tab="generate"]', aliases: ['create', 'prompt', 'generate'] },
   { view: studio, studioTab: 'generate', beginnerTab: 'models', tab: 'beginner.navigation', section: 'beginner.models', label: 'beginner.models', target: '[data-beginner-tab="models"]', aliases: ['model library', 'discover models'] },
   { view: studio, studioTab: 'generate', beginnerTab: 'collection', tab: 'beginner.navigation', section: 'beginner.collection', label: 'beginner.collection', target: '[data-beginner-tab="collection"]', aliases: ['gallery', 'my creations'] },
+  { view: studio, studioTab: 'generate', beginnerTab: 'wizards', tab: 'beginner.navigation', section: 'beginner.wizards', label: 'beginner.wizards', target: '[data-beginner-tab="wizards"]', aliases: ['wizard', 'replace', 'dark wizards', 'helper'] },
+  { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'beginner.navigation', section: 'beginner.generate', label: 'beginner.wizard.clear', target: '[data-beginner-wizard-clear]', aliases: ['wizard', 'references', 'mask', 'clear', 'reset'], reason: 'beginner.wizard.clearHint' },
   {view:studio,studioTab:'generate',beginnerTab:'generate',tab:'beginner.navigation',section:'beginner.generate',label:'beginner.creationMode',target:'#beginner-mode',aliases:['image','video','music','pipeline'],reason:'beginner.switchHint'},
   {view:studio,studioTab:'generate',beginnerTab:'models',tab:'beginner.navigation',section:'beginner.models',label:'beginner.mediaFilter',target:'.beginner-model-toolbar [data-model-media="music"]',aliases:['music models','YuE2','ACE-Step'],reason:'beginner.switchHint'},
   {view:studio,studioTab:'generate',tab:'setup.tab.studio',section:'studio.run.pipe.music',label:'studio.music.planning',target:'[data-music-planning]',aliases:['ABC','music','planner'],reason:'studio.run.pipe.noRecipe'},
@@ -209,7 +211,7 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.method.title', label: 'wizards.models.library', target: '[data-wizard-library]', aliases: ['wizard', 'download', 'library', 'missing model'], reason: 'wizards.search.missingOnly' },
   { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.method.title', label: 'wizards.models.rescan', target: '[data-wizard-rescan]', aliases: ['wizard', 'rescan', 'reload', 'models'], reason: 'wizards.search.missingOnly' },
   { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.prepare', target: '[data-wizard-prepare]', aliases: ['wizard', 'prepare', 'generate', 'run'] },
-  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.run', target: '[data-wizard-run]', aliases: ['wizard', 'run', 'one click', 'start', 'submit'], reason: 'wizards.run.maskHint' },
+  { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.run', target: '[data-wizard-run]', aliases: ['wizard', 'run', 'one click', 'start', 'submit', 'sam', 'mask'], reason: 'wizards.run.maskHint' },
   { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.run.stop', target: '[data-wizard-stop]', aliases: ['wizard', 'stop', 'cancel', 'job'], reason: 'wizards.run.stopHint' },
   { view: studio, studioTab: 'wizards', tab: 'wizards.title', section: 'wizards.replace.name', label: 'wizards.run.open', target: '[data-wizard-open]', aliases: ['wizard', 'result', 'picture', 'show', 'generate'], reason: 'wizards.run.openHint' },
   { view: studio, studioTab: 'analysis', tab: 'studio.tab.analysis', section: 'analysis.picture', label: 'analysis.choose', target: '[data-analysis-choose], [data-analysis-file]', aliases: ['open', 'file', 'picture', 'video', 'browse', 'import'] },

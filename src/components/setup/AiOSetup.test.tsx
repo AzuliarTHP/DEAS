@@ -615,16 +615,17 @@ it('beginner navigation uses the shared tab band without a separate wordmark',as
  const onBeginnerPage=vi.fn();
  render(<I18nProvider><AiOSetup experience='beginner' onExperience={vi.fn()} beginnerPage='generate' onBeginnerPage={onBeginnerPage} onConnectExisting={vi.fn()} onInstalled={vi.fn()}/></I18nProvider>);
  const tabs=[...document.querySelectorAll('.aio-tabs > [role="tab"]')];
- expect(tabs.map(el=>el.getAttribute('data-beginner-tab'))).toEqual(['generate','models','collection',null]);
+ expect(tabs.map(el=>el.getAttribute('data-beginner-tab'))).toEqual(['generate','models','collection','wizards',null]);
  expect(tabs.every(el=>el.classList.contains('aio-tab'))).toBe(true);
  expect(document.querySelector('.beginner-app-logo')).toBeNull();
  fireEvent.click(tabs[1]);expect(onBeginnerPage).toHaveBeenCalledWith('models');
+ fireEvent.click(tabs[3]);expect(onBeginnerPage).toHaveBeenLastCalledWith('wizards');expect(tabs[3].textContent).toBe('Wizards');
  await waitFor(()=>expect(tabs[0].getAttribute('aria-selected')).toBe('true'));
  const backend=screen.getByRole('tab',{name:'Backend'});
  expect(backend.closest('.beginner-backend-tabs')).not.toBeNull();
  fireEvent.click(backend);
  await waitFor(()=>expect(backend.getAttribute('aria-selected')).toBe('true'));
- expect(tabs.slice(0,3).every(el=>el.getAttribute('aria-selected')==='false')).toBe(true);
+ expect(tabs.slice(0,4).every(el=>el.getAttribute('aria-selected')==='false')).toBe(true);
 });
 
 it('a first-run beginner without an installed environment lands on the backend wizard',async()=>{

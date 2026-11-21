@@ -465,3 +465,17 @@ test("setup-style aio-error alerts are closeable too", async () => {
   fireEvent.click(close);
   expect(banner.classList.contains("is-dismissed")).toBe(true);
 });
+
+test('Beginner reaches the Dark Wizards from its own band; Generate stays the studio tab and comes back with the band', async () => {
+  localStorage.setItem(LOCALE_STORAGE_KEY, 'en');
+  localStorage.setItem('deas.pref.interface.experience', JSON.stringify('beginner'));
+  render(<I18nProvider><App /></I18nProvider>);
+  const visible = (el: Element | null) => !!el && !el.closest('[hidden]');
+  fireEvent.click(await screen.findByRole('tab', { name: 'Wizards' }));
+  await waitFor(() => expect(visible(document.querySelector('section.wizards-tab'))).toBe(true));
+  expect(visible(document.querySelector('.beginner-composer'))).toBe(false);
+  expect(JSON.parse(localStorage.getItem('deas.pref.studio.tab') ?? '"generate"')).toBe('generate');
+  fireEvent.click(document.querySelector('[data-beginner-tab="generate"]')!);
+  await waitFor(() => expect(visible(document.querySelector('section.wizards-tab'))).toBe(false));
+  expect(visible(document.querySelector('.beginner-composer'))).toBe(true);
+});

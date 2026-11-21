@@ -16,10 +16,11 @@ reduces the visible surface and isolates technical settings behind the same stat
 ## Beginner pages
 
 The tab band uses the same header and selected-tab styling as Advanced, without a separate logo
-or DEAS Studio wordmark. It offers **Generation**, **Models** and **Media**. The separately positioned **Backend** tab uses the same styling and selected state as Advanced and opens the
+or DEAS Studio wordmark. It offers **Generation**, **Models**, **Media** and **Wizards**. The separately positioned **Backend** tab uses the same styling and selected state as Advanced and opens the
 unchanged Backend/setup screens when configuration is needed; installation confirmations and
 prerequisites still apply.
 
+- **Wizards** — the same [Dark Wizards](DARK-WIZARDS.md) as Advanced's tab. A wizard prepares the Generation page (or, with **Prepare and run**, starts it there through the normal Run); see *In Beginner* in that guide for what the prepared draft shows here.
 - **Generation** — creation mode (Text to Image, Image to Image, Text to Video, Image to Video,
   limited to the selected model family), the selected model, **Format** and **Quality** selects
   offering exactly the shared aspect and resolution options of the advanced panel (values snap to

@@ -172,13 +172,13 @@ const isMusicGeneration=inBounds<MusicGenerationSettings>(musicBounds.generation
 const isMusicDuration=(v:unknown):v is {t2m:number;cover:number}=>!!v&&typeof v==='object'&&(['t2m','cover'] as const).every(k=>{const n=(v as Record<string,unknown>)[k];return typeof n==='number'&&n>=musicMaxDuration.step&&n<=musicMaxDuration.limit;});
 /** Edits of the shown image: plain image-to-image (`resample`) or inpaint; refine/upscale live in the Post-Processing tab. */
 const editModes=['resample','inpaint'] as const;
-export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void; /** A Dark Wizards draft to prepare here, and with `run` started through Generate's own Run path; `n` changes per hand-over. `run` reports that hand-over's progress and result. */ wizard?:WizardHandoff; onWizardApplied?:(n:number,error?:string,run?:WizardRun)=>void }
+export interface WorkbenchProps { beginner?:boolean; beginnerPage?:BeginnerPage; onBeginnerPage?:(page:BeginnerPage)=>void; endpoint:string; ownedBackend?:boolean; planVisible?:boolean; forgeHost?:HTMLElement|null; forgeActive?:boolean; onOpenPromptForge?:()=>void; onH3ForgeAvailable?:(available:boolean)=>void; onOpenVideoPost?:()=>void; /** Environment folders: models are listed directly from disk (without it the running backend is asked), output enables direct previews of finished files. `extraModels` are additional model roots on other drives. */ roots?:MediaRoots&{models?:string;extraModels?:string[]}; /** Environment root for Prompt Forge (its saved LLM endpoint). */ root?:string; /** Prompts sent from the Prompt Forge tab; `n` changes per send. */ incoming?:{positive:string;negative:string;n:number;canvas?:ForgeSendCanvas}; onCanvasContext?:(context:ForgeCanvasContext|undefined)=>void; /** A picture Chat asks Generate to draw with its current settings; `id` changes per ask. */ chatRender?:ChatRenderRequest; onChatRender?:(id:string,outcome:ChatRenderOutcome)=>void; /** What Chat can draw with right now. */ onChatStudio?:(studio:ChatStudio)=>void; /** Media's right-click "Open in Media Analysis". */ onAnalyze?:(item:MediaItem)=>void; /** Hands Media Analysis' frame picker the input actions a picture would get here. */ onFrameActions?:(actions:(item:MediaItem)=>MediaAction[])=>void; /** A Dark Wizards draft to prepare here, and with `run` started through Generate's own Run path; `n` changes per hand-over. `run` reports that hand-over's progress and result. */ wizard?:WizardHandoff; onWizardApplied?:(n:number,error?:string,run?:WizardRun)=>void; /** Why SAM 3.1 text→mask cannot run here (empty when it can), so the wizard can disable its masked one-click run. */ onSamAvailability?:(reason:string)=>void }
 /** Text-to-image workbench: settings left, preview over the prompts, queue right, bottom dock with Media · Models · LoRAs tabs. */
 export function Workbench(props:WorkbenchProps){
  const [project,setProject]=useState<ProjectSnapshot|null>(null);
  return <PreferencePersistenceContext.Provider value={!project&&!props.beginner}><WorkbenchContent {...props} project={project} onProject={setProject}/></PreferencePersistenceContext.Provider>;
 }
-function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage,endpoint,ownedBackend=false,roots={},root,incoming,onCanvasContext,chatRender,onChatRender,onChatStudio,onAnalyze,onFrameActions,onWizardApplied,wizard,onOpenVideoPost,forgeHost,forgeActive=true,onOpenPromptForge,onH3ForgeAvailable,planVisible=false,project,onProject}:WorkbenchProps&{project:ProjectSnapshot|null;onProject:(project:ProjectSnapshot|null)=>void}){
+function WorkbenchContent({beginner=false,beginnerPage='generate',onBeginnerPage,endpoint,ownedBackend=false,roots={},root,incoming,onCanvasContext,chatRender,onChatRender,onChatStudio,onAnalyze,onFrameActions,onWizardApplied,onSamAvailability,wizard,onOpenVideoPost,forgeHost,forgeActive=true,onOpenPromptForge,onH3ForgeAvailable,planVisible=false,project,onProject}:WorkbenchProps&{project:ProjectSnapshot|null;onProject:(project:ProjectSnapshot|null)=>void}){
  const {t,locale}=useI18n();const native=isTauri();const linuxVideo=nativeVideo();const modelsDir=roots.models;const outputDir=roots.output;const extraModelsKey=(roots.extraModels??[]).join('\n');
  const [media,setMedia]=useState<MediaItem|null>(null);
  const [browsed,setBrowsed]=useState<MediaItem|null>(null);
@@ -521,6 +521,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const samModels=[...new Set([...(models??[]).filter(m=>m.category==='checkpoints'&&m.family==='sam3').map(m=>m.name),...(choices?.checkpoints??[]).filter(name=>/sam3[._-]?1/i.test(name))])].filter(name=>!choices||choices.checkpoints.includes(name)).sort();
  useEffect(()=>{if(choices&&samModels.length&&!samModels.includes(samCheckpoint))setSamCheckpoint(samModels[0]);},[choices,samModels,samCheckpoint,setSamCheckpoint]);
  const samUnavailable=!native?t('studio.sam.native'):!choices?t('studio.sam.checking'):!choices.nodes.includes('SAM3_Detect')?t('studio.sam.missingNode'):!samCheckpoint||!samModels.includes(samCheckpoint)?t('studio.sam.missingModel'):'';
+ useEffect(()=>{onSamAvailability?.(samUnavailable);},[samUnavailable,onSamAvailability]);
  const samSettings=()=>({checkpoint:samCheckpoint,targets:samTargets(samText),denoise:samDenoise,margin:maskGrow,maskBlur,threshold:samThreshold});
  // Media sorting also serves the References picker while a model dock is active.
  const sort=sortPref;
@@ -544,7 +545,10 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  const fileName=(name:string)=>(name.replace(/ \[output\]$/,'').split('/').pop()??name);
  const comfyName=(item:MediaItem|null)=>under(item,roots.input)||(under(item,outputDir)&&`${under(item,outputDir)} [output]`);
  const projectInput=project?.input?.path===media?.path?project?.input:null;
- const inputImage=comfyName(media)||(projectInput?projectInput.id+'.png':'');
+ // A Dark Wizards picture to edit may live outside the ComfyUI input/output folders; like a project input it is uploaded at Run.
+ const [wizardPicture,setWizardPicture]=useState<{path:string;name:string}|null>(null);
+ const wizardInput=!projectInput&&media?.path&&wizardPicture?.path===media.path&&!comfyName(media)?wizardPicture:null;
+ const inputImage=comfyName(media)||(projectInput?projectInput.id+'.png':wizardInput?wizardInput.name:'');
  // Extra images pasted onto the source (SwarmUI editor image layers), in source pixels; they belong to one source.
  const [layers,setLayers]=useState<ImageLayer[]>([]);
  const [editorSnapshot,setEditorSnapshot]=useState<EditorSnapshot>();
@@ -1085,6 +1089,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
    const painted=imagePng||only||pipeline!=='i2i'?[]:await Promise.all(layerSnapshot.filter(l=>l.visible).map(async l=>{const png=await flattenLayer(l);return png?await uploadMask(endpoint,png):l.name;}));
    const withLayers=imagePng?{...intent,inputImage:await uploadMask(endpoint,imagePng)}:painted.some((name,i)=>name!==inputLayers[i].image)?{...intent,inputLayers:inputLayers.map((l,i)=>({...l,image:painted[i]}))}:{...intent};
    if(projectInput&&!imagePng&&!only&&pipeline==='i2i')withLayers.inputImage=await uploadInput(endpoint,projectInput.path);
+   else if(wizardInput&&!imagePng&&!only&&pipeline==='i2i')withLayers.inputImage=await uploadInput(endpoint,wizardInput.path);
    if(imagePng)delete withLayers.inputLayers;
    // Even matching UI roots cannot prove this backend still owns the shown job's directory.
    if(only&&!only.image&&only.item.path)withLayers.inputImage=await uploadInput(endpoint,only.item.path);
@@ -1103,11 +1108,12 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
   finally{if(activeRun(ticket))setSamBusy(false);finishRun(ticket,admitted);}
   return started&&{job:started,intent};
  }
- async function maskWithSam(selection?:Pick<Sam3MaskIntentV1,'positivePoints'|'negativePoints'|'box'>){
+ /** Adds one SAM mask layer per target (or for the picked selection); `only` replaces the SAM targets field (Dark Wizards' *Replace what*). Resolves to the number of layers added, undefined when it did not complete. */
+ async function maskWithSam(selection?:Pick<Sam3MaskIntentV1,'positivePoints'|'negativePoints'|'box'>,only?:string[]):Promise<number|undefined>{
   if(samUnavailable||serialBlocked||admissionBlocked||!inpaint||!editorRef.current||!editableSource)return;
   const editor=editorRef.current,sourceVersion=sourceEpoch.current,draftVersion=draftEpoch.current;
   const size={...editableSource},settings=structuredClone(samSettings());
-  const targets=selection?['']:settings.targets;if(!targets.length)return;
+  const targets=selection?['']:only??settings.targets;if(!targets.length)return;
   const image=editor.sourcePng();const revision=editor.contentRevision();const results:{png:Uint8Array;name:string}[]=[];
   observation.current++;setObservationRetry(n=>n+1);const ticket=beginRun();setSamBusy(true);setSamStatus('');let admitted=false;
   const active=()=>activeRun(ticket)&&sourceVersion===sourceEpoch.current&&draftVersion===draftEpoch.current;
@@ -1123,7 +1129,9 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
     results.push({png:new Uint8Array(output.bytes),name:prompt||t('studio.sam.selection')});
    }
    if(!active()||editor.contentRevision()!==revision)return;
-   for(const result of results){if(!active())return;const added=await editorRef.current!.addMask(result.png,result.name);if(active())setSamStatus(t(added?'studio.sam.maskAdded':'studio.sam.noMatch'));}
+   let count=0;
+   for(const result of results){if(!active())return;const added=await editorRef.current!.addMask(result.png,result.name);if(added)count++;if(active())setSamStatus(t(added?'studio.sam.maskAdded':'studio.sam.noMatch'));}
+   return count;
   }catch(e){if(activeRun(ticket))setError(e instanceof Error?e.message:String(e));}
   finally{if(activeRun(ticket))setSamBusy(false);finishRun(ticket,admitted);}
  }
@@ -1567,7 +1575,7 @@ const loadChoices=()=>{if(native&&!choices&&endpoint.trim())void refreshChoices(
  }
  const shownOutput=shown&&terminalOutput(shown)&&shown.outputRoot&&shown.outputs[outputIndex]&&shown.intent&&isImageIntent(shown.intent)?outputItem(shown,shown.outputs[outputIndex]):null;
  const postFor=(item:MediaItem)=>shownOutput?.src===item.src&&shown?.intent&&isImageIntent(shown.intent)?{image:'',size:shown.outputs[outputIndex]?.role==='original'?shown.intent:shown.intent.refine??shown.intent,src:shownOutput.src,item:shownOutput}
-  :media?.src===item.src&&inputImage&&source?{image:inputImage,size:source,src:media.src,item:media}
+  :media?.src===item.src&&inputImage&&source?{image:wizardInput?'':inputImage,size:source,src:media.src,item:media}
   :item.media==='image'&&item.src&&item.path?{image:'',size:outputSize,src:item.src,item}:null; // any other image (browsed dock file): upload by path, canvas-size target
  // Floating edit buttons over an editable image: a mode makes it the image-to-image source and opens that mode's controls on the left.
  const noEditModel=!allModels.some(m=>!blocked(m,'i2i'));
@@ -1837,44 +1845,78 @@ const promptTools=forgeContext&&<>
  const pickModel=(m:LocalModel)=>switchDraft(pipeline,m,true,false,true);
  // Dark Wizards: prepare an ordinary draft (model, picture, prompt, size); with `run`, Generate starts that draft afterwards.
  const wizardApplied=useRef(0);
+ const wizardBeginnerSize=useRef<{model:string;size?:Size}|null>(null);
  const [wizardStart,setWizardStart]=useState<number>();
+ // A masked one-click run first waits for the editor to hold the picture, then masks it with SAM 3.1 from *Replace what*.
+ const [wizardMask,setWizardMask]=useState<{n:number;targets:string[]}>();
  const wizardJob=useRef<{n:number;job:JobStatus;intent:DiagnosticImageIntentV1}|undefined>(undefined);
  useEffect(()=>{
   if(!wizard||wizardApplied.current===wizard.n||models===null)return;
-  wizardApplied.current=wizard.n;wizardJob.current=undefined;setWizardStart(undefined);
+  wizardApplied.current=wizard.n;wizardJob.current=undefined;setWizardStart(undefined);setWizardMask(undefined);
   const fail=(key:string)=>{setError(t(key));onWizardApplied?.(wizard.n,t(key));};
-  if(beginner){fail('wizards.handoff.beginner');return;}
   const m=allModels.find(x=>x.path===wizard.model.path)??allModels.find(x=>x.name===wizard.model.name);
-  if(!m||blocked(m,wizard.pipeline)){fail('wizards.handoff.model');return;}
+  // Beginner accepts only models its composer can use itself (family starting settings), like its Models page.
+  if(!m||blocked(m,wizard.pipeline)||(beginner&&!beginnerTarget(m))){fail('wizards.handoff.model');return;}
+  if(beginner){
+   // Beginner restores its own per-model LoRA draft and starting settings when the model changes; the wizard's draft has no LoRAs and keeps its size.
+   beginnerLoraDraft.current={model:identity(m),loras:[]};writePref('beginner.loras',beginnerLoraDraft.current);
+   wizardBeginnerSize.current=model&&identity(model)===identity(m)?null:{model:identity(m),size:wizard.size};
+  }
   switchDraft(wizard.pipeline,m,true);
   setHistoryDraft(null);setLoras([]);
   sourceEpoch.current++;setEditorSnapshot(undefined);setLayers([]);setMasked(false);setMediaSize(null);setBrowsed(null);setSelectedJob('');
   const picture:MediaItem={name:wizard.picture.name,path:wizard.picture.path,src:wizard.picture.src,media:'image'};
   const references=(wizard.references??[]).map(r=>({item:{name:r.name,path:r.path,src:r.src,media:'image' as const},strength:0.6}));
   if(wizard.source==='reference'){setMedia(null);setImageRefs([{item:picture,strength:0.6},...references]);}
-  else {setImageRefs(references);setMedia(picture);if(wizard.edit)setEdit(wizard.edit);}
+  else {setImageRefs(references);setMedia(picture);setWizardPicture(comfyName(picture)?null:{path:wizard.picture.path,name:wizard.picture.name});if(wizard.edit)setEdit(wizard.edit);}
   if(wizard.size){setWidth(wizard.size.width);setHeight(wizard.size.height);setResolution('fixed');}
   setPositive(wizard.positive);setError('');
   // A hand-over that asked to run starts one commit later, so Run builds its intent from the draft that was just applied.
-  if(wizard.run)setWizardStart(wizard.n);else onWizardApplied?.(wizard.n);
+  const maskTargets=wizard.run&&wizard.source==='edit'&&wizard.edit==='inpaint'&&wizard.mask?samTargets(wizard.mask):[];
+  if(maskTargets.length){
+   // The draft stays prepared in Generate either way; without SAM the user masks there by hand.
+   if(samUnavailable)onWizardApplied?.(wizard.n,undefined,{state:'unknown',error:samUnavailable});
+   else {setWizardMask({n:wizard.n,targets:maskTargets});onWizardApplied?.(wizard.n,undefined,{state:'queued',masking:true});}
+  }
+  else if(wizard.run)setWizardStart(wizard.n);else onWizardApplied?.(wizard.n);
  },[wizard?.n,models===null]); // eslint-disable-line react-hooks/exhaustive-deps
  // The wizard's own Run goes through Workbench's Run path — the same capture, upload, admission and queue a Generate press uses.
  useEffect(()=>{
   const n=wizardStart;
   if(n===undefined||wizard?.n!==n||wizardJob.current)return;
+  // After the SAM pass Generate re-reads the native queue before it admits the next job; Run waits for that instead of failing.
+  if(admissionBlocked||samBusy||nativeRefining||scanning)return;
   setWizardStart(undefined);lastError.current='';
   void run().then(started=>{
    if(!started){onWizardApplied?.(n,undefined,{state:'unknown',error:lastError.current||t('wizards.run.notStarted')});return;}
    wizardJob.current={n,job:started.job,intent:started.intent};
-   onWizardApplied?.(n,undefined,{state:started.job.state,...(started.job.progress?{value:started.job.progress.value,max:started.job.progress.max}:{})});
+   onWizardApplied?.(n,undefined,{state:started.job.state,job:started.job,...(started.job.progress?{value:started.job.progress.value,max:started.job.progress.max}:{})});
   },e=>onWizardApplied?.(n,undefined,{state:'unknown',error:e instanceof Error?e.message:String(e)}));
- },[wizardStart]); // eslint-disable-line react-hooks/exhaustive-deps
+ },[wizardStart,admissionBlocked,samBusy,nativeRefining,scanning]); // eslint-disable-line react-hooks/exhaustive-deps
+ // Masking needs the mounted editor with the picture's size; Run starts one commit after the mask layers exist.
+ useEffect(()=>{
+  const pending=wizardMask;
+  if(!pending||wizard?.n!==pending.n)return;
+  if(!inpaint||!editableSource||!editorRef.current||samBusy||serialBlocked||admissionBlocked)return;
+  setWizardMask(undefined);
+  const n=pending.n,report=(error:string)=>onWizardApplied?.(n,undefined,{state:'unknown',error});
+  // An off-grid picture would block Run after the SAM pass anyway; say so before spending it.
+  if(sizeError){report(t(sizeError,{multiple:String(grid)}));return;}
+  if(samUnavailable){report(samUnavailable);return;}
+  lastError.current='';
+  void maskWithSam(undefined,pending.targets).then(added=>{
+   if(wizardApplied.current!==n)return;
+   if(added===undefined){report(lastError.current||t('wizards.run.notStarted'));return;}
+   if(!added){report(t('wizards.run.noMask',{target:pending.targets.join(', ')}));return;}
+   setWizardStart(n);
+  },e=>report(e instanceof Error?e.message:String(e)));
+ },[wizardMask,inpaint,editableSource,samBusy,serialBlocked,admissionBlocked]); // eslint-disable-line react-hooks/exhaustive-deps
  // Only the wizard's own job is followed here; Generate's poller stays the single status reader of the session.
  useEffect(()=>{
   const held=wizardJob.current;if(!held)return;
   const found=jobs.find(j=>j.id===held.job.id);if(!found||found===held.job)return;
   held.job=found;
-  if(found.state==='queued'||found.state==='running'){onWizardApplied?.(held.n,undefined,{state:found.state,...(found.progress?{value:found.progress.value,max:found.progress.max}:{}),...(found.preview?{preview:found.preview}:{})});return;}
+  if(found.state==='queued'||found.state==='running'){onWizardApplied?.(held.n,undefined,{state:found.state,job:found,...(found.progress?{value:found.progress.value,max:found.progress.max}:{}),...(found.preview?{preview:found.preview}:{})});return;}
   wizardJob.current=undefined;
   const output=found.outputs.find(o=>!o.format?.startsWith('video/'));
   const path=output&&found.state==='succeeded'?jobOutputPath(found,output):undefined;
@@ -1918,10 +1960,10 @@ const promptTools=forgeContext&&<>
    for(const key of beginnerMusicEdited.current)advancedSettings.current[key]=authored[key];
    applyStudioSettings(advancedSettings.current);advancedSettings.current=null;const saved=advancedReferences.current;if(saved){setImageRefs(saved.imageRefs);setRefs(saved.refs);setRefmods(saved.refmods);setLastFrame(saved.lastFrame);setLastOnlySrc(saved.lastOnlySrc);setFramePeople(saved.framePeople);setSourceVideo(saved.sourceVideo);setPlan(saved.plan);advancedReferences.current=null;}}
  },[beginner]);
- useEffect(()=>{if(!beginner||!model)return;const sameModel=beginnerModelKey.current===identity(model);beginnerModelKey.current=identity(model);const draft=beginnerLoraDraft.current;const allowed=new Set(beginnerLoraModels.map(m=>m.name));setLoras(!isGguf(model.name)&&draft?.model===identity(model)?draft.loras.filter(l=>allowed.has(l.name)):[]);if(!isMusic){startingSettings(model);if(sameModel){setSteps(steps);setCfg(cfg);}}const videoDefaults=familyOf(model)?.video;setVideo({...defaultVideo,...(videoDefaults?{seconds:videoDefaults.seconds,fps:videoDefaults.fps}:{})});},[beginner,model?.path,model?.name,model?.family]);
+ useEffect(()=>{if(!beginner||!model)return;const sameModel=beginnerModelKey.current===identity(model);beginnerModelKey.current=identity(model);const draft=beginnerLoraDraft.current;const allowed=new Set(beginnerLoraModels.map(m=>m.name));setLoras(!isGguf(model.name)&&draft?.model===identity(model)?draft.loras.filter(l=>allowed.has(l.name)):[]);if(!isMusic){startingSettings(model);if(sameModel){setSteps(steps);setCfg(cfg);}}const fromWizard=wizardBeginnerSize.current;if(fromWizard?.model===identity(model)){wizardBeginnerSize.current=null;if(fromWizard.size){setWidth(fromWizard.size.width);setHeight(fromWizard.size.height);setResolution('fixed');}}const videoDefaults=familyOf(model)?.video;setVideo({...defaultVideo,...(videoDefaults?{seconds:videoDefaults.seconds,fps:videoDefaults.fps}:{})});},[beginner,model?.path,model?.name,model?.family]);
  // Only authored intent is shared across restarts. Automatic beginner settings must
  // never overwrite the user's persisted advanced technical defaults.
- useEffect(()=>{if(!beginner||project)return;writePref('studio.run.positive',positive);writePref('studio.run.checkpoint',checkpointPref);writePref('studio.run.pipeline',pipeline);writePref('studio.run.aspect',aspectPref);writePref('studio.run.resolution',resolutionPref);writePref(musicPromptPreferenceKeys[0],musicStyle);writePref(musicPromptPreferenceKeys[1],musicLyrics);},[beginner,project,positive,checkpointPref,pipeline,aspectPref,resolutionPref,musicStyle,musicLyrics]);
+ useEffect(()=>{if(!beginner||project)return;writePref('studio.run.positive',positive);writePref('studio.run.checkpoint',checkpointPref);writePref('studio.run.pipeline',pipeline);writePref('studio.run.aspect',aspectPref);if(resolutionPref!=='fixed')writePref('studio.run.resolution',resolutionPref);writePref(musicPromptPreferenceKeys[0],musicStyle);writePref(musicPromptPreferenceKeys[1],musicLyrics);},[beginner,project,positive,checkpointPref,pipeline,aspectPref,resolutionPref,musicStyle,musicLyrics]);
  const pickPipeline=(wanted:Pipeline,keepSource=false)=>{
   if(isImagePipe(wanted)&&isImagePipe(pipeline)||videoPipelines.includes(wanted)&&isVideo||isMusicPipeline(wanted)&&isMusic)return; // already the Image pipeline; the picture to edit picks the mode
   const no=(m:LocalModel)=>modeBlocked(m,wanted);
@@ -2319,6 +2361,7 @@ const promptTools=forgeContext&&<>
   <div className="beginner-mode-picker"><select id="beginner-mode" aria-label={t('beginner.creationMode')} value={isImagePipe(pipeline)?'image':isVideo?'video':'music'} onChange={e=>pickPipeline(e.target.value==='image'?'t2i':e.target.value==='video'?'t2v':'t2m')}>{pipelineOptions}</select></div>
   {isVideo&&<p className="wb-active" data-video-mode>{t('studio.run.video.roles.mode',{mode:videoModeName})}</p>}
   {isImagePipe(pipeline)&&<p className="wb-active" data-image-mode>{t(`studio.run.pipe.${pipeline}`)}</p>}
+  {isImagePipe(pipeline)&&(imageRefs.length>0||inpaint)&&<div className="beginner-input" data-beginner-wizard-draft><p>{[inpaint?t('beginner.wizard.mask'):'',imageRefs.length?t('beginner.wizard.references',{names:imageRefs.map(r=>r.item.name).join(', ')}):''].filter(Boolean).join(' · ')}</p><button type="button" data-beginner-wizard-clear onClick={()=>{setImageRefs([]);setEdit('resample');}}>{t('beginner.wizard.clear')}</button></div>}
   <span className="beginner-control-label">{t('beginner.yourModel')}</span>
   <button type="button" className="beginner-selected-model" onClick={()=>onBeginnerPage?.('models')}><span className="beginner-model-monogram" aria-hidden="true">{(family?.name??'DEAS').slice(0,1)}</span><span><strong>{model?shortName(model.name):t('beginner.chooseModel')}</strong><small>{family?.name??t('beginner.browseModels')}</small></span><span className="beginner-change-model">{t('beginner.change')} ↗</span></button>
   {(model||savedModel)&&<ModelAdvice check={selectedModelCheck}/>}
@@ -2327,7 +2370,7 @@ const promptTools=forgeContext&&<>
   {aceMissing.length>0&&<div className="beginner-input" data-beginner-components><p>{t('beginner.aceComponents')}</p>{(['text_encoders','vae'] as const).map(target=>{const files=aceMissing.filter(m=>m.target===target).map(m=>m.file);return files.length?<BeginnerModelDownload key={target+files.join()} guide={{name:family!.name,repo:'Comfy-Org/ace_step_1.5_ComfyUI_files',files,target}} root={root} modelsDir={modelsDir} onStatus={s=>{if(s.state==='succeeded'){void load();void refreshChoices(false);}}}/>:null;})}</div>}
   {isMusic?<div className="wb-controls">{musicSettings}</div>:<div className="beginner-size-picker">
    <label className="beginner-control-label" htmlFor="beginner-aspect">{t('studio.run.resolution.aspect')}<select id="beginner-aspect" data-beginner-aspect value={aspect} onChange={e=>{setAspect(e.target.value as typeof aspect);if(resolution==='fixed')setResolution('model');}}>{aspects.filter(a=>a!=='custom'&&(a!=='auto'||mediaPipeline)).map(a=><option key={a} value={a}>{a==='auto'?t('studio.run.resolution.auto'):a}</option>)}</select></label>
-   <label className="beginner-control-label" htmlFor="beginner-resolution">{t('studio.run.resolution.title')}<select id="beginner-resolution" data-beginner-resolution value={resolution} onChange={e=>setResolution(e.target.value)}>{['model',...Object.keys(resolutions)].map(r=><option key={r} value={r} disabled={r==='model'&&!family?.defaults}>{r in resolutions?r:t(`studio.run.resolution.${r}`)}</option>)}</select></label>
+   <label className="beginner-control-label" htmlFor="beginner-resolution">{t('studio.run.resolution.title')}<select id="beginner-resolution" data-beginner-resolution value={resolution} onChange={e=>setResolution(e.target.value)}>{['model',...Object.keys(resolutions),...(resolutionPref==='fixed'?['fixed']:[])].map(r=><option key={r} value={r} disabled={r==='model'&&!family?.defaults}>{r in resolutions?r:r==='fixed'?t('beginner.wizard.size',{size:`${width}×${height}`}):t(`studio.run.resolution.${r}`)}</option>)}</select></label>
   </div>
   }
   {(!isMusic||aceProfile)&&<div className="beginner-size-picker beginner-sampling">{samplingFields}{aceProfile&&samplerField}</div>}

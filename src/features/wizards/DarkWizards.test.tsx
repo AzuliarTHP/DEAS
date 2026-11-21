@@ -118,8 +118,8 @@ it('takes a file copied in a file manager by Ctrl+V, refuses other files, and sh
   await waitFor(() => expect(calls('native_media_describe')).toEqual([{ paths: ['/pics/My Cat.webp'] }]));
 });
 
-it('runs the prepared draft through Generate with Prepare and run, and keeps that button closed for the mask method', async () => {
-  const { onPrepare } = ui();
+it('runs the prepared draft through Generate with Prepare and run, and keeps that button closed for the mask method without SAM 3.1', async () => {
+  const { onPrepare } = ui({ sam: 'SAM 3.1 needs the SAM3_Detect node.' });
   await choosePicture();
   type('With what', 'a blue bicycle'); type('Replace what', 'the red car');
   const run = screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement;
@@ -131,13 +131,43 @@ it('runs the prepared draft through Generate with Prepare and run, and keeps tha
   expect(runSize.width % 32).toBe(0); expect(runSize.height % 32).toBe(0);
   // The wizard itself never submits: only the hand-over leaves this component.
   expect(vi.mocked(invoke).mock.calls.map(([c]) => c).sort()).toEqual(['native_analysis_pick', 'native_media_describe', 'native_models_scan']);
-  // A masked method has no mask yet, so it stays a draft the user runs in Generate.
+  // Without SAM 3.1 a masked method has no way to get its mask, so it stays a draft the user runs in Generate, with Generate's reason.
   fireEvent.click(screen.getByRole('button', { name: 'Paint a mask (inpaint)' }));
   expect((screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.getByRole('button', { name: 'Prepare and run' }).getAttribute('title')).toMatch(/gets its mask in Generate/);
+  expect(screen.getByRole('button', { name: 'Prepare and run' }).getAttribute('title')).toBe('SAM 3.1 needs the SAM3_Detect node.');
   fireEvent.click(screen.getByRole('button', { name: 'Prepare in Generate' }));
   expect(onPrepare.mock.calls[1][0]).toMatchObject({ strategy: 'inpaint' });
   expect(onPrepare.mock.calls[1][0].run).toBeUndefined();
+});
+
+it('runs the mask method with SAM 3.1: Replace what becomes the mask target, and the masking stage has no Stop of its own', async () => {
+  const { onPrepare, view } = ui({ sam: '' });
+  await choosePicture(1024, 640);
+  fireEvent.click(await screen.findByRole('button', { name: 'Paint a mask (inpaint)' }));
+  type('With what', 'a blue bicycle');
+  const run = () => screen.getByRole('button', { name: 'Prepare and run' }) as HTMLButtonElement;
+  // The mask target is "Replace what", so the run waits for it even though the inpaint prompt only needs "With what".
+  expect(run().disabled).toBe(true);
+  expect(run().getAttribute('title')).toBe('Name what to replace: SAM 3.1 uses it to find the mask.');
+  expect((screen.getByRole('button', { name: 'Prepare in Generate' }) as HTMLButtonElement).disabled).toBe(false);
+  type('Replace what', '  the   red car ');
+  expect(run().disabled).toBe(false); expect(run().getAttribute('title')).toBeNull();
+  fireEvent.click(run());
+  expect(onPrepare.mock.calls[0][0]).toMatchObject({ strategy: 'inpaint', source: 'edit', edit: 'inpaint', run: true, mask: 'the red car', positive: 'a blue bicycle' });
+  // A plain prepare never carries a mask target.
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare in Generate' }));
+  expect(onPrepare.mock.calls[1][0].mask).toBeUndefined();
+  expect(vi.mocked(invoke).mock.calls.map(([c]) => c).sort()).toEqual(['native_analysis_pick', 'native_media_describe', 'native_models_scan']);
+  view.rerender(<I18nProvider><DarkWizards active roots={{ models: '/m', input: '/in' }} onPrepare={onPrepare} sam="" handoff={2} outcome={{ n: 2, run: { state: 'queued', masking: true } }}/></I18nProvider>);
+  expect(screen.getByText('Finding the mask with SAM 3.1…')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+  expect(run().disabled).toBe(true);
+  const open = vi.fn();
+  view.rerender(<I18nProvider><DarkWizards active roots={{ models: '/m', input: '/in' }} onPrepare={onPrepare} sam="" handoff={2} onOpenGenerate={open} outcome={{ n: 2, run: { state: 'unknown', error: 'SAM 3.1 found no “the red car” in the picture. Draw the mask in Generate and press Run there.' } }}/></I18nProvider>);
+  expect(screen.getByText(/SAM 3.1 found no “the red car”/)).toBeTruthy();
+  // The prepared draft is in Generate, so the way there is offered with the message.
+  fireEvent.click(screen.getByRole('button', { name: 'Show in Generate' }));
+  expect(open).toHaveBeenCalledTimes(1);
 });
 
 it('follows the wizard run Generate reports: progress, Stop for that one job, then the finished picture', async () => {

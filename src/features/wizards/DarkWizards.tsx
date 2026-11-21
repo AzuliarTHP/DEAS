@@ -22,10 +22,12 @@ export interface DarkWizardsProps {
   onOpenGenerate?: () => void;
   /** Number of the last hand-over, so the outcome of an older one is not shown as current. */
   handoff?: number;
+  /** Generate's reason why SAM 3.1 text→mask cannot run (empty when it can; undefined while unknown). */
+  sam?: string;
 }
 
 /** Dark Wizards: preset-driven helpers that pick model, pipeline and prompt, then prepare Generate. They never run anything themselves. */
-export function DarkWizards({ active = false, roots, onPrepare, outcome, onOpenGenerate, handoff }: DarkWizardsProps) {
+export function DarkWizards({ active = false, roots, onPrepare, outcome, onOpenGenerate, handoff, sam }: DarkWizardsProps) {
   const { t } = useI18n();
   const native = isTauri();
   const [wizardId, setWizardId] = useState(builtinWizards[0]?.id ?? '');
@@ -65,8 +67,9 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, onOpenG
   // The wizard's own run: Generate submits and follows it; the wizard shows its progress and can stop only that job.
   const run = !!handoff && outcome?.n === handoff ? outcome.run : undefined;
   const running = run?.state === 'queued' || run?.state === 'running';
-  // A masked method has no mask at hand-over time (the wizard cannot make one yet), so it stays a prepared draft.
-  const runBlocked = !native ? t('wizards.run.native') : chosen?.strategy.needsMask ? t('wizards.run.maskHint') : '';
+  // A masked method gets its mask from Generate's SAM 3.1 text path with *Replace what* as the target, so it needs both.
+  const maskTarget = chosen?.strategy.needsMask ? fields.target?.replace(/\s+/g, ' ').trim() ?? '' : '';
+  const runBlocked = !native ? t('wizards.run.native') : !chosen?.strategy.needsMask ? '' : !maskTarget ? t('wizards.run.maskTarget') : sam ?? t('studio.sam.checking');
   const runnable = !runBlocked;
   // Inpaint keeps the source size, so a picture off the model's grid is first resampled in Generate; say so before the hand-over.
   const grid = chosen?.strategy.source === 'edit' && model?.family ? editGrid(model.family, withObject) : 0;
@@ -142,7 +145,7 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, onOpenG
       model: { name: model.name, path: model.path }, picture,
       // Reference edits make the picture reference 1 themselves; a masked edit lists it explicitly so the prompt's `image 1` exists there too.
       ...(withObject && object ? { references: s.source === 'reference' ? [object] : [picture, object] } : {}),
-      positive: strategyPrompt(s, fields, withObject), ...(canvas ? { size: canvas } : {}), ...(withRun ? { run: true } : {})});
+      positive: strategyPrompt(s, fields, withObject), ...(canvas ? { size: canvas } : {}), ...(withRun ? { run: true, ...(s.needsMask ? { mask: maskTarget } : {}) } : {})});
   };
 
   if (!wizard) return null;
@@ -210,17 +213,17 @@ export function DarkWizards({ active = false, roots, onPrepare, outcome, onOpenG
       <div className="wizards-row wizards-actions">
         <button type="button" className="action-button" data-wizard-prepare disabled={!ready || pending || running} onClick={() => prepare()}>{t('wizards.prepare')}</button>
         <button type="button" className="action-button" data-wizard-run disabled={!ready || pending || running || !runnable} title={runBlocked || undefined} onClick={() => prepare(true)}>{t('wizards.run')}</button>
-        {running && <button type="button" className="forge-ghost" data-wizard-stop onClick={() => { const job = run?.job; if (job) void stopWorkbenchJob(job).catch(e => setError(e instanceof Error ? e.message : String(e))); }}>{t('wizards.run.stop')}</button>}
+        {running && run?.job && <button type="button" className="forge-ghost" data-wizard-stop onClick={() => { const job = run?.job; if (job) void stopWorkbenchJob(job).catch(e => setError(e instanceof Error ? e.message : String(e))); }}>{t('wizards.run.stop')}</button>}
         {!running && <span className="forge-note">{t('wizards.prepareNote')}</span>}
       </div>
       {run && <div className="wizards-run" data-wizard-run-state={run.state} role="status">
-        <p className="forge-note" data-wizard-run-status>{run.state === 'running' && run.max ? t('wizards.run.running', { value: String(run.value ?? 0), max: String(run.max) }) : t(`wizards.run.${run.state}`)}</p>
+        <p className="forge-note" data-wizard-run-status>{run.masking ? t('wizards.run.masking') : run.state === 'running' && run.max ? t('wizards.run.running', { value: String(run.value ?? 0), max: String(run.max) }) : t(`wizards.run.${run.state}`)}</p>
         {run.preview && running && <img className="wizards-preview" src={run.preview} alt=""/>}
         {run.picture && <figure className="wizards-result">
           <img src={convertFileSrc(run.picture.path)} alt={chosen ? strategyPrompt(chosen.strategy, fields, withObject).slice(0, 160) : t('wizards.title')}/>
           <figcaption>{[`${run.picture.width}×${run.picture.height}`, run.picture.checkpoint.replace(/\.(safetensors|gguf|ckpt)$/i, ''), t('wizards.run.seed', { seed: String(run.picture.seed) }), run.picture.ms ? `${(run.picture.ms / 1000).toFixed(1)} s` : ''].filter(Boolean).join(' · ')}</figcaption>
         </figure>}
-        {run.picture && onOpenGenerate && <button type="button" className="forge-ghost" data-wizard-open onClick={onOpenGenerate}>{t('wizards.run.open')}</button>}
+        {(run.picture || run.error) && onOpenGenerate && <button type="button" className="forge-ghost" data-wizard-open onClick={onOpenGenerate}>{t('wizards.run.open')}</button>}
         {run.error && <p className="error-message" role="alert" data-wizard-run-error>{run.error}</p>}
       </div>}
       {error && <p className="error-message" role="alert">{error}</p>}

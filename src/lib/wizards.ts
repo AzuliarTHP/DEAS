@@ -31,10 +31,13 @@ export interface WizardDescriptor { id: string; media: 'image'; fields: WizardFi
 export interface WizardModel { category: string; name: string; path: string; family?: string | null }
 export interface WizardChoice { strategy: WizardStrategy; models: WizardModel[] }
 export interface WizardPicture { name: string; path: string; src: string }
-/** One explicit hand-over into Generate. `size` is set only for reference edits (text-to-image keeps the picture's aspect); `references` follow the picture as further prompt references. `run` asks Generate to start the draft through its own Run path after applying it. */
+/**
+ * One explicit hand-over into Generate. `size` is set only for reference edits (text-to-image keeps the picture's aspect); `references` follow the picture as further prompt references. `run` asks Generate to start the draft through its own Run path after applying it.
+ * `mask` (masked edits with `run` only) is the *Replace what* text: Generate first masks the picture with its own SAM 3.1 text path, one mask layer per target, and starts the run only when a mask was found.
+ */
 export interface WizardHandoff {
   n: number; wizard: string; strategy: string; pipeline: 't2i' | 'i2i'; source: 'reference' | 'edit'; edit?: 'inpaint' | 'resample';
-  model: { name: string; path: string }; picture: WizardPicture; references?: WizardPicture[]; positive: string; size?: Size; run?: boolean;
+  model: { name: string; path: string }; picture: WizardPicture; references?: WizardPicture[]; positive: string; size?: Size; run?: boolean; mask?: string;
 }
 /** The picture a wizard's own run produced, in that job's native-held output folder. */
 export interface WizardRunPicture { path: string; width: number; height: number; seed: number; checkpoint: string; ms?: number }
@@ -45,6 +48,8 @@ export interface WizardRunPicture { path: string; width: number; height: number;
 export interface WizardRun {
   state: JobStatus['state']; value?: number; max?: number; preview?: string; error?: string;
   picture?: WizardRunPicture; job?: JobStatus;
+  /** SAM 3.1 is still finding the mask; the drawing job has not been submitted yet. */
+  masking?: boolean;
 }
 /** The job output file of a succeeded job as a local path, or undefined when its identity is not held. */
 export function jobOutputPath(job: JobStatus, output: JobStatus['outputs'][number]): string | undefined {

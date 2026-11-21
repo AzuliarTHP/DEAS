@@ -4,7 +4,7 @@ import './beginner.css';
 import './beginner-v2.css';
 
 export type Experience = 'unset' | 'beginner' | 'advanced';
-export type BeginnerPage = 'generate' | 'models' | 'collection';
+export type BeginnerPage = 'generate' | 'models' | 'collection' | 'wizards';
 
 export function ExperienceSwitch({value,onChange}:{value:Experience;onChange:(value:Experience)=>void}) {
  const {t}=useI18n();

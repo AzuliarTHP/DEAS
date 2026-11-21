@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.16
+
+- **Dark Wizards in Beginner.** Beginner's band has a **Wizards** page with the same Replace wizard as Advanced. **Prepare in Generate** opens Beginner's Generation page with the draft, and **Prepare and run** starts it through the normal Run (including the SAM 3.1 mask). Before, Beginner refused every wizard hand-over. Only models Beginner can use itself are accepted. The composer shows what the wizard set: its prompt pictures, *Masked edit (inpaint)*, and *Wizard size …* as Quality. **Clear wizard draft** returns to a plain picture-to-picture draft. Beginner's own model reset no longer overwrites the wizard's size or brings back LoRAs, and the wizard size is not saved as Beginner's Quality.
+
+## 0.3.15
+
+- **Russian is the seventh interface language.** DEAS now speaks Русский: every panel, dialog, help text and error message carries a Russian translation, the language selector offers **Русский (ru)**, and the Beginner model guides show Russian copy for the featured bases. All parity, placeholder and language-switch gates now run over seven languages. Settings also accepts Russian as a prompt spellcheck target; like Japanese and Chinese it has no pinned Hunspell dictionary, which the panel explains instead of failing. (PR #48 by @Djeks, with this integration fix.)
+- **Dark Wizards: Paint a mask runs in one click.** In the Replace wizard, **Prepare and run** now also works with **Paint a mask (inpaint)**: Generate finds the mask with SAM 3.1 from *Replace what* (its own text-to-mask path and selected SAM checkpoint; one mask layer per comma-separated part, Generate's SAM targets field untouched), then starts the inpaint run through its own Run path. If SAM finds nothing, nothing is drawn and the draft stays prepared in Generate for a hand-painted mask. The button needs *Replace what* and is disabled with Generate's SAM reason when no SAM 3.1 checkpoint or `SAM3_Detect` node is available.
+- **Dark Wizards: Stop works while the wizard's run is drawing.** The progress reports now carry the job, so the wizard's **Stop** reaches that one job; before, it only had the job once the run had ended.
+- **Dark Wizards: masked edits of pictures outside Input/Output can run.** A picture to change chosen or dropped from any folder is uploaded to the backend when Run starts, like a reference, instead of Generate asking for a picture from the Input or Output folder.
+
 ## 0.3.14
 
 - **Enhanced Preview corrects stretched playback.** The preview clock, playback speed, and scrub bar follow the submitted video duration when a preview is encoded longer than the job.

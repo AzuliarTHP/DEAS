@@ -79,12 +79,17 @@ export default function App(){
  const frameActions=useRef<((item:MediaItem)=>MediaAction[])|undefined>(undefined);
  const tveOpened=useRef(false);if(tab==='tve')tveOpened.current=true;
  // Dark Wizards prepare an ordinary Generate draft; Generate answers by hand-over number and only then becomes visible.
- const wizardsOpened=useRef(false);if(tab==='wizards')wizardsOpened.current=true;
+ // Beginner reaches the same wizards as a page of its own band (the studio tab stays Generate there).
+ const wizardsVisible=tab==='wizards'||(beginner&&tab==='generate'&&beginnerPage==='wizards');
+ const wizardsOpened=useRef(false);if(wizardsVisible)wizardsOpened.current=true;
+ const openGenerate=useCallback(()=>{if(beginner)setBeginnerPage('generate');setTab('generate');},[beginner,setTab]);
  const [wizardHandoff,setWizardHandoff]=useState<WizardHandoff>();
  const [wizardOutcome,setWizardOutcome]=useState<{n:number;error?:string;run?:WizardRun}>();
+ // Generate's SAM 3.1 readiness, so the wizard can disable a masked one-click run with the same reason.
+ const [wizardSam,setWizardSam]=useState<string>();
  const prepareWizard=useCallback((handoff:Omit<WizardHandoff,'n'>)=>setWizardHandoff(previous=>({...handoff,n:(previous?.n??0)+1})),[]);
  // A run hand-over stays on the wizard tab: Generate reports its progress and result back here instead of switching.
- const wizardApplied=useCallback((n:number,error?:string,run?:WizardRun)=>{setWizardOutcome({n,...(error?{error}:{}),...(run?{run}:{})});if(!error&&!run)setTab('generate');},[setTab]);
+ const wizardApplied=useCallback((n:number,error?:string,run?:WizardRun)=>{setWizardOutcome({n,...(error?{error}:{}),...(run?{run}:{})});if(!error&&!run)openGenerate();},[openGenerate]);
  const monitorOpened=useRef(false);if(tab==='monitor')monitorOpened.current=true;
  const [forgeHost,setForgeHost]=useState<HTMLDivElement|null>(null);
  const [h3ForgeAvailable,setH3ForgeAvailable]=useState(false);
@@ -129,9 +134,9 @@ export default function App(){
    <AiOSetup experience={experience} onExperience={setExperience} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} studioTab={tab} onStudioTab={setTab} onStudioActiveChange={setStudioActive} onConnectExisting={connectExisting} onEnvironment={setEnvironment} studio={<div id="studio-workspace" className="studio-workspace">
     <div className="studio-columns">
     <div className="studio-main">
-    <div className="studio-generate-host" hidden={tab==='forge'||tab==='chat'||tab==='analysis'||tab==='wizards'||tab==='tve'||tab==='monitor'}><Workbench beginner={beginner} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} planVisible={tab==='map'} endpoint={endpoint} ownedBackend={endpoint===ownedEndpoint} roots={roots} root={environment?.root} incoming={sent} onCanvasContext={setForgeCanvasContext} onOpenVideoPost={()=>setTab('tve')} forgeHost={forgeHost} forgeActive={studioActive&&tab==='forge'} onOpenPromptForge={()=>setTab('forge')} onH3ForgeAvailable={setH3ForgeAvailable} chatRender={chatRender} onChatRender={chatRendered} onChatStudio={setChatStudio} onAnalyze={analyze} onFrameActions={fn=>{frameActions.current=fn;}} wizard={wizardHandoff} onWizardApplied={wizardApplied}/></div>
+    <div className="studio-generate-host" hidden={tab==='forge'||tab==='chat'||tab==='analysis'||tab==='wizards'||tab==='tve'||tab==='monitor'}><Workbench beginner={beginner} beginnerPage={beginnerPage} onBeginnerPage={setBeginnerPage} planVisible={tab==='map'} endpoint={endpoint} ownedBackend={endpoint===ownedEndpoint} roots={roots} root={environment?.root} incoming={sent} onCanvasContext={setForgeCanvasContext} onOpenVideoPost={()=>setTab('tve')} forgeHost={forgeHost} forgeActive={studioActive&&tab==='forge'} onOpenPromptForge={()=>setTab('forge')} onH3ForgeAvailable={setH3ForgeAvailable} chatRender={chatRender} onChatRender={chatRendered} onChatStudio={setChatStudio} onAnalyze={analyze} onFrameActions={fn=>{frameActions.current=fn;}} wizard={wizardHandoff} onWizardApplied={wizardApplied} onSamAvailability={setWizardSam}/></div>
     {analysisOpened.current&&<div className="studio-generate-host" hidden={tab!=='analysis'}><Analysis active={studioActive&&tab==='analysis'} endpoint={endpoint} frameActions={item=>frameActions.current?.(item)??[]} roots={roots} root={environment?.root} incoming={toAnalyze} onSend={sendToGenerate}/></div>}
-    {wizardsOpened.current&&<div className="studio-generate-host" hidden={tab!=='wizards'}><DarkWizards active={studioActive&&tab==='wizards'} roots={roots} onPrepare={prepareWizard} outcome={wizardOutcome} onOpenGenerate={()=>setTab('generate')} handoff={wizardHandoff?.n}/></div>}
+    {wizardsOpened.current&&<div className="studio-generate-host" hidden={!wizardsVisible}><DarkWizards active={studioActive&&wizardsVisible} roots={roots} onPrepare={prepareWizard} outcome={wizardOutcome} onOpenGenerate={openGenerate} handoff={wizardHandoff?.n} sam={wizardSam}/></div>}
     {tveOpened.current&&<div className="studio-generate-host" hidden={tab!=='tve'}><TrueVideoEnhancer endpoint={endpoint} roots={roots}/></div>}
     {monitorOpened.current&&<div className="studio-generate-host" hidden={tab!=='monitor'}><Monitoring active={studioActive&&tab==='monitor'} root={environment?.root}/></div>}
     {forgeOpened.current&&<div className="studio-generate-host" hidden={tab!=='forge'}>{canvasSendError&&<p className="error-message" role="alert">{t(canvasSendError)}</p>}<div ref={setForgeHost} hidden={!h3ForgeAvailable}/><div hidden={h3ForgeAvailable}><PromptForge active={studioActive&&tab==='forge'&&!h3ForgeAvailable} endpoint={endpoint} root={environment?.root} inputDir={roots?.input} outputDir={roots?.output} onSend={sendToGenerate} canvasContext={forgeCanvasContext}/></div></div>}
