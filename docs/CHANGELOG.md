@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Studio Notes can copy prompts both ways.** Use note prompts applies the selected saved note’s prompts. Copy main prompts fills the note draft from the current main prompts.
+- **Studio Notes can copy prompts both ways.** Use note prompts applies the selected saved note’s prompts. Copy main prompts fills the note draft and provides a default name for an unnamed draft.
 - **Anima 2.9B can load compatible 2B LoRAs.** Turn on Anima 2.9B LoRA compatibility in Selected LoRAs and sets to remap full 28-block LoRAs for the expanded 40-block model. The option defaults to off.
 
 ## 0.3.14

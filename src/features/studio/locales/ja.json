@@ -1241,6 +1241,7 @@
   "notes.usePrompts": "ノートのプロンプトを使用",
   "notes.usePromptsHelp": "メインの正・負のプロンプトを、選択した保存済みノートの内容で置き換えます。",
   "notes.title": "ノート名",
+  "notes.untitled": "無題のノート",
   "notes.location": "ノートのフォルダー",
   "notes.moveTo": "フォルダーへ移動",
   "notes.root": "ルート",

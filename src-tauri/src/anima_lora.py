@@ -5,8 +5,8 @@ import logging
 import os
 import re
 
-# The measured expansion layout is documented by sparklingcoffee777:
-# https://github.com/sparklingcoffee777/ComfyUI-Anima-2.9B-loraPatch
+# The 40-block layout preserves the order of the 28 base blocks and inserts
+# new blocks at these positions.
 _INSERTED = {2, 5, 8, 11, 14, 17, 21, 24, 27, 30, 33, 36}
 _EXPANDED = tuple(index for index in range(40) if index not in _INSERTED)
 _MODEL_BLOCK = re.compile(r"^diffusion_model\.blocks\.([0-9]+)\.")

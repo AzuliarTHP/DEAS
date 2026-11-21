@@ -132,7 +132,8 @@ test('Notes applies the selected saved prompts and clears an empty negative with
 
 test('Notes copies the main prompts into the draft and uses the normal save flow',async()=>{
  const note={id:'fixture-note',folder:'',title:'Saved fixture',positive:'old note',negative:'old negative',seed:777};
- const notebook=JSON.stringify({folders:[],notes:[note]});
+ const untitled={...note,id:'untitled-fixture',title:'Untitled note'};
+ const notebook=JSON.stringify({folders:[],notes:[note,untitled]});
  localStorage.setItem('deas.pref.studio.promptNotebook',notebook);
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a.safetensors',family:'sdxl',size:1,info:null}]);
  render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
@@ -161,6 +162,15 @@ test('Notes copies the main prompts into the draft and uses the normal save flow
  expect(screen.getByLabelText('Note positive prompt')).toHaveProperty('value',mainPrompt);
  expect(screen.getByLabelText('Note negative prompt')).toHaveProperty('value','main negative');
  expect(localStorage.getItem('deas.pref.studio.promptNotebook')).toBe(notebook);
+ expect(screen.getByLabelText('Note name')).toHaveProperty('value','Untitled note 2');
+ const save=screen.getByRole('button',{name:'Save note'});
+ expect(save).toHaveProperty('disabled',false);
+ fireEvent.click(save);
+ expect(screen.queryByRole('dialog')).toBeNull();
+ const notes=JSON.parse(localStorage.getItem('deas.pref.studio.promptNotebook')!).notes;
+ expect(notes).toHaveLength(3);
+ expect(notes[2]).toMatchObject({title:'Untitled note 2',positive:mainPrompt,negative:'main negative',seed:0});
+ expect(screen.getByRole('button',{name:'Untitled note 2'})).toBeTruthy();
  expect(runWorkbenchJob).not.toHaveBeenCalled();
 });
 

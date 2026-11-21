@@ -1241,6 +1241,7 @@
   "notes.usePrompts": "Not istemlerini kullan",
   "notes.usePromptsHelp": "Ana pozitif ve negatif istemleri seçili kayıtlı nottakilerle değiştirir.",
   "notes.title": "Not adı",
+  "notes.untitled": "Adsız not",
   "notes.location": "Not klasörü",
   "notes.moveTo": "Klasöre taşı",
   "notes.root": "Kök",

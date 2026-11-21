@@ -1241,6 +1241,7 @@
   "notes.usePrompts": "Notizprompts übernehmen",
   "notes.usePromptsHelp": "Ersetzt den positiven und negativen Hauptprompt durch die ausgewählte gespeicherte Notiz.",
   "notes.title": "Notizname",
+  "notes.untitled": "Unbenannte Notiz",
   "notes.location": "Notizordner",
   "notes.moveTo": "In Ordner verschieben",
   "notes.root": "Stammordner",

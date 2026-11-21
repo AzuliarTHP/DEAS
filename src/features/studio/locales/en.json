@@ -1241,6 +1241,7 @@
   "notes.usePrompts": "Use note prompts",
   "notes.usePromptsHelp": "Replace the main positive and negative prompts with the selected saved note.",
   "notes.title": "Note name",
+  "notes.untitled": "Untitled note",
   "notes.location": "Note folder",
   "notes.moveTo": "Move to folder",
   "notes.root": "Root",

@@ -691,14 +691,13 @@ Auto-Aspect is offered only in media-input pipelines; browsing an image or video
 the LoRA count. The switch defaults off. It remaps complete 28-block base LoRAs
 for a loaded 40-block Anima model. LoRAs with higher block indices or an
 incomplete base range go through the regular loader. Text encoder and adapter
-keys stay intact. The remap runs in memory. A model truncated to 28 blocks needs
-a backend that can load its full layout. [Anima block mapping](https://github.com/sparklingcoffee777/ComfyUI-Anima-2.9B-loraPatch)
+keys stay intact. DEAS remaps the keys in memory with its own Anima LoRA loader.
+The backend must be able to load the full 40-block model.
 
 DEAS provides this loader the next time it starts a managed backend. On a
 separately managed ComfyUI backend, install the bundled
 `src-tauri/src/anima_lora.py` as `deas_anima_lora.py` under `custom_nodes` and
-restart that backend. If the separate upstream startup patch is already installed,
-set `ANIMA_LORA_REMAP=0` for that backend to let the Studio switch control remapping.
+restart that backend.
 
 ### Video generation
 
@@ -905,7 +904,8 @@ the main positive and negative prompts with the saved text. An empty field in th
 note clears the matching main prompt. The button changes only those two fields.
 Click **Copy main prompts** to replace the positive and negative prompts in the
 open note draft with the current main prompts. You can do this for a new note or
-an existing one. Review the draft and click **Save note** to keep the changes.
+an existing one. Copying into an unnamed draft gives it an editable default
+name. Click **Save note** to keep the changes.
 Ctrl/Cmd+Enter in the notebook does not run Studio.
 
 The left pane holds folders; the middle pane lists notes for the selected folder.

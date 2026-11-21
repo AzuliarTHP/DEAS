@@ -1241,6 +1241,7 @@
   "notes.usePrompts": "Utiliser les prompts de la note",
   "notes.usePromptsHelp": "Remplace les prompts principaux positif et négatif par ceux de la note enregistrée sélectionnée.",
   "notes.title": "Nom de la note",
+  "notes.untitled": "Note sans titre",
   "notes.location": "Dossier de la note",
   "notes.moveTo": "Déplacer vers le dossier",
   "notes.root": "Racine",

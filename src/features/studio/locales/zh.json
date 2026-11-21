@@ -1241,6 +1241,7 @@
   "notes.usePrompts": "使用笔记提示词",
   "notes.usePromptsHelp": "用所选已保存笔记的正面和负面提示词替换主提示词。",
   "notes.title": "笔记名称",
+  "notes.untitled": "未命名笔记",
   "notes.location": "笔记文件夹",
   "notes.moveTo": "移动到文件夹",
   "notes.root": "根目录",

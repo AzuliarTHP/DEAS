@@ -101,6 +101,16 @@ export function PromptNotesPanel({mainPrompts,onUsePrompts}:Props){
  };
  const chooseFolder=(value:string)=>{setFolder(value);setId('');setDraft(empty(value));};
  const chooseNote=(note:Note)=>{setId(note.id);setDraft({title:note.title,positive:note.positive,negative:note.negative,folder:note.folder,seed:String(note.seed)});};
+ const copyMainPrompts=()=>{
+  setDraft(current=>{
+   if(current.title.trim()||(!mainPrompts.positive&&!mainPrompts.negative))return {...current,...mainPrompts};
+   const names=new Set(book.notes.filter(note=>note.folder===current.folder).map(note=>note.title));
+   const untitled=t('notes.untitled');
+   let suggestedTitle=untitled;
+   for(let suffix=2;names.has(suggestedTitle);suffix++)suggestedTitle=`${untitled} ${suffix}`;
+   return {...current,...mainPrompts,title:suggestedTitle};
+  });
+ };
  const selectedFolder=book.folders.find(item=>item.id===folder);
  const canCreate=!dirty&&book.folders.length<200&&(!folder||folderPath.length<8);
  const orderedFolders=book.manualFolderOrder?book.folders:[...book.folders].sort((a,b)=>a.name.localeCompare(b.name));
@@ -217,7 +227,7 @@ export function PromptNotesPanel({mainPrompts,onUsePrompts}:Props){
    <button type="button" disabled={!saved} title={t('notes.usePromptsHelp')}
     onClick={()=>{if(saved)onUsePrompts(saved.positive,saved.negative);}}>{t('notes.usePrompts')}</button>
    <button type="button" title={t('notes.copyMainPromptsHelp')}
-    onClick={()=>setDraft(current=>({...current,...mainPrompts}))}>{t('notes.copyMainPrompts')}</button>
+    onClick={copyMainPrompts}>{t('notes.copyMainPrompts')}</button>
    {dirty&&<small role="status">{t('notes.unsaved')}</small>}<small className="prompt-note-location" title={location}>{location}</small></div><div className="prompt-note-fields"><label>{t('notes.title')}<input maxLength={100} value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})}/></label><label>{t('notes.seed')}<input inputMode="numeric" maxLength={16} value={draft.seed} aria-invalid={!validSeed} onChange={e=>setDraft({...draft,seed:e.target.value})}/></label><label>{t('notes.moveTo')}<select data-note-move value={draft.folder} onChange={e=>setDraft({...draft,folder:e.target.value})}><option value="">{t('notes.root')}</option>{folderOptions.map(option=><option key={option.id} value={option.id}>{option.path}</option>)}</select></label></div><div className="prompt-note-prompts"><label>{t('notes.positive')}<textarea aria-label={t('notes.positive')} maxLength={16384} value={draft.positive} onChange={e=>setDraft({...draft,positive:e.target.value})}/></label><label>{t('notes.negative')}<textarea aria-label={t('notes.negative')} maxLength={16384} value={draft.negative} onChange={e=>setDraft({...draft,negative:e.target.value})}/></label></div></section>{namingFolder&&<FolderNameDialog title={t(namingFolder.target?'notes.renameFolder':'notes.newFolder')} initialName={namingFolder.target?.name??''}
   siblings={book.folders.filter(item=>item.parent===namingFolder.parent&&item.id!==namingFolder.target?.id)}
   storageError={storageError} onSave={saveFolderName} onClose={()=>setNamingFolder(null)}/>}
