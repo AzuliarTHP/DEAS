@@ -2481,7 +2481,9 @@ const promptTools=forgeContext&&<>
    </div>}
    {indexGapCount>0&&<p id="studio-index-gap" className="field-help wb-index-gap" role="status" data-index-gap={indexGapCount}>{t('studio.run.indexGap',{count:indexGapCount})}</p>}
     {bulkFamilyOpen&&<BulkFamilyDialog models={bulkTargets} root={modelsDir!} onClose={()=>setBulkFamilyOpen(false)} onUpdated={paths=>setBulkPaths(old=>new Set([...old].filter(path=>!paths.includes(path))))}/>}
-   {notesVisited.current&&<div className="wb-dock-panel wb-notes-panel" hidden={dockTab!=='notes'}><PromptNotesPanel/></div>}
+   {notesVisited.current&&<div className="wb-dock-panel wb-notes-panel" hidden={dockTab!=='notes'}><PromptNotesPanel
+    mainPrompts={{positive,negative}}
+    onUsePrompts={(notePositive,noteNegative)=>{setPositive(notePositive);setNegative(noteNegative);}}/></div>}
    {dockTab==='presets'&&<div className="wb-dock-panel"><PresetPanel disabled={busy||!!current||autoPlan||resolving}/></div>}
     {dockTab==='wildcards'&&<div className="wb-dock-panel"><WildcardPanel library={wildcardLibrary} loading={wildcardLoading} error={wildcardLibraryError} onReload={()=>setWildcardRevision(v=>v+1)} value={wildcard} onChange={setWildcard} enabled={wildcardEnabled} onEnabled={setWildcardEnabled} positive={positive} negative={negative} onInsert={name=>setPositive(p=>`${p.trim()?`${p} `:''}$${name}`)}/></div>}
 {dockTab==='post'&&<section className="wb-dock-panel wb-post" aria-label={t('studio.run.dock.post')}>

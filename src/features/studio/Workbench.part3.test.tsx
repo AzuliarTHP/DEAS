@@ -100,6 +100,70 @@ test('Notes keeps its manual draft across dock tabs without changing active prom
  expect(runWorkbenchJob).not.toHaveBeenCalled();expect(scanModels).toHaveBeenCalledTimes(1);
 });
 
+test('Notes applies the selected saved prompts and clears an empty negative without running',async()=>{
+ const note={id:'fixture-note',folder:'',title:'Saved fixture',positive:'first line\nsecond line',negative:'',seed:777};
+ const other={...note,id:'other-note',title:'Second fixture',negative:'saved negative'};
+ const notebook=JSON.stringify({folders:[],notes:[note,other]});
+ localStorage.setItem('deas.pref.studio.promptNotebook',notebook);
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a.safetensors',family:'sdxl',size:1,info:null}]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await screen.findByRole('button',{name:'LoRAs · 0'});
+ const seed=(screen.getByLabelText('Seed') as HTMLInputElement).value;
+ const positive=document.querySelector<HTMLTextAreaElement>('[data-run-positive]')!;
+ const negative=document.querySelector<HTMLTextAreaElement>('[data-run-negative]')!;
+ fireEvent.change(positive,{target:{value:'old positive'}});
+ dock('Notes');
+ const apply=screen.getByRole('button',{name:'Use note prompts'});
+ expect(apply).toHaveProperty('disabled',true);
+ fireEvent.click(screen.getByRole('button',{name:other.title}));
+ fireEvent.click(apply);
+ expect(positive.value).toBe(other.positive);
+ expect(negative.value).toBe(other.negative);
+ fireEvent.click(screen.getByRole('button',{name:note.title}));
+ fireEvent.change(screen.getByLabelText('Note positive prompt'),{target:{value:'unsaved draft'}});
+ fireEvent.click(apply);
+ expect(positive.value).toBe(note.positive);
+ expect(negative.value).toBe('');
+ expect(screen.getByLabelText('Note positive prompt')).toHaveProperty('value','unsaved draft');
+ expect(screen.getByLabelText('Seed')).toHaveProperty('value',seed);
+ expect(localStorage.getItem('deas.pref.studio.promptNotebook')).toBe(notebook);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
+test('Notes copies the main prompts into the draft and uses the normal save flow',async()=>{
+ const note={id:'fixture-note',folder:'',title:'Saved fixture',positive:'old note',negative:'old negative',seed:777};
+ const notebook=JSON.stringify({folders:[],notes:[note]});
+ localStorage.setItem('deas.pref.studio.promptNotebook',notebook);
+ vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a.safetensors',family:'sdxl',size:1,info:null}]);
+ render(<I18nProvider><Workbench endpoint={evidence.baseUrl} roots={{models:'/m'}}/></I18nProvider>);
+ await screen.findByRole('button',{name:'LoRAs · 0'});
+ const positive=screen.getByLabelText('Prompt');
+ const negative=screen.getByLabelText('Negative prompt');
+ const mainPrompt='first line\nsecond line';
+ fireEvent.change(positive,{target:{value:mainPrompt}});
+ dock('Notes');
+ const copy=screen.getByRole('button',{name:'Copy main prompts'});
+ fireEvent.click(screen.getByRole('button',{name:note.title}));
+ fireEvent.click(copy);
+ expect(screen.getByLabelText('Note positive prompt')).toHaveProperty('value',mainPrompt);
+ expect(screen.getByLabelText('Note negative prompt')).toHaveProperty('value','');
+ expect(screen.getByLabelText('Note name')).toHaveProperty('value',note.title);
+ expect(screen.getByLabelText('Note seed')).toHaveProperty('value','777');
+ expect(localStorage.getItem('deas.pref.studio.promptNotebook')).toBe(notebook);
+ fireEvent.click(screen.getByRole('button',{name:'Save note'}));
+ expect(within(screen.getByRole('dialog')).getByText(/Overwrite note/)).toBeTruthy();
+ fireEvent.click(within(screen.getByRole('dialog')).getByRole('button',{name:'Cancel'}));
+ fireEvent.click(screen.getByRole('button',{name:'Discard changes'}));
+ expect(screen.getByLabelText('Note positive prompt')).toHaveProperty('value',note.positive);
+ fireEvent.change(negative,{target:{value:'main negative'}});
+ fireEvent.click(screen.getByRole('button',{name:'New note'}));
+ fireEvent.click(copy);
+ expect(screen.getByLabelText('Note positive prompt')).toHaveProperty('value',mainPrompt);
+ expect(screen.getByLabelText('Note negative prompt')).toHaveProperty('value','main negative');
+ expect(localStorage.getItem('deas.pref.studio.promptNotebook')).toBe(notebook);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+});
+
 test('confirmed media deletion clears its active preview without selecting another file or scanning models',async()=>{
  vi.mocked(scanModels).mockResolvedValue([{category:'checkpoints',name:'a.safetensors',path:'/m/a',family:'sdxl',size:1,info:null}]);
  vi.mocked(invoke).mockImplementation(async()=>({path:'/out/raw',parent:'/out',entries:['one.png','two.png'].map(name=>({name,path:'/out/raw/'+name,kind:'file',media:'image',symlink:false,size:1,modified:1})),truncated:false}));

@@ -886,8 +886,13 @@ Enter a note name, positive prompt, negative prompt and nonnegative integer seed
 then click **Save note**. Change the name to save the draft as a separate note and
 keep the original. Saving a selected note under the same name asks for overwrite
 confirmation. **Cancel** keeps the saved note and leaves your edits in the draft.
-Notes do not copy or change the active generation prompt,
-seed, models or selected LoRAs. Ctrl/Cmd+Enter in the notebook does not run Studio.
+Select a saved note and click **Use note prompts** beside **New note** to replace
+the main positive and negative prompts with the saved text. An empty field in the
+note clears the matching main prompt. The button changes only those two fields.
+Click **Copy main prompts** to replace the positive and negative prompts in the
+open note draft with the current main prompts. You can do this for a new note or
+an existing one. Review the draft and click **Save note** to keep the changes.
+Ctrl/Cmd+Enter in the notebook does not run Studio.
 
 The left pane holds folders; the middle pane lists notes for the selected folder.
 All notes shows the whole notebook. Each pane scrolls independently of the editor.

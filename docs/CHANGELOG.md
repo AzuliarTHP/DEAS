@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Studio Notes can copy prompts both ways.** Use note prompts applies the selected saved note’s prompts. Copy main prompts fills the note draft from the current main prompts.
+
 ## 0.3.14
 
 - **Enhanced Preview corrects stretched playback.** The preview clock, playback speed, and scrub bar follow the submitted video duration when a preview is encoded longer than the job.
