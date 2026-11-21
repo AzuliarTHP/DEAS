@@ -35,7 +35,7 @@ GEOMETRY = r"""()=>{
 
 def verify(browser, url, shots):
     checks = []
-    for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
         context = browser.new_context(viewport={'width':1440,'height':960}, reduced_motion='reduce')
         page = context.new_page()
         errors = []

@@ -122,7 +122,7 @@ with sync_playwright() as p:
     assert checkbox['x'] < refine_button['x']
     for width in (1440,768,390):
         page.set_viewport_size({'width':width,'height':960})
-        for locale in ('en','de','fr','ja','tr','zh'):
+        for locale in ('en','de','fr','ja','ru','tr','zh'):
             page.get_by_role('combobox',name='Fixture language',exact=True).select_option(locale)
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'),(width,locale)
         page.get_by_role('combobox',name='Fixture language',exact=True).select_option('en')

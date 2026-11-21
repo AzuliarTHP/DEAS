@@ -7,7 +7,7 @@ import {Sam3VideoControls,type FaceRefineSettings,type Sam3VideoSettings} from '
 const value:Sam3VideoSettings={cuts:false,sceneThreshold:0.3,checkpoint:'SAM3/sam3.1.safetensors',threshold:0.5,maxObjects:4,detectInterval:1,startSeconds:0,durationSeconds:2};
 const refineValue:FaceRefineSettings={auto:false,denoise:0.35,cropFactor:2.5,feather:6,prompt:''};
 afterEach(()=>{cleanup();localStorage.clear();});
-test.each(['en','de','fr','ja','tr','zh'])('H3 face analysis controls are translated and dock-scoped searchable without computation (%s)',locale=>{
+test.each(['en','de','fr','ja','ru','tr','zh'])('H3 face analysis controls are translated and dock-scoped searchable without computation (%s)',locale=>{
  localStorage.setItem('deas.locale.v1',locale);const analyze=vi.fn();const refineRun=vi.fn();
  function Controls(){const [settings,setSettings]=useState(value);const [r,setR]=useState(refineValue);return <Sam3VideoControls value={settings} onChange={setSettings} models={[value.checkpoint]} sourceName="selected.mp4" unavailable="" busy={false} onAnalyze={analyze} refine={{value:r,onChange:setR,unavailable:'',autoUnavailable:'',onRefine:refineRun}}/>;}
  render(<I18nProvider><input data-sam-video="startSeconds"/><section className="wb-post"><Controls/></section></I18nProvider>);

@@ -59,7 +59,7 @@ with sync_playwright() as p:
         assert page.evaluate('__calls.length') == before, 'opening plan must not perform IPC'
         assert page.locator('[data-plan-stage]').evaluate_all('els=>els.map(el=>el.dataset.planStage)') == ['model','prompt','generate','refine','output']
         assert page.locator('.run-plan input,.run-plan button,.run-plan select,.run-plan textarea').count() == 0
-        for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+        for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
             set_locale(page, locale, '[data-studio-tab="map"]')
             assert json.loads(page.locator('[data-plan-intent]').text_content()) == draft
             assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width, locale)

@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCALES = ('de', 'en', 'fr', 'ja', 'tr', 'zh')
+LOCALES = ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh')
 MODELS = {
     'minimax-h3': 'minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors',
     'ltx-2': 'ltx-2.3-spatial-upscaler-x2-1.1.safetensors',
@@ -114,7 +114,7 @@ def fixture_script(family, installed):
 
 
 def self_check():
-    assert set(MODELS) == {'minimax-h3', 'ltx-2'} and len(LOCALES) == 6
+    assert set(MODELS) == {'minimax-h3', 'ltx-2'} and len(LOCALES) == 7
     for family in MODELS:
         for installed in (False, True):
             source = fixture_script(family, installed)

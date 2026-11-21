@@ -90,7 +90,7 @@ test('models without ACE-Step evidence keep the existing metadata surface',()=>{
  expect(document.querySelector('[data-model-family-evidence]')).toBeNull();
 });
 
-test('all metadata strings have six-locale data-only parity',()=>{
+test('all metadata strings have seven-locale data-only parity',()=>{
  const dictionaries=import.meta.glob('./locales/*.json',{eager:true,import:'default'}) as Record<string,Record<string,string>>;
- const entries=Object.values(dictionaries);expect(entries).toHaveLength(6);for(const dict of entries){expect(Object.keys(dict).sort()).toEqual(Object.keys(entries[0]).sort());expect(Object.values(dict).every(v=>typeof v==='string'&&v.length>0)).toBe(true);}expect(bundledCatalog.diagnostics).toEqual([]);
+ const entries=Object.values(dictionaries);expect(entries).toHaveLength(7);for(const dict of entries){expect(Object.keys(dict).sort()).toEqual(Object.keys(entries[0]).sort());expect(Object.values(dict).every(v=>typeof v==='string'&&v.length>0)).toBe(true);}expect(bundledCatalog.diagnostics).toEqual([]);
 });

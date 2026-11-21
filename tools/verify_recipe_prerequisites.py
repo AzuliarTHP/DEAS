@@ -46,7 +46,7 @@ with sync_playwright() as p:
                 assert page.evaluate('__calls.length') == 1, 'Compilation must not submit a job'
             else:
                 assert panel.locator('[role="alert"]').count() > 0, 'Browser must fail closed'
-            for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+            for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
                 set_locale(page, locale, '[data-studio-tab="map"]')
                 assert not page.evaluate('document.documentElement.scrollWidth>innerWidth'), (width, locale)
             if native:

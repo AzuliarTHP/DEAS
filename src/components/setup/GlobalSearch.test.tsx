@@ -25,7 +25,7 @@ test('Ctrl+K opens the search, Escape closes it', () => {
   expect(screen.queryByPlaceholderText('Find a control…')).toBeNull();
 });
 
-test('every indexed label, section and reason exists in all six languages', () => {
+test('every indexed label, section and reason exists in all seven languages', () => {
   for (const entry of searchIndex) {
     for (const key of [entry.tab, entry.section, entry.label, ...(entry.reason ? [entry.reason] : [])]) {
       for (const language of bundledCatalog.languages) {

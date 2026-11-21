@@ -30,7 +30,7 @@ with sync_playwright() as p:
     subprocess.run(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(MEDIA / 'clip.mp4'), '-frames:v', '1', str(OUT / 'clip.png')], check=True)
     browser = p.chromium.launch(headless=True)
     reports = []
-    for locale in ['en', 'de', 'fr', 'tr', 'ja', 'zh']:
+    for locale in ['en', 'de', 'fr', 'tr', 'ja', 'ru', 'zh']:
         for width in [1440, 700, 320]:
             print(f'REFERENCE_PLAYBACK {locale} {width}', flush=True)
             context = browser.new_context(viewport={'width': width, 'height': 1000})

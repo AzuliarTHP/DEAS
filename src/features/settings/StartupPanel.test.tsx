@@ -89,7 +89,7 @@ it('indexes every Startup optimization so global search finds each backend optio
  expect(hit('apply options')).toContain('[data-startup-apply]');
  const reason=searchIndex.find(e=>e.target==='[data-startup-field="cacheLru"]')!.reason!;
  expect(reason).toBe('search.reason.startupCacheLru');
- for(const locale of ['en','de','fr','ja','tr','zh'])expect(bundledCatalog.dictionaries[locale][reason],locale).toBeTypeOf('string');
+ for(const locale of ['en','de','fr','ja','ru','tr','zh'])expect(bundledCatalog.dictionaries[locale][reason],locale).toBeTypeOf('string');
  });
 
 it('is reachable from global search at its own anchor', ()=>{
@@ -97,7 +97,7 @@ it('is reachable from global search at its own anchor', ()=>{
  expect(entry).toMatchObject({view:'backend',panel:'startup',target:'.startup-panel [data-startup-partner-nodes]'});
  const text=(key:string)=>bundledCatalog.dictionaries.en[key];
  for(const query of ['partner nodes','api nodes','paid models'])expect(matchEntries(searchIndex,query,text),query).toContain(entry);
- for(const locale of ['en','de','fr','ja','tr','zh']){const d=bundledCatalog.dictionaries[locale];for(const key of ['startup.partner','startup.partnerNodes','startup.partnerHelp','startup.partnerUnsupported'])expect(d[key],`${locale} ${key}`).toBeTruthy();}
+ for(const locale of ['en','de','fr','ja','ru','tr','zh']){const d=bundledCatalog.dictionaries[locale];for(const key of ['startup.partner','startup.partnerNodes','startup.partnerHelp','startup.partnerUnsupported'])expect(d[key],`${locale} ${key}`).toBeTruthy();}
  });
 
  it('does not restart over a running Workbench generation', async()=>{

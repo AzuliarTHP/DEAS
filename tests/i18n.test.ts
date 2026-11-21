@@ -66,7 +66,7 @@ test('bad dictionaries and duplicate keys are diagnosed without crashing resolut
   assert.throws(() => assertCatalogValid(catalog), /Invalid localization catalog/);
 });
 
-test('all six bundled component-owned languages have strict key and placeholder parity', () => {
+test('all seven bundled component-owned languages have strict key and placeholder parity', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '../src');
   const bundledManifests: Record<string, unknown> = {};
   const bundledModules: Record<string, unknown> = {};
@@ -88,8 +88,8 @@ test('all six bundled component-owned languages have strict key and placeholder 
   }
   visit(root);
   const catalog = createCatalog(bundledManifests, bundledModules);
-  assert.deepEqual(catalog.languages.map(({ id }) => id), ['de', 'en', 'fr', 'ja', 'tr', 'zh']);
-  const nativeNames: Record<string,string>={de:'Deutsch',en:'English',fr:'Français',ja:'日本語',tr:'Türkçe',zh:'中文'};
+  assert.deepEqual(catalog.languages.map(({ id }) => id), ['de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh']);
+  const nativeNames: Record<string,string>={de:'Deutsch',en:'English',fr:'Français',ja:'日本語',ru:'Русский',tr:'Türkçe',zh:'中文'};
   for(const language of catalog.languages) assert.equal(language.name,nativeNames[language.id]);
   assertCatalogValid(catalog);
   const placeholders=(text:string)=>[...text.matchAll(/\{([^{}]+)\}/g)].map(match=>match[1]).sort();

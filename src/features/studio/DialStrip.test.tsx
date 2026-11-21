@@ -137,11 +137,11 @@ test('the rack button appears only when a rack dialog is wired', () => {
   expect(opened).toBe(1);
 });
 
-test('every dial string exists in all six locales with its placeholders, and global search finds the tab', () => {
+test('every dial string exists in all seven locales with its placeholders, and global search finds the tab', () => {
   const keys = Object.keys(bundledCatalog.dictionaries.en).filter(k => k.startsWith('studio.dials.') || k === 'studio.run.dock.dials');
   expect(keys.length).toBe(171);
   const holes = (s: string) => (s.match(/\{\w+\}/g) ?? []).sort().join();
-  for (const locale of ['de', 'fr', 'ja', 'tr', 'zh']) for (const key of keys) {
+  for (const locale of ['de', 'fr', 'ja', 'ru', 'tr', 'zh']) for (const key of keys) {
     const value = bundledCatalog.dictionaries[locale][key];
     expect(value, `${locale} ${key}`).toBeTruthy();
     expect(holes(value), `${locale} ${key}`).toBe(holes(text(key)));
@@ -153,8 +153,8 @@ test('every dial string exists in all six locales with its placeholders, and glo
   expect(matchEntries(searchIndex, 'dial rack', text)).toContain(entry);
 });
 
-test('the held-curve reason names the Continuity button that lifts it, and the findings help names the short-schedule limit, in all six locales', () => {
-  for (const locale of ['en', 'de', 'fr', 'ja', 'tr', 'zh']) {
+test('the held-curve reason names the Continuity button that lifts it, and the findings help names the short-schedule limit, in all seven locales', () => {
+  for (const locale of ['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh']) {
     const d = bundledCatalog.dictionaries[locale];
     // The way out of the hold for a plan saved before the clip's frame count was kept: the control as that locale labels it.
     expect(d['studio.dials.conflict.pieceStart'], locale).toContain(d['studio.run.cont.loadSources']);

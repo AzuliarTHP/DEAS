@@ -39,7 +39,7 @@ def main():
     results = []
     for installed in [False, True]:
         for width in [1440, 768, 320]:
-            for locale in ['en', 'de', 'fr', 'ja', 'tr', 'zh']:
+            for locale in ['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh']:
                 init = fixture('verify_reopen.py' if installed else 'verify_workbench.py', 'fixture')
                 init += '\nlocalStorage.setItem("deas.locale.v1",'+json.dumps(locale)+');localStorage.setItem("deas.pref.backend.autostart","false");'
                 manager = WebKit2.UserContentManager()

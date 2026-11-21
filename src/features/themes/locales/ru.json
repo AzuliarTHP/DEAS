@@ -1,0 +1,10 @@
+{
+  "theme.ui.someThemePacksCouldNotBeLoadedBuilt": "Некоторые пакеты тем не удалось загрузить. Тема по умолчанию остаётся доступной для восстановления. См. Логи.",
+  "theme.ui.theSavedThemeIsUnavailableDefaultIsShown": "Сохранённая тема недоступна. Показана тема по умолчанию, пока вы не восстановите пакет или не выберете другую тему.",
+  "theme.ui.chooseEnvironment": "Выберите окружение DEAS в Backend, чтобы загрузить пакеты тем.",
+  "theme.ui.loading": "Загрузка тем…",
+  "theme.ui.refresh": "Обновить темы",
+  "theme.ui.folderFailed": "Не удалось открыть редактор тем. См. Логи.",
+  "theme.ui.editThemes": "Редактировать темы",
+  "theme.ui.closeEditor": "Закрыть редактор тем"
+}

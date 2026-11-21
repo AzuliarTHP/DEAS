@@ -1,0 +1,22 @@
+{
+  "projects.menu": "Действия с проектом",
+  "projects.saveAs": "Сохранить как проект…",
+  "projects.packageImport": "Импортировать ZIP проекта…",
+  "projects.packageExport": "Экспортировать черновик в ZIP…",
+  "projects.new": "Новый проект",
+  "projects.open": "Открыть проект",
+  "projects.close": "Закрыть проект",
+  "projects.import": "Импортировать PNG",
+  "projects.closeUnsaved": "Закрыть без сохранения",
+  "projects.retry": "Повторить сохранение",
+  "projects.saved": "Сохранено",
+  "projects.saving": "Сохранение…",
+  "projects.unsaved": "Несохранённые изменения",
+  "projects.working": "Операция с проектом выполняется…",
+  "projects.error": "Операция с проектом не удалась. Настройки не изменены.",
+  "projects.limitation": "Только настройки изображений и PNG-вход; задания и результаты не восстанавливаются",
+  "projects.none": "Нет проекта",
+  "projects.missingCheckpoint": "Checkpoint проекта недоступен или несовместим: {name}. Явно выберите совместимую модель.",
+  "projects.closeBlocked": "Сохраните проект или явно закройте его без сохранения перед закрытием этого окна.",
+  "projects.closeGuardFailed": "Защита от закрытия окна недоступна. Дождитесь «Сохранено» и закройте проект перед выходом."
+}

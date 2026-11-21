@@ -3,7 +3,7 @@ import { bundledCatalog } from '../i18n/I18nProvider';
 import { translate } from './i18n';
 import { backendErrorText } from './backendErrors';
 
-it.each(['en','de','fr','ja','tr','zh'])('localizes backend failures without exposing transport URLs (%s)', locale => {
+it.each(['en','de','fr','ja','ru','tr','zh'])('localizes backend failures without exposing transport URLs (%s)', locale => {
  const t = (key: string, params?: Record<string, string|number>) => translate(bundledCatalog,locale,key,params);
  for (const [code,key] of [['BACKEND_UNAVAILABLE','studio.backend.unavailable'],['BACKEND_TIMEOUT','studio.backend.timeout'],['BACKEND_REQUEST_FAILED','studio.backend.requestFailed']]) {
   const text = backendErrorText(new Error(`${code}: object_info request failed http://127.0.0.1:45519/object_info`),t);

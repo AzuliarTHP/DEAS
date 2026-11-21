@@ -186,7 +186,7 @@ def saved(page):
 def verify_rack(browser, url, shots, checks):
     """The rack dialog: opens over the unchanged shell, shares one axis, and is edited with a real mouse and keyboard."""
     curved = 'dials/h3_day_night_hook.safetensors'
-    for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
         context = browser.new_context(viewport={'width': 1440, 'height': 960}, reduced_motion='reduce')
         page = context.new_page()
         errors = []
@@ -580,7 +580,7 @@ def check_presets(g, label):
 
 def verify_presets(browser, url, shots, checks):
     """The rack presets dialog: a modal over the unchanged shell at every size and locale; list, load, save, refusals and the rack's undo."""
-    for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
         context = browser.new_context(viewport={'width': 1440, 'height': 960}, reduced_motion='reduce')
         page = context.new_page()
         errors = []
@@ -726,7 +726,7 @@ def verify_info(browser, url, shots, checks):
     script = lambda locale: FIXTURE.replace('LOCALE', json.dumps(locale)).replace('RACKPRESETS', json.dumps(PRESETS)).replace('ROWS', json.dumps(INFO_ROWS)).replace('LISTED', json.dumps(INFO_LISTED)).replace('NODES', json.dumps(['UNETLoader', 'MAIDialRack', 'MAIDialHoldMap']))
     strip_shots = {('en', 1440, 1300), ('en', 1440, 960), ('en', 1024, 700), ('en', 390, 844), ('en', 320, 480), ('de', 1440, 1300), ('de', 1024, 700), ('ja', 390, 844), ('zh', 1024, 700)}
     rack_shots = {('en', 1440, 1300), ('en', 1440, 960), ('en', 1024, 700), ('en', 390, 844), ('de', 1440, 1300), ('de', 390, 844), ('ja', 1024, 700), ('fr', 1440, 960), ('tr', 1024, 700), ('zh', 390, 844)}
-    for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
         context = browser.new_context(viewport={'width': 1440, 'height': 960}, reduced_motion='reduce')
         page = context.new_page()
         errors = []
@@ -879,7 +879,7 @@ def verify_info(browser, url, shots, checks):
 
 def verify(browser, url, shots):
     checks = []
-    for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
         for nodes in (['UNETLoader', 'MAIDialRack', 'MAIDialHoldMap'], ['UNETLoader']):
             gate = 'ready' if 'MAIDialRack' in nodes else 'nodeMissing'
             context = browser.new_context(viewport={'width': 1440, 'height': 960}, reduced_motion='reduce')

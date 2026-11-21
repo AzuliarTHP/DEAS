@@ -18,7 +18,7 @@ def main():
     results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        for locale in ['en', 'de', 'fr', 'ja', 'tr', 'zh']:
+        for locale in ['en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh']:
             labels = json.loads((ROOT/f'src/features/studio/locales/{locale}.json').read_text(encoding='utf-8'))
             context = browser.new_context(viewport={'width': 1440, 'height': 960})
             page = context.new_page()

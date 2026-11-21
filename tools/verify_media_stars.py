@@ -129,7 +129,7 @@ def bottom_bounds(page, phase, width, minimum_actions=2):
 
 def menu_bounds(page, width, phase):
     """Open real menus in every locale and retain access to an oversized label."""
-    for locale in ('de', 'en', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh'):
         page.get_by_label('Fixture language', exact=True).select_option(locale)
         more = page.locator('.wb-stage [data-media-tools]:visible .wb-more')
         expect(more).to_have_count(1)
@@ -208,7 +208,7 @@ def run_case(browser, width):
         assert len(translated['rows']) > 1, ('longer German controls must wrap', translated)
     results.append(translated)
     # A wrapped header toolbar must push the media down, never cover it, in every locale.
-    for locale in ('fr', 'ja', 'tr', 'zh'):
+    for locale in ('fr', 'ja', 'ru', 'tr', 'zh'):
         page.get_by_label('Fixture language', exact=True).select_option(locale)
         results.append(bottom_bounds(page, f'browsed-image-{locale}', width))
     page.get_by_label('Fixture language', exact=True).select_option('en')

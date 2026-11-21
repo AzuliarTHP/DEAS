@@ -17,7 +17,7 @@ if(command==='native_presets_write'){localStorage.setItem('fixture.presets',JSON
 """)
 with sync_playwright() as p:
     browser = p.chromium.launch()
-    for locale in ('en', 'de', 'fr', 'ja', 'tr', 'zh'):
+    for locale in ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh'):
         for width in (1440, 320):
             page = browser.new_page(viewport={'width': width, 'height': 960}, reduced_motion='reduce')
             errors = []

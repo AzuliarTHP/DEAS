@@ -80,7 +80,7 @@ test('verified capability enables the switch; saved ON survives a missing capabi
   expect(onChange).toHaveBeenCalledTimes(1);
 });
 
-test.each(['en','de','fr','ja','tr','zh'])('keep background has localized help and a reachable read-only search target (%s)', locale => {
+test.each(['en','de','fr','ja','ru','tr','zh'])('keep background has localized help and a reachable read-only search target (%s)', locale => {
   localStorage.setItem(LOCALE_STORAGE_KEY,locale);
   const text = (key:string) => bundledCatalog.dictionaries[locale][key];
   const change=vi.fn();

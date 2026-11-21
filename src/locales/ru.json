@@ -1,0 +1,18 @@
+{
+  "app.home": "Главная DEAS",
+  "app.confirm": "Подтвердить",
+  "app.cancel": "Отмена",
+  "app.brand": "DEAS",
+  "app.brandCaption": "Dark Engine AI Studio",
+  "app.language": "Язык",
+  "app.eyebrow": "ЛОКАЛЬНЫЙ ДВИЖОК / ОТКРЫТЫЕ ВОЗМОЖНОСТИ",
+  "app.creative": "Ваш творческий",
+  "app.engine": "движок.",
+  "app.start": "Начните со своего движка.",
+  "app.follow": "Следуйте по связи. Откройте мысль.",
+  "app.noRun": "Ничего не запустится, пока вы не попросите.",
+  "app.instrument": "Локальный творческий инструмент",
+  "app.update": "Доступно обновление: {list}",
+  "app.updateNodes": "Узлы DaSiWa",
+  "app.dismiss": "Скрыть"
+}

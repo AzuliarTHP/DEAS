@@ -49,7 +49,7 @@ test('renders native generation settings as text and switches with the selected 
  expect(screen.queryByText('second')).toBeNull();expect(screen.getByText('Select an image or generated job to see its metadata.')).toBeTruthy();
 });
 
-test.each(['de','en','fr','ja','tr','zh'])('formats actual image/video duration using selected locale %s',locale=>{
+test.each(['de','en','fr','ja','ru','tr','zh'])('formats actual image/video duration using selected locale %s',locale=>{
  localStorage.setItem('deas.locale.v1',locale);
  const video:JobStatus['intent']={recipeId:'video-generation',version:1,family:'wan',positivePrompt:'video prompt',negativePrompt:'blur',model:'video.safetensors',textEncoder:'encoder',vae:'vae',seed:42,width:832,height:480,frames:81,frameRate:16,steps:12,cfg:3,sampler:'euler',scheduler:'simple',outputPrefix:'DEAS',output:{codec:'Auto',container:'Auto',bitDepth:'Auto',quality:20,audioCodec:'Auto',audioBitrate:'192k',saveFirstFrame:false,saveLastFrame:false},wan:{lowModel:'low',shiftHigh:5,shiftLow:5,refinerStep:6}};
  const {container,rerender}=render(<I18nProvider><GenerationMetadata job={job}/></I18nProvider>);

@@ -10,7 +10,7 @@ SVG='<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect widt
 reports=[]
 with sync_playwright() as p:
     browser=p.chromium.launch(headless=True)
-    for locale in ['en','de','fr','ja','tr','zh']:
+    for locale in ['en','de','fr','ja','ru','tr','zh']:
         for width,height in [(1920,1080),(1440,900),(1280,720),(1024,768)]:
             context=browser.new_context(viewport={'width':width,'height':height},user_agent='DEAS Windows Chromium fixture')
             page=context.new_page();errors=[];page.on('pageerror',lambda e:errors.append(str(e)))

@@ -11,7 +11,7 @@ import verify_continuity as continuity
 import verify_postprocessing as runner
 
 ROOT = Path(__file__).resolve().parents[1]
-LOCALES = ('en', 'de', 'fr', 'ja', 'tr', 'zh')
+LOCALES = ('en', 'de', 'fr', 'ja', 'ru', 'tr', 'zh')
 FINDINGS = []
 FIXTURE = continuity.INIT.replace(
     'window.__calls.push({command,args});',

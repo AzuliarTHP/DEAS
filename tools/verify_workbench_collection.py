@@ -97,7 +97,7 @@ window.__TAURI_INTERNALS__={convertFileSrc:path=>{f.paths.push(path);return png;
 
 ROWS = '.wb-queue .wb-queue-select[data-state]'
 FORBIDDEN = ('native_job_prepare', 'native_job_submit', 'native_job_status', 'native_job_current')
-LOCALES = ('de', 'en', 'fr', 'ja', 'tr', 'zh')
+LOCALES = ('de', 'en', 'fr', 'ja', 'ru', 'tr', 'zh')
 
 
 def row(page, identifier):

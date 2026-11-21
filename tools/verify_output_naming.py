@@ -16,7 +16,7 @@ fixture=fixture.replace("window.__calls.push({command,args});","window.__calls.p
 with sync_playwright() as p:
  browser=p.chromium.launch()
  for width in (1440,1024,768,390,320):
-  for locale in ('de','en','fr','ja','tr','zh'):
+  for locale in ('de','en','fr','ja','ru','tr','zh'):
    t=json.loads((root/f'src/features/studio/locales/{locale}.json').read_text(encoding='utf-8'))
    page=browser.new_page(viewport={'width':width,'height':960},reduced_motion='reduce')
    errors=[]

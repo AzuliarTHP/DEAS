@@ -33,7 +33,7 @@ it('refuses sizes it cannot read or Generate cannot draw', () => {
 });
 
 const locales = import.meta.glob<Record<string, string>>('../features/chat/locales/*.json', { eager: true, import: 'default' });
-it.each(['de', 'fr', 'ja', 'tr', 'zh'])('has every chat render string in %s', locale => {
+it.each(['de', 'fr', 'ja', 'ru', 'tr', 'zh'])('has every chat render string in %s', locale => {
   const en = locales['../features/chat/locales/en.json'];
   const keys = Object.keys(en).filter(k => k.startsWith('chat.render.'));
   expect(keys.length).toBeGreaterThan(15);
