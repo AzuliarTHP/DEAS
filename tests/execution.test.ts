@@ -21,6 +21,22 @@ const qwenAllowlist: RecipeAllowlist = {
   diffusionModels: [intent.checkpoint], textEncoders: [qwenDiffusion.textEncoder], clipTypes: ['qwen_image'], vaes: [qwenDiffusion.vae], images: nativeReference.images,
 };
 
+test('Anima LoRA compatibility is graph-neutral when off and requires the reported loader when on', () => {
+  const anima = { ...intent, family: 'anima',
+    diffusion: { family: 'anima', textEncoder: 'clip.safetensors', clipType: 'stable_diffusion', vae: 'vae.safetensors' },
+    loras: [{ name: 'legacy.safetensors', strength: 0.7 }] };
+  const available = { ...allowlist, nodes: [...allowlist.nodes, 'UNETLoader', 'CLIPLoader', 'VAELoader', 'LoraLoader'],
+    diffusionModels: [anima.checkpoint], textEncoders: [anima.diffusion.textEncoder], clipTypes: [anima.diffusion.clipType],
+    vaes: [anima.diffusion.vae], loras: ['legacy.safetensors'] };
+  const base = compileRecipe(anima, available).graph;
+  assert.equal(base.L1.class_type, 'LoraLoader');
+  assert.deepEqual(compileRecipe({ ...anima, animaLoraRemap: false }, available).graph, base);
+  assert.throws(() => compileRecipe({ ...anima, animaLoraRemap: true }, available), { code: 'MISSING_CAPABILITY' });
+  const patched = compileRecipe({ ...anima, animaLoraRemap: true }, { ...available, nodes: [...available.nodes, 'DEAS_AnimaLoraLoader'] }).graph;
+  assert.deepEqual(patched, { ...base, L1: { ...base.L1, class_type: 'DEAS_AnimaLoraLoader' } });
+  assert.throws(() => compileRecipe({ ...anima, family: 'sdxl', animaLoraRemap: true }, available), { code: 'INVALID_INTENT' });
+});
+
 test('shared model checks reject corrupt local evidence without changing unknown backend-only graphs',()=>{
  const file={category:'checkpoints',name:intent.checkpoint,path:'/models/source',size:1,info:null};
  const baseline=compileRecipe(intent,allowlist);

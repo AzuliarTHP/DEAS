@@ -3949,6 +3949,27 @@ fn temporal_latent_tiled_refine_direct_intents_are_rejected() {
         .contains("refine pass are not supported"));
 }
 
+#[test]
+fn anima_lora_remap_only_replaces_the_explicit_anima_lora_chain() {
+    let mut i = intent();
+    i["diffusion"] = json!({"family":"anima","textEncoder":"clip.safetensors","clipType":"stable_diffusion","vae":"vae.safetensors"});
+    i["loras"] = json!([{"name":"legacy.safetensors","strength":0.7},{"name":"native.safetensors","strength":-0.2}]);
+    let ordinary = compile(&i).unwrap();
+    assert_eq!(ordinary["L1"]["class_type"], "LoraLoader");
+    i["animaLoraRemap"] = json!(false);
+    assert_eq!(ordinary, compile(&i).unwrap());
+    i["animaLoraRemap"] = json!(true);
+    let mut expected = ordinary;
+    for node in ["L1", "L2"] {
+        expected[node]["class_type"] = json!(ANIMA_LORA_NODE);
+    }
+    assert_eq!(expected, compile(&i).unwrap());
+    i["family"] = json!("sdxl");
+    assert!(compile(&i).unwrap_err().contains("Anima image model"));
+    i["animaLoraRemap"] = json!(1);
+    assert!(compile(&i).unwrap_err().contains("expected a boolean"));
+}
+
 #[tokio::test]
 async fn temporal_latent_tiled_refine_prepare_rejects_before_backend_access() {
     let jobs = Jobs::default();

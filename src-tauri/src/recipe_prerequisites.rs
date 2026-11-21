@@ -13,7 +13,8 @@ const REQUIRED_NODES: [&str; 6] = [
 ];
 /// Image-to-image (`LoadImage`, `VAEEncode`), split diffusion-model loading and the DaSiWa
 /// Civitai-metadata saver; their absence blocks only the recipe variant that needs them.
-const OPTIONAL_NODES: [&str; 39] = [
+const OPTIONAL_NODES: [&str; 40] = [
+    crate::jobs::ANIMA_LORA_NODE,
     "DEAS_LyingSigmaSampler",
     "DEAS_ImagePostprocessGate",
     "DEAS_VideoPostprocessGate",
@@ -226,6 +227,21 @@ fn h3_regenerate_tuning_ready(nodes: &Value) -> bool {
             && spec[1]["min"].as_f64() == Some(*min)
             && spec[1]["max"].as_f64() == Some(*max)
     })
+}
+
+fn anima_lora_ready(nodes: &Value) -> bool {
+    let node = &nodes[crate::jobs::ANIMA_LORA_NODE];
+    let required = &node["input"]["required"];
+    node["output"] == json!(["MODEL", "CLIP"])
+        && required["lora_name"][0].is_array()
+        && [
+            ("model", "MODEL"),
+            ("clip", "CLIP"),
+            ("strength_model", "FLOAT"),
+            ("strength_clip", "FLOAT"),
+        ]
+        .iter()
+        .all(|(field, kind)| required[*field][0] == *kind)
 }
 
 fn lying_sigma_ready(nodes: &Value) -> bool {
@@ -488,7 +504,7 @@ fn parse(base: &reqwest::Url, nodes: &Value) -> Result<Value, String> {
     Ok(json!({
         "baseUrl":base.as_str(), "recipeId":"checkpoint-text-to-image-diagnostic", "version":1,
         "allowlist":{
-            "nodes":REQUIRED_NODES.iter().chain(OPTIONAL_NODES.iter()).chain(SIGMA_NODES.iter()).chain(OPTION_NODES.iter()).chain(crate::jobs_sam3::NODES.iter()).chain(crate::jobs_sam3_video::NODES.iter()).chain(crate::jobs_face_refine::ALLOW_NODES.iter()).chain(crate::jobs::H3_EDIT_NODES.iter()).chain(crate::jobs_video::VIDEO_NODES.iter()).chain(crate::jobs_video::H3_CONTINUITY_NODES.iter()).chain(crate::jobs_video::DIAL_NODES.iter()).chain(crate::jobs_video_post::POST_NODES.iter()).chain(crate::jobs_music::MUSIC_NODES.iter()).chain(crate::jobs_music::ace::NODES.iter()).filter(|name| definitions.contains_key(**name) && (**name != "DEAS_LyingSigmaSampler" || lying_sigma_ready(nodes)) && (**name != "DEAS_SAM3ShotMask" || sam3_shot_mask_ready(nodes)) && (**name != "DEAS_SAM3VideoWindow" || sam3_video_window_ready(nodes)) && (**name != "DEAS_H3FaceRefine" || face_refine_ready(nodes)) && (**name != "DEAS_ImagePostprocessGate" || image_postprocess_ready(nodes)) && (**name != "DEAS_VideoPostprocessGate" || video_postprocess_ready(nodes)) && (**name != "DEAS_H3StreamVideoSave" || h3_stream_saver_ready(nodes)) && (**name != "ModelPreviewOverrideKJ" || video_preview_ready(nodes)) && (**name != "DaSiWa_SeamlessLoop" || seamless_loop_ready(nodes))).collect::<Vec<_>>(),
+            "nodes":REQUIRED_NODES.iter().chain(OPTIONAL_NODES.iter()).chain(SIGMA_NODES.iter()).chain(OPTION_NODES.iter()).chain(crate::jobs_sam3::NODES.iter()).chain(crate::jobs_sam3_video::NODES.iter()).chain(crate::jobs_face_refine::ALLOW_NODES.iter()).chain(crate::jobs::H3_EDIT_NODES.iter()).chain(crate::jobs_video::VIDEO_NODES.iter()).chain(crate::jobs_video::H3_CONTINUITY_NODES.iter()).chain(crate::jobs_video::DIAL_NODES.iter()).chain(crate::jobs_video_post::POST_NODES.iter()).chain(crate::jobs_music::MUSIC_NODES.iter()).chain(crate::jobs_music::ace::NODES.iter()).filter(|name| definitions.contains_key(**name) && (**name != "DEAS_LyingSigmaSampler" || lying_sigma_ready(nodes)) && (**name != crate::jobs::ANIMA_LORA_NODE || anima_lora_ready(nodes)) && (**name != "DEAS_SAM3ShotMask" || sam3_shot_mask_ready(nodes)) && (**name != "DEAS_SAM3VideoWindow" || sam3_video_window_ready(nodes)) && (**name != "DEAS_H3FaceRefine" || face_refine_ready(nodes)) && (**name != "DEAS_ImagePostprocessGate" || image_postprocess_ready(nodes)) && (**name != "DEAS_VideoPostprocessGate" || video_postprocess_ready(nodes)) && (**name != "DEAS_H3StreamVideoSave" || h3_stream_saver_ready(nodes)) && (**name != "ModelPreviewOverrideKJ" || video_preview_ready(nodes)) && (**name != "DaSiWa_SeamlessLoop" || seamless_loop_ready(nodes))).collect::<Vec<_>>(),
             "checkpoints":combo(nodes, "CheckpointLoaderSimple", "ckpt_name")?,
             "videos":options(nodes, "LoadVideo", "file", crate::jobs::model_name),
             "loras":combo(nodes, "LoraLoader", "lora_name")?,
@@ -599,6 +615,18 @@ mod tests {
             parse(&base, &info).unwrap()["allowlist"]["faceRefineStill"],
             false
         );
+    }
+
+    #[test]
+    fn anima_lora_discovery_requires_the_consumed_loader_abi() {
+        let mut info = json!({"DEAS_AnimaLoraLoader":{"input":{"required":{
+            "model":["MODEL"],"clip":["CLIP"],"lora_name":[["fixture.safetensors"]],
+            "strength_model":["FLOAT"],"strength_clip":["FLOAT"]
+        }},"output":["MODEL","CLIP"]}});
+        assert!(anima_lora_ready(&info));
+        info["DEAS_AnimaLoraLoader"]["output"] = json!(["CLIP", "MODEL"]);
+        assert!(!anima_lora_ready(&info));
+        assert!(!anima_lora_ready(&json!({})));
     }
 
     #[test]

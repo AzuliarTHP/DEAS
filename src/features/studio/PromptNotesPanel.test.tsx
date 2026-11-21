@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { I18nProvider } from '../../i18n/I18nProvider';
 import { PromptNotesPanel,validNotebook } from './PromptNotesPanel';
 vi.mock('@tauri-apps/api/core',()=>({invoke:vi.fn(async()=>{}),isTauri:()=>true}));
-const mount=()=>render(<I18nProvider><PromptNotesPanel/></I18nProvider>);
+const mount=()=>render(<I18nProvider><PromptNotesPanel mainPrompts={{positive:'',negative:''}} onUsePrompts={()=>{}}/></I18nProvider>);
 const fill=(label:string,value:string)=>fireEvent.change(screen.getByLabelText(label),{target:{value}});
 const click=(name:string)=>fireEvent.click(screen.getByRole('button',{name}));
 const nameFolder=(action:string,name:string)=>{click(action);fill('Folder name',name);click('Confirm');};
@@ -76,6 +76,8 @@ it('keeps folders and folder-specific notes in separate panes with New beside De
  expect(screen.getByText('Note folder · First')).toBeTruthy();
  expect(screen.queryByRole('combobox',{name:'Note folder'})).toBeNull();
  expect(screen.getByRole('button',{name:'Delete note'}).nextElementSibling).toBe(screen.getByRole('button',{name:'New note'}));
+ expect(screen.getByRole('button',{name:'New note'}).nextElementSibling).toBe(screen.getByRole('button',{name:'Use note prompts'}));
+ expect(screen.getByRole('button',{name:'Use note prompts'}).nextElementSibling).toBe(screen.getByRole('button',{name:'Copy main prompts'}));
  expect([...view.container.querySelectorAll('.prompt-note-fields>label')].map(label=>label.firstChild?.textContent)).toEqual(['Note name','Note seed','Move to folder']);
 });
 it('opens folder naming only from the toolbar and rejects duplicate sibling names',()=>{

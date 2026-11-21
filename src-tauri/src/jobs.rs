@@ -433,6 +433,8 @@ async fn get(client: &reqwest::Client, base: &reqwest::Url, path: &str) -> Resul
     Ok(value)
 }
 
+pub(crate) const ANIMA_LORA_NODE: &str = "DEAS_AnimaLoraLoader";
+
 pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     if let Some(overrides) = i.get("componentOverrides") {
         let slots = ["textEncoders", "vaes", "audioVaes", "textProjections"];
@@ -566,6 +568,24 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
     // `diffusion` loads `checkpoint` as a diffusion model with a separate text encoder and VAE.
     let skip_layers = object.get("skipLayers");
     let diffusion = object.get("diffusion");
+    let anima_lora_remap = object
+        .get("animaLoraRemap")
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or("Invalid animaLoraRemap: expected a boolean")
+        })
+        .transpose()?
+        .unwrap_or(false);
+    if anima_lora_remap
+        && diffusion.is_none_or(|d| {
+            d["clipType"] != "stable_diffusion"
+                || family.or_else(|| d.get("family")).and_then(Value::as_str) != Some("anima")
+                || d.get("family").is_some_and(|name| name != "anima")
+        })
+    {
+        return Err("Anima LoRA compatibility requires an Anima image model".into());
+    }
     if diffusion.is_some_and(|d| {
         d.as_object().is_none_or(|o| {
             !(3..=5).contains(&o.len())
@@ -740,6 +760,7 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
             + usize::from(native_reference.is_some())
             + usize::from(resize.is_some())
             + usize::from(object.contains_key("lyingSigma"))
+            + usize::from(object.contains_key("animaLoraRemap"))
             + usize::from(sigmas.is_some())
             + usize::from(mask.is_some())
             + usize::from(blur.is_some())
@@ -1009,9 +1030,14 @@ pub(crate) fn compile(i: &Value) -> Result<Value, String> {
         (clip, vae) = (json!(["C", 0]), json!(["V", 0]));
     }
     // Chain LoraLoaders after the loaders; the last one feeds the sampler and both encoders.
+    let lora_loader = if anima_lora_remap {
+        ANIMA_LORA_NODE
+    } else {
+        "LoraLoader"
+    };
     for (n, lora) in loras.iter().enumerate() {
         let id = format!("L{}", n + 1);
-        graph[&id] = json!({"class_type":"LoraLoader","inputs":{"model":model,"clip":clip,"lora_name":lora["name"],"strength_model":lora["strength"],"strength_clip":lora["strength"]}});
+        graph[&id] = json!({"class_type":lora_loader,"inputs":{"model":model,"clip":clip,"lora_name":lora["name"],"strength_model":lora["strength"],"strength_clip":lora["strength"]}});
         (model, clip) = (json!([id, 0]), json!([id, 1]));
     }
     let o = options.cloned().unwrap_or_default();

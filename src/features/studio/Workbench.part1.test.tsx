@@ -736,6 +736,40 @@ test.each((['ltx-2','minimax-h3'] as const).flatMap(family=>([undefined,true,fal
  if(enabled)expect(submitted).toHaveProperty('enhancedPreview',config);else expect(submitted).not.toHaveProperty('enhancedPreview');
 });
 
+test('Anima LoRA compatibility is off by default and an Anima Run captures the enabled choice',async()=>{
+ const name='anima-2.9b.safetensors',lora='legacy-anima.safetensors';
+ vi.mocked(scanModels).mockResolvedValue([
+  {category:'diffusion_models',name,family:'anima',path:'/m/anima',size:1,info:null},
+  {category:'text_encoders',name:'qwen_3_600m.safetensors',path:'/m/clip',size:1,info:null},
+  {category:'vae',name:'wan_2.1_vae.safetensors',path:'/m/vae',size:1,info:null},
+  {category:'loras',name:lora,path:'/m/lora',size:1,info:null},
+ ]);
+ vi.mocked(checkRecipePrerequisites).mockResolvedValue({...evidence,allowlist:{...evidence.allowlist,
+  nodes:[...evidence.allowlist.nodes,'UNETLoader','DEAS_AnimaLoraLoader'],diffusionModels:[name],loras:[lora],
+ }});
+ localStorage.setItem('deas.pref.studio.run.loras',JSON.stringify([{name:lora,strength:0.7}]));
+ vi.mocked(runWorkbenchJob).mockResolvedValue({...heldJob('anima-run','failed'),error:'fixture'});
+ const props={endpoint:evidence.baseUrl,roots:{models:'/m'}};
+ const view=render(<I18nProvider><Workbench {...props}/></I18nProvider>);
+ await screen.findByRole('option',{name});
+ fireEvent.click(document.querySelector('[data-open-lora-sets]')!);
+ const toggle=await screen.findByRole('checkbox',{name:'Anima 2.9B LoRA compatibility'});
+ expect(toggle).toHaveProperty('checked',false);
+ await waitFor(()=>expect(toggle).toHaveProperty('disabled',false));
+ const dialog=screen.getByRole('dialog',{name:'Selected LoRAs and sets'});
+ fireEvent.click(toggle);
+ fireEvent.click(within(dialog).getByRole('button',{name:'Close'}));
+ view.rerender(<I18nProvider><Workbench {...props} planVisible/></I18nProvider>);
+ expect(JSON.parse(document.querySelector('[data-plan-intent]')!.textContent!)).toHaveProperty('animaLoraRemap',true);
+ expect(runWorkbenchJob).not.toHaveBeenCalled();
+ view.rerender(<I18nProvider><Workbench {...props}/></I18nProvider>);
+ const run=screen.getByRole('button',{name:'Run'});
+ await waitFor(()=>expect(run).toHaveProperty('disabled',false));
+ fireEvent.click(run);
+ await waitFor(()=>expect(runWorkbenchJob).toHaveBeenCalledOnce());
+ expect(vi.mocked(runWorkbenchJob).mock.lastCall![1]).toMatchObject({animaLoraRemap:true,loras:[{name:lora,strength:0.7}]});
+});
+
 test('enhanced preview follows only the selected running video and cleans up on OFF, browsing, hidden panes, overlays and terminal selection',async()=>{
  const config={decoder:'tiny' as const,model:'taeltx.safetensors'};
  const previewImages:{src:string;onload:unknown;onerror:unknown}[]=[];

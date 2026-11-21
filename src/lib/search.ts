@@ -16,7 +16,7 @@ export interface SearchEntry {
   /** Beginner page that must be selected before the target exists. */
   beginnerTab?: 'generate' | 'models' | 'collection' | 'wizards';
   /** Studio bottom-dock tab that must be selected before the target exists. */
-  dockTab?: 'options' | 'post' | 'loras' | 'presets' | 'wildcards' | 'media' | 'models';
+  dockTab?: 'options' | 'post' | 'loras' | 'notes' | 'presets' | 'wildcards' | 'media' | 'models';
   /** Breadcrumb tab → section → control, all locale keys. */
   tab: string;
   section: string;
@@ -176,7 +176,10 @@ export const searchIndex: readonly SearchEntry[] = [
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock.loras', label: 'loraSets.title', target: '[data-open-lora-sets]', aliases: ['lora sets', 'adapter weights', 'disable lora', 'reorder lora'] },
   { view: studio, studioTab: 'generate', dockTab: 'loras', tab: 'setup.tab.studio', section: 'studio.run.dock.loras', label: 'studio.run.hideOtherLoraFamilies', target: '[data-hide-other-lora-families]', aliases: ['lora family filter', 'other architectures'] },
   { view: studio, studioTab: 'generate', dockTab: 'loras', tab: 'setup.tab.studio', section: 'studio.run.dock.loras', label: 'studio.run.backendOnlyLoras', target: '[data-backend-only-loras]', aliases: ['backend loras', 'unindexed loras', 'missing from index'] },
+  { view: studio, studioTab: 'generate', dockTab: 'loras', tab: 'setup.tab.studio', section: 'studio.run.dock.loras', label: 'loraSets.animaRemap', target: '[data-anima-lora-remap]', aliases: ['anima', 'anima 2.9b', 'lora compatibility', '28 block', '40 block', 'remap'], reason: 'loraSets.animaRemapUnavailable' },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.notes', target: '[data-dock-tab="notes"]', aliases: ['notes', 'prompt notes'] },
+  { view: studio, studioTab: 'generate', dockTab: 'notes', tab: 'setup.tab.studio', section: 'studio.run.dock.notes', label: 'notes.usePrompts', target: '[data-note-use-prompts]', aliases: ['note prompts', 'apply note', 'saved prompt'] },
+  { view: studio, studioTab: 'generate', dockTab: 'notes', tab: 'setup.tab.studio', section: 'studio.run.dock.notes', label: 'notes.copyMainPrompts', target: '[data-note-copy-main-prompts]', aliases: ['copy prompts', 'note draft', 'save current prompt'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'presets.title', target: '[data-dock-tab="presets"]', aliases: ['preset'] },
   { view: studio, studioTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'wildcards.title', target: '[data-dock-tab="wildcards"]', aliases: ['wildcard'] },
   { view: studio, studioTab: 'generate', beginnerTab: 'generate', tab: 'setup.tab.studio', section: 'studio.run.dock', label: 'studio.run.dock.references', target: '[data-open-references]', aliases: ['reference', 'image', 'refmod', 'create refmod'], reason: 'search.reason.references' },
@@ -393,6 +396,8 @@ export interface RevealOutcome {
 
 /** Opens collapsed ancestors, scrolls to the control and flashes it; reports a currently disabled control. */
 export function revealTarget(target: string): RevealOutcome {
+  if(target==='[data-anima-lora-remap]'&&!document.querySelector(target))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-open-lora-sets]')?.click());
+  if(target==='[data-note-use-prompts]'||target==='[data-note-copy-main-prompts]')flushSync(()=>document.querySelector<HTMLButtonElement>('[data-dock-tab="notes"]:not([aria-selected="true"])')?.click());
   if(target==='[data-prompt-tag-options]'||target.startsWith('[data-tag-option='))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-pane-toggle="prompt"][aria-expanded="false"]')?.click());
   if(target.startsWith('[data-tag-option=')&&!document.querySelector(target))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-prompt-tag-options]')?.click());
   if((target==='[data-catalog-detail-notes]'||target==='[data-catalog-detail-tags]')&&!document.querySelector(target))flushSync(()=>document.querySelector<HTMLButtonElement>('[data-catalog-gallery] .catalog-details')?.click());

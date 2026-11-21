@@ -686,6 +686,19 @@ Auto-Aspect is offered only in media-input pipelines; browsing an image or video
 - **H3 references and denoise.** Up to 8 pictures can be added as prompt references (right-click → **Use as prompt reference**, or drop onto the prompt). The picture being edited is always `<Picture 1>` and is shown as card **1** ("Picture to edit") at the head of the reference bar; references follow as `<Picture 2>` … `<Picture 9>` in thumbnail order, and the thumbnails show those numbers. Without a picture to edit, the first picture added as a prompt reference becomes it; **✕** on card 1 promotes the first reference to the picture to edit (or clears it when there are no references). Name them in the prompt, e.g. `Edit <Picture 1>: she wears the jacket from <Picture 2>, in the pose of <Picture 3>`. **Denoise** defaults to 1.0 (full regeneration: pose, composition and scene may change, as in the community *MMH3 Image edit* workflow); below 1.0 the composition is kept; with a mask only the painted area changes. With references or a denoise below 1.0 the run uses core `MiniMaxH3ReferenceToVideo` and a one-frame still latent instead of the 5-frame pass; without references at 1.0 the graph is unchanged. Below 2 MP canvas the Run Plan shows a quality notice (the workflow author's tip). SAM Auto Refine passes on H3 now honour their denoise (default 0.25) instead of regenerating the crop. The source must sit on the 32 px grid. Automatic multi-model chaining remains unimplemented. Text/image-to-video availability depends on the selected family and required files.
 - **H3 picture edits: latent upscale.** Image → Image with a MiniMax H3 model offers the H3 **Latent upscale** card under **Post-Processing** (off by default): the same model, scale, refine steps/strength and **☰ More upscaler options** as H3 video, run by `DaSiWaH3TiledUpscale` right after sampling and before the decode. The result replaces the picture at the upscaled size (H3 32 px rounding; Run Plan shows it); there is no separate Original. **Inpaint** feeds a masked latent, which the upscaler cannot process, so the card is disabled there with the reason.
 
+**Anima 2.9B LoRA compatibility.** On an Anima image pipeline, open
+**Selected LoRAs and sets** and turn on **Anima 2.9B LoRA compatibility** beside
+the LoRA count. The switch defaults off. It remaps complete 28-block base LoRAs
+for a loaded 40-block Anima model. LoRAs with higher block indices or an
+incomplete base range go through the regular loader. Text encoder and adapter
+keys stay intact. DEAS remaps the keys in memory with its own Anima LoRA loader.
+The backend must be able to load the full 40-block model.
+
+DEAS provides this loader the next time it starts a managed backend. On a
+separately managed ComfyUI backend, install the bundled
+`src-tauri/src/anima_lora.py` as `deas_anima_lora.py` under `custom_nodes` and
+restart that backend.
+
 ### Video generation
 
 #### Enhanced preview prerequisites
@@ -886,8 +899,14 @@ Enter a note name, positive prompt, negative prompt and nonnegative integer seed
 then click **Save note**. Change the name to save the draft as a separate note and
 keep the original. Saving a selected note under the same name asks for overwrite
 confirmation. **Cancel** keeps the saved note and leaves your edits in the draft.
-Notes do not copy or change the active generation prompt,
-seed, models or selected LoRAs. Ctrl/Cmd+Enter in the notebook does not run Studio.
+Select a saved note and click **Use note prompts** beside **New note** to replace
+the main positive and negative prompts with the saved text. An empty field in the
+note clears the matching main prompt. The button changes only those two fields.
+Click **Copy main prompts** to replace the positive and negative prompts in the
+open note draft with the current main prompts. You can do this for a new note or
+an existing one. Copying into an unnamed draft gives it an editable default
+name. Click **Save note** to keep the changes.
+Ctrl/Cmd+Enter in the notebook does not run Studio.
 
 The left pane holds folders; the middle pane lists notes for the selected folder.
 All notes shows the whole notebook. Each pane scrolls independently of the editor.

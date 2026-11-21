@@ -3,6 +3,8 @@
 ## 0.3.17
 
 - **Beginner Wizards page fills the window.** In 0.3.16 the hidden Generation page still took space on Beginner's Wizards page and pushed the wizard down by about a third of the window; it now takes none. Found in the Windows acceptance run of the wizards; Generation keeps its state while hidden.
+- **Studio Notes can copy prompts both ways.** Use note prompts applies the selected saved note’s prompts. Copy main prompts fills the note draft and provides a default name for an unnamed draft.
+- **Anima 2.9B can load compatible 2B LoRAs.** Turn on Anima 2.9B LoRA compatibility in Selected LoRAs and sets to remap full 28-block LoRAs for the expanded 40-block model. The option defaults to off.
 
 ## 0.3.16
 
@@ -14,6 +16,7 @@
 - **Dark Wizards: Paint a mask runs in one click.** In the Replace wizard, **Prepare and run** now also works with **Paint a mask (inpaint)**: Generate finds the mask with SAM 3.1 from *Replace what* (its own text-to-mask path and selected SAM checkpoint; one mask layer per comma-separated part, Generate's SAM targets field untouched), then starts the inpaint run through its own Run path. If SAM finds nothing, nothing is drawn and the draft stays prepared in Generate for a hand-painted mask. The button needs *Replace what* and is disabled with Generate's SAM reason when no SAM 3.1 checkpoint or `SAM3_Detect` node is available.
 - **Dark Wizards: Stop works while the wizard's run is drawing.** The progress reports now carry the job, so the wizard's **Stop** reaches that one job; before, it only had the job once the run had ended.
 - **Dark Wizards: masked edits of pictures outside Input/Output can run.** A picture to change chosen or dropped from any folder is uploaded to the backend when Run starts, like a reference, instead of Generate asking for a picture from the Input or Output folder.
+
 
 ## 0.3.14
 
