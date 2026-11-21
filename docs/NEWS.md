@@ -1,5 +1,9 @@
 # News
 
+## 0.3.17
+
+The Beginner **Wizards** page now uses the whole window; before, an empty area pushed the wizard down.
+
 ## 0.3.16
 
 ### Wizards in Beginner

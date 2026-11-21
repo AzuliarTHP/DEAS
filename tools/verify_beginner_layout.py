@@ -48,6 +48,13 @@ def pipeline_flow(page, shots):
     expect(picker.locator('option[value="video"]')).to_be_disabled()
     assert picker.locator('option[value="video"]').get_attribute('title')
     expect(picker.locator('option[value="music"]')).to_be_enabled()
+    # The Wizards page is the same Dark Wizards view; the retained Generate host must take no space beside it.
+    page.locator('[data-beginner-tab="wizards"]').click()
+    expect(page.locator('section.wizards-tab')).to_be_visible()
+    g = workspace.assert_viewport(page, 'beginner wizards page')
+    assert g['activeOnly'], ('beginner wizards page shares the studio column with another visible host', g)
+    page.locator('[data-beginner-tab="generate"]').click()
+    expect(page.locator('.beginner-composer')).to_be_visible()
     # Browsing is never adoption. The explicit shared action is the only role edit.
     page.locator('[data-beginner-tab="collection"]').click()
     page.get_by_role('button', name='source.png', exact=True).click()

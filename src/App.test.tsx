@@ -474,6 +474,8 @@ test('Beginner reaches the Dark Wizards from its own band; Generate stays the st
   fireEvent.click(await screen.findByRole('tab', { name: 'Wizards' }));
   await waitFor(() => expect(visible(document.querySelector('section.wizards-tab'))).toBe(true));
   expect(visible(document.querySelector('.beginner-composer'))).toBe(false);
+  // The retained Generate host takes no space while the wizard page shows (it stays mounted, only hidden).
+  expect(document.querySelector('.studio-generate-host:has(.workbench-host)')?.hasAttribute('hidden')).toBe(true);
   expect(JSON.parse(localStorage.getItem('deas.pref.studio.tab') ?? '"generate"')).toBe('generate');
   fireEvent.click(document.querySelector('[data-beginner-tab="generate"]')!);
   await waitFor(() => expect(visible(document.querySelector('section.wizards-tab'))).toBe(false));

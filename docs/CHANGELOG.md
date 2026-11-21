@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.17
+
+- **Beginner Wizards page fills the window.** In 0.3.16 the hidden Generation page still took space on Beginner's Wizards page and pushed the wizard down by about a third of the window; it now takes none. Found in the Windows acceptance run of the wizards; Generation keeps its state while hidden.
+
 ## 0.3.16
 
 - **Dark Wizards in Beginner.** Beginner's band has a **Wizards** page with the same Replace wizard as Advanced. **Prepare in Generate** opens Beginner's Generation page with the draft, and **Prepare and run** starts it through the normal Run (including the SAM 3.1 mask). Before, Beginner refused every wizard hand-over. Only models Beginner can use itself are accepted. The composer shows what the wizard set: its prompt pictures, *Masked edit (inpaint)*, and *Wizard size …* as Quality. **Clear wizard draft** returns to a plain picture-to-picture draft. Beginner's own model reset no longer overwrites the wizard's size or brings back LoRAs, and the wizard size is not saved as Beginner's Quality.

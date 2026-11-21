@@ -936,7 +936,7 @@ Owner-approved guided flow: **Brief → Cast / references → Lore and storyboar
 - [ ] **UX-22b GPU:** one real run per Replace method on an isolated backend (Qwen Image 2.1 Turbo reference edit and masked edit, each with and without an object picture; SDXL or Flux.2 text inpaint) — object identity transfer, replacement quality and untouched surroundings judged on the outputs. The `image 1`/`image 2` prompt wording is unverified on real outputs until then. Also judge the one-click path end to end on a real run: the picture the wizard shows must be the job's own file, and Stop must interrupt just that job; for the masked method, the SAM 3.1 mask from *Replace what* must cover the named object on real pictures (no-match and multi-part targets included).
 - [ ] Off-grid pictures for the masked method: Generate blocks Run until resampled; consider letting the wizard prepare a grid-aligned input instead of only announcing it.
 - [ ] **UX-22c:** Replace for videos after the H3-vs-LTX fixed-seed comparison is recorded in VERIFICATION.
-- [ ] Native Linux WebKitGTK and Windows WebView2 click-through of the tab: drop, paste, Choose…, Find in Library, hand-over to Generate.
+- [ ] Native Linux WebKitGTK click-through of the tab (Advanced and Beginner): drop, paste, Choose…, Find in Library, hand-over to Generate. Windows WebView2 covered over CDP in 0.3.16 — tab and Beginner page rendering, native describe of a pasted path, SAM reason, hand-over and real SDXL inpaint runs from both experiences ([verification](VERIFICATION.md#windows-webview2-acceptance-dark-wizards-ux-22b1b3-0316-2026-11-21)); still open on Windows: OS clipboard/drop/Choose… at the desktop, Find in Library, the masked one-click run with a SAM 3.1 checkpoint.
 - [ ] Mood wizard with preset picker and a before/after Slider result (existing paired-products presentation).
 - [ ] Unchanged: Studio tabs, intents and graphs; a wizard run is an ordinary job in the queue.
 
@@ -1257,7 +1257,7 @@ A PromptForge port keeps per-model dialects, structured video sections, referenc
 
 **Beginner mode (landed in 0.2.15, acceptance open).** Manual port of the `DEAS-0.2.13-Beginner-SHARE.zip` overlay (archive SHA-256 `b4adae309300e95224bf3ad5ecdf5c4d34162014b28a0d28117a23bf09c3f900`): one `interface.experience` preference, page band Generate/Models/Media, Engine button to the unchanged setup, per-mode settings isolation and model-bound Beginner LoRA draft. Deliberately not adopted: the fork's window-title rebranding, Sage as fresh-install theme fallback (the built-in Sage scheme already provides Sage), and the fork's hide-GlobalSearch choice (every control must stay reachable from Ctrl+K). Open gates:
 - [ ] Native acceptance on WebKitGTK and WebView2: welcome dialog first run, mode switch during a running job keeps the job, Engine flow with no installed environment, seven locales at narrow widths.
-- [ ] One real Beginner run per supported pipeline (t2i/i2i/t2v/i2v) on real hardware; native download of one featured guide model through the existing plan/confirm dialog.
+- [ ] One real Beginner run per supported pipeline (t2i/t2v/i2v still open; i2i/inpaint ran on the Windows test PC in 0.3.16, see [verification](VERIFICATION.md#windows-webview2-acceptance-dark-wizards-ux-22b1b3-0316-2026-11-21)) on real hardware; native download of one featured guide model through the existing plan/confirm dialog.
 
 #### PL-03 · Plugin platform and planner
 
